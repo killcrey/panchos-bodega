@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Panchos Bodega | The Invisible Panchos</title>
+    <style>
+      body { 
+        /* Main Body Background */
+        background-image: url('https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/storebackground.png');
+        background-size: cover;
+        background-position: center center;
+        background-attachment: fixed;
+        background-repeat: no-repeat;
+        
+        background-color: #050505; 
+        color: #fff; 
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; 
+        padding: 0.5rem 2rem 2rem 2rem; 
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* HEADER STYLING */
+      .header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 2rem;
+        margin-top: 0;
+      }
+
+      .bodega-logo {
+        max-width: 280px; 
+        width: 100%; 
+        height: auto;
+        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.8)); 
+        transition: max-width 0.3s ease;
+      }
+
+      .home-link-img {
+        max-width: 84px; /* Increased by 20% (was 70px) */
+        width: 100%;
+        height: auto;
+        filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.8)); 
+        transition: transform 0.2s, filter 0.2s, max-width 0.3s ease;
+      }
+
+      .home-link-img:hover {
+        transform: scale(1.05);
+        filter: drop-shadow(0 0 15px rgba(255, 0, 0, 1)); 
+      }
+      
+      /* MAIN CONTENT GRID */
+      #store-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); 
+        gap: 1.5rem; 
+        flex: 1; 
+      }
+      
+      .product-card { 
+        background-image: linear-gradient(rgba(15, 15, 15, 0.7), rgba(15, 15, 15, 0.7)), url('https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/storebackground.png');
+        background-size: cover;
+        background-position: center; 
+        background-repeat: no-repeat;
+        
+        border: 1px solid rgba(255, 255, 255, 0.1); 
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6); 
+        
+        padding: 1rem; 
+        border-radius: 8px; 
+        max-width: 220px; 
+        display: flex; 
+        flex-direction: column; 
+        height: 100%;
+        box-sizing: border-box;
+      }
+      
+      .price { color: #00ffcc; font-weight: bold; }
+
+      .image-gallery { 
+        display: flex; 
+        overflow-x: auto; 
+        gap: 0.5rem; 
+        margin-bottom: 1rem; 
+        scroll-snap-type: x mandatory;
+        padding-bottom: 0.5rem; 
+      }
+      .image-gallery::-webkit-scrollbar { height: 4px; }
+      .image-gallery::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
+      .image-gallery::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+      
+      .image-gallery img { 
+        width: 100%; 
+        height: 150px; 
+        object-fit: contain; 
+        background-color: rgba(0, 0, 0, 0.4); 
+        flex-shrink: 0; 
+        scroll-snap-align: center; 
+        border-radius: 4px; 
+      }
+      
+      .no-image { 
+        width: 100%; 
+        height: 150px; 
+        background: rgba(0, 0, 0, 0.4); 
+        border-radius: 4px; 
+        margin-bottom: 1rem; 
+        display: flex; 
+        align-items: center; 
+        justify-content: center; 
+        font-size: 0.7rem; 
+        color: #777; 
+      }
+
+      .description {
+        font-size: 0.75rem;
+        color: #ccc;
+        margin: 0.5rem 0 1rem 0;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .sizes-container { display: flex; gap: 0.4rem; margin-bottom: 1rem; flex-wrap: wrap; }
+      
+      .size-tag { 
+        background: rgba(0, 0, 0, 0.6); 
+        color: #fff; 
+        padding: 0.2rem 0.4rem; 
+        border-radius: 3px; 
+        font-size: 0.65rem; 
+        border: 1px solid rgba(255, 255, 255, 0.1); 
+      }
+
+      audio { width: 100%; height: 35px; margin-bottom: 1rem; border-radius: 4px; opacity: 0.9; }
+
+      /* FOOTER STYLING */
+      .bodega-footer {
+        margin-top: 4rem;
+        padding-top: 2rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        text-align: center;
+        color: #888;
+        font-size: 0.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .footer-links {
+        display: flex;
+        justify-content: center;
+        gap: 2rem;
+        flex-wrap: wrap;
+      }
+
+      .footer-links a {
+        color: #00ffcc;
+        text-decoration: none;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: color 0.2s;
+        font-weight: bold;
+      }
+
+      .footer-links a:hover {
+        color: #fff;
+      }
+
+      /* === MOBILE ARMOR (Triggers below 768px) === */
+      @media (max-width: 768px) {
+        body {
+          padding: 0.5rem 1rem 1.5rem 1rem; /* Reclaim screen edges */
+        }
+        .bodega-logo {
+          max-width: 200px; /* Scale down so it doesn't fight the Go Home button */
+        }
+        .home-link-img {
+          max-width: 60px; /* Increased by 20% (was 50px) */
+        }
+        #store-grid {
+          /* On mobile, stack them 1-up perfectly */
+          grid-template-columns: 1fr; 
+        }
+        .product-card {
+          /* Remove the desktop cage. Let the card fill the phone screen. */
+          max-width: 100%; 
+        }
+        .footer-links {
+          /* Stack the footer links cleanly like an app menu */
+          flex-direction: column;
+          gap: 1.2rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- HEADER LOGOS -->
+    <div class="header-container">
+      <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="bodega-logo">
+      
+      <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
+        <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="home-link-img">
+      </a>
+    </div>
+    
+    <!-- MAIN GRID -->
+    <div id="store-grid">Loading the Bodega...</div>
+
+    <!-- FOOTER -->
+    <footer class="bodega-footer">
+      <div class="footer-links">
+        <a href="https://theinvisiblepanchos.com/" target="_blank">The Mothership</a>
+        <a href="https://game.theinvisiblepanchos.com/" target="_blank">Our Video Game</a>
+        <a href="mailto:theinvisiblepanchos@gmail.com">Contact</a>
+      </div>
+      <p>&copy; 2026 The Invisible Panchos. All Rights Reserved. Stay Invisible.</p>
+    </footer>
+
+    <!-- LOGIC SCRIPT -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
