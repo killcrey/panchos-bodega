@@ -5,6 +5,19 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// INJECT 0: Global Audio Controller (Anti-Bleed Logic)
+// This listens for any play event and pauses all other audio elements.
+document.addEventListener('play', function(e) {
+  if (e.target.tagName === 'AUDIO') {
+    const allAudios = document.querySelectorAll('audio');
+    allAudios.forEach(audio => {
+      if (audio !== e.target) {
+        audio.pause();
+      }
+    });
+  }
+}, true); // We use 'true' to capture the event as it trickles down the DOM
+
 async function loadBodega() {
   const storeGrid = document.getElementById('store-grid')
 
@@ -100,7 +113,6 @@ async function loadBodega() {
 
     let galleryHTML = ''
     if (availableImages.length > 0) {
-      // Added 'cursor: pointer' and a data-index to trigger the lightbox
       const imageTags = availableImages.map((url, idx) => `<img src="${url}" alt="${product.title}" class="lightbox-trigger" data-idx="${idx}" style="cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1">`).join('')
       galleryHTML = `<div class="image-gallery">${imageTags}</div>`
     } else {
