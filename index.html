@@ -40,8 +40,16 @@
         transition: max-width 0.3s ease;
       }
 
+      /* Right Column for Stacked Header Images */
+      .header-right-col {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 1rem;
+      }
+
       .home-link-img {
-        max-width: 84px; /* Increased by 20% (was 70px) */
+        max-width: 84px; 
         width: 100%;
         height: auto;
         filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.8)); 
@@ -51,6 +59,21 @@
       .home-link-img:hover {
         transform: scale(1.05);
         filter: drop-shadow(0 0 15px rgba(255, 0, 0, 1)); 
+      }
+
+      .game-poster-img {
+        max-width: 84px; 
+        width: 100%;
+        height: auto;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .game-poster-img:hover {
+        transform: scale(1.05);
+        box-shadow: 0 0 15px rgba(0, 255, 204, 0.6);
       }
       
       /* MAIN CONTENT GRID */
@@ -176,24 +199,24 @@
       /* === MOBILE ARMOR (Triggers below 768px) === */
       @media (max-width: 768px) {
         body {
-          padding: 0.5rem 1rem 1.5rem 1rem; /* Reclaim screen edges */
+          padding: 0.5rem 1rem 1.5rem 1rem;
         }
         .bodega-logo {
-          max-width: 200px; /* Scale down so it doesn't fight the Go Home button */
+          max-width: 200px;
         }
-        .home-link-img {
-          max-width: 60px; /* Increased by 20% (was 50px) */
+        .home-link-img, .game-poster-img {
+          max-width: 60px; /* Keep exact uniform width on mobile */
+        }
+        .header-right-col {
+          gap: 0.8rem;
         }
         #store-grid {
-          /* On mobile, stack them 1-up perfectly */
           grid-template-columns: 1fr; 
         }
         .product-card {
-          /* Remove the desktop cage. Let the card fill the phone screen. */
           max-width: 100%; 
         }
         .footer-links {
-          /* Stack the footer links cleanly like an app menu */
           flex-direction: column;
           gap: 1.2rem;
         }
@@ -201,29 +224,30 @@
     </style>
   </head>
   <body>
-    <!-- HEADER LOGOS -->
     <div class="header-container">
       <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="bodega-logo">
       
-      <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
-        <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="home-link-img">
-      </a>
+      <div class="header-right-col">
+        <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
+          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="home-link-img">
+        </a>
+        <a href="https://game.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
+          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gameposter.jpeg" alt="Play The Invisible Panchos Game" class="game-poster-img">
+        </a>
+      </div>
     </div>
     
-    <!-- MAIN GRID -->
     <div id="store-grid">Loading the Bodega...</div>
 
-    <!-- FOOTER -->
     <footer class="bodega-footer">
       <div class="footer-links">
         <a href="https://theinvisiblepanchos.com/" target="_blank">The Mothership</a>
         <a href="https://game.theinvisiblepanchos.com/" target="_blank">Our Video Game</a>
-        <a href="mailto:theinvisiblepanchos@gmail.com">Contact</a>
+        <a href="mailto:contact@theinvisiblepanchos.com">Contact</a>
       </div>
       <p>&copy; 2026 The Invisible Panchos. All Rights Reserved. Stay Invisible.</p>
     </footer>
 
-    <!-- LOGIC SCRIPT -->
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
