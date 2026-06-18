@@ -40,16 +40,17 @@
         transition: max-width 0.3s ease;
       }
 
-      /* Right Column for Stacked Header Images */
+      /* Right Column for Side-by-Side Header Images */
       .header-right-col {
         display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 1rem;
+        flex-direction: row; /* Switched from column to row */
+        align-items: center;
+        justify-content: flex-end;
+        gap: 1.5rem; /* Slightly wider gap for horizontal breathing room */
       }
 
       .home-link-img {
-        max-width: 100px; /* Increased 20% */
+        max-width: 100px; /* Kept the 20% increase */
         width: 100%;
         height: auto;
         filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.8)); 
@@ -62,7 +63,7 @@
       }
 
       .game-poster-img {
-        max-width: 100px; /* Increased 20% */
+        max-width: 100px; /* Kept the 20% increase */
         width: 100%;
         height: auto;
         border-radius: 4px;
@@ -201,14 +202,21 @@
         body {
           padding: 0.5rem 1rem 1.5rem 1rem;
         }
+        .header-container {
+          /* Allow wrapping if the 3 elements get too tight on narrow screens */
+          flex-wrap: wrap;
+          gap: 1rem;
+        }
         .bodega-logo {
           max-width: 200px;
         }
         .home-link-img, .game-poster-img {
-          max-width: 72px; /* Exact uniform width maintained, scaled up 20% */
+          max-width: 72px; /* Exact uniform width maintained */
         }
         .header-right-col {
           gap: 0.8rem;
+          /* Keep them side-by-side on mobile */
+          flex-direction: row; 
         }
         #store-grid {
           grid-template-columns: 1fr; 
