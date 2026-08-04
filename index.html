@@ -27,17 +27,33 @@
       .header-container {
         display: flex;
         justify-content: space-between;
-        align-items: flex-start;
+        align-items: center;
         margin-bottom: 2rem;
         margin-top: 0;
+        flex-wrap: wrap;
+        gap: 1rem;
       }
 
       .bodega-logo {
-        max-width: 280px; 
-        width: 100%; 
+        max-width: 280px;
+        width: 100%;
         height: auto;
-        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.8)); 
+        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.8));
         transition: max-width 0.3s ease;
+      }
+
+      .logo-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        cursor: pointer;
+        line-height: 0;
+        flex-shrink: 0;
+      }
+
+      .logo-btn:hover .bodega-logo {
+        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.8)) brightness(1.08);
       }
 
       /* Right Column for Side-by-Side Header Images */
@@ -77,23 +93,25 @@
         box-shadow: 0 0 15px rgba(0, 255, 204, 0.6);
       }
       
-      /* CATEGORY FILTER BAR */
+      /* CATEGORY FILTER BAR (palette pulled from bodegasign.png: gold, brick red, brown) */
       .filter-bar {
         display: flex;
-        gap: 0.75rem;
+        justify-content: center;
+        gap: 0.6rem;
         overflow-x: auto;
-        margin-bottom: 1.5rem;
-        padding-bottom: 0.5rem;
+        flex: 1 1 320px;
+        min-width: 0;
+        padding: 0.25rem 0.25rem 0.5rem 0.25rem;
         -webkit-overflow-scrolling: touch;
       }
       .filter-bar::-webkit-scrollbar { height: 4px; }
       .filter-bar::-webkit-scrollbar-track { background: transparent; }
-      .filter-bar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+      .filter-bar::-webkit-scrollbar-thumb { background: rgba(184, 41, 31, 0.5); border-radius: 4px; }
 
       .filter-btn {
-        background: transparent;
-        color: #ccc;
-        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(0, 0, 0, 0.35);
+        color: #e8b923;
+        border: 1px solid rgba(184, 41, 31, 0.6);
         padding: 0.5rem 1rem;
         border-radius: 4px;
         font-size: 0.7rem;
@@ -108,14 +126,15 @@
       }
 
       .filter-btn:hover {
-        border-color: #00ffcc;
-        color: #00ffcc;
+        border-color: #e8b923;
+        color: #f5d67c;
+        background: rgba(139, 90, 43, 0.25);
       }
 
       .filter-btn.active {
-        background: #00ffcc;
-        color: #111;
-        border-color: #00ffcc;
+        background: #e8b923;
+        color: #7a1518;
+        border-color: #b8291f;
       }
 
       /* MAIN CONTENT GRID */
@@ -241,7 +260,8 @@
       /* === MOBILE ARMOR (Triggers below 768px) === */
       @media (max-width: 768px) {
         body {
-          padding: 0.5rem 1rem 1.5rem 1rem;
+          /* Extra top padding reserves room for the fixed filter bar */
+          padding: 4rem 1rem 1.5rem 1rem;
         }
         .header-container {
           /* Allow wrapping if the 3 elements get too tight on narrow screens */
@@ -257,7 +277,24 @@
         .header-right-col {
           gap: 0.8rem;
           /* Keep them side-by-side on mobile */
-          flex-direction: row; 
+          flex-direction: row;
+        }
+        .filter-bar {
+          /* Pin to the very top of the viewport so it stays visible through the whole scroll
+             (sticky won't work here since its natural parent, .header-container, is too short
+             to keep it in view once the page scrolls past the header) */
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          z-index: 100;
+          justify-content: flex-start;
+          margin: 0;
+          padding: 0.6rem 1rem;
+          background: rgba(5, 5, 5, 0.92);
+          backdrop-filter: blur(6px);
+          -webkit-backdrop-filter: blur(6px);
+          border-bottom: 1px solid rgba(232, 185, 35, 0.25);
         }
         #store-grid {
           grid-template-columns: 1fr; 
@@ -274,8 +311,19 @@
   </head>
   <body>
     <div class="header-container">
-      <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="bodega-logo">
-      
+      <button type="button" id="logo-home-filter" class="logo-btn" aria-label="Show all products">
+        <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="bodega-logo">
+      </button>
+
+      <div class="filter-bar">
+        <button class="filter-btn active" data-filter="all">ALL</button>
+        <button class="filter-btn" data-filter="apparel">APPAREL</button>
+        <button class="filter-btn" data-filter="art">ART</button>
+        <button class="filter-btn" data-filter="music">MUSIC</button>
+        <button class="filter-btn" data-filter="services">SERVICES</button>
+        <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
+      </div>
+
       <div class="header-right-col">
         <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
           <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="home-link-img">
@@ -284,15 +332,6 @@
           <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gameposter.jpeg" alt="Play The Invisible Panchos Game" class="game-poster-img">
         </a>
       </div>
-    </div>
-    
-    <div class="filter-bar">
-      <button class="filter-btn active" data-filter="all">ALL</button>
-      <button class="filter-btn" data-filter="apparel">APPAREL</button>
-      <button class="filter-btn" data-filter="art">ART</button>
-      <button class="filter-btn" data-filter="music">MUSIC</button>
-      <button class="filter-btn" data-filter="services">SERVICES</button>
-      <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
     </div>
 
     <div id="store-grid">Loading the Bodega...</div>

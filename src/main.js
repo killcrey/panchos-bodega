@@ -215,21 +215,25 @@ async function loadBodega() {
 // INJECT 3: Category Filter Bar Logic (local DOM filtering, no re-fetch)
 function setupCategoryFilters() {
   const filterButtons = document.querySelectorAll('.filter-btn')
+  const logoLink = document.getElementById('logo-home-filter')
+
+  function applyFilter(filter) {
+    filterButtons.forEach(b => b.classList.toggle('active', b.getAttribute('data-filter') === filter))
+
+    const cards = document.querySelectorAll('.product-card')
+    cards.forEach(card => {
+      const matches = filter === 'all' || card.getAttribute('data-category') === filter
+      card.style.display = matches ? '' : 'none'
+    })
+  }
 
   filterButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      filterButtons.forEach(b => b.classList.remove('active'))
-      btn.classList.add('active')
-
-      const filter = btn.getAttribute('data-filter')
-      const cards = document.querySelectorAll('.product-card')
-
-      cards.forEach(card => {
-        const matches = filter === 'all' || card.getAttribute('data-category') === filter
-        card.style.display = matches ? '' : 'none'
-      })
-    })
+    btn.addEventListener('click', () => applyFilter(btn.getAttribute('data-filter')))
   })
+
+  if (logoLink) {
+    logoLink.addEventListener('click', () => applyFilter('all'))
+  }
 }
 
 loadBodega()
