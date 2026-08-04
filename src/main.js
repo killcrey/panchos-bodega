@@ -104,7 +104,8 @@ async function loadBodega() {
     
     const card = document.createElement('div')
     card.className = 'product-card'
-    
+    card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
+
     // Consolidate images into an array for the lightbox
     const availableImages = []
     if (product.cover_art_url) availableImages.push(product.cover_art_url)
@@ -206,6 +207,28 @@ async function loadBodega() {
     })
 
     storeGrid.appendChild(card)
+  })
+
+  setupCategoryFilters()
+}
+
+// INJECT 3: Category Filter Bar Logic (local DOM filtering, no re-fetch)
+function setupCategoryFilters() {
+  const filterButtons = document.querySelectorAll('.filter-btn')
+
+  filterButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterButtons.forEach(b => b.classList.remove('active'))
+      btn.classList.add('active')
+
+      const filter = btn.getAttribute('data-filter')
+      const cards = document.querySelectorAll('.product-card')
+
+      cards.forEach(card => {
+        const matches = filter === 'all' || card.getAttribute('data-category') === filter
+        card.style.display = matches ? '' : 'none'
+      })
+    })
   })
 }
 

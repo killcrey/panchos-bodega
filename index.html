@@ -77,6 +77,47 @@
         box-shadow: 0 0 15px rgba(0, 255, 204, 0.6);
       }
       
+      /* CATEGORY FILTER BAR */
+      .filter-bar {
+        display: flex;
+        gap: 0.75rem;
+        overflow-x: auto;
+        margin-bottom: 1.5rem;
+        padding-bottom: 0.5rem;
+        -webkit-overflow-scrolling: touch;
+      }
+      .filter-bar::-webkit-scrollbar { height: 4px; }
+      .filter-bar::-webkit-scrollbar-track { background: transparent; }
+      .filter-bar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
+
+      .filter-btn {
+        background: transparent;
+        color: #ccc;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-size: 0.7rem;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        cursor: pointer;
+        white-space: nowrap;
+        flex-shrink: 0;
+        font-family: inherit;
+        transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .filter-btn:hover {
+        border-color: #00ffcc;
+        color: #00ffcc;
+      }
+
+      .filter-btn.active {
+        background: #00ffcc;
+        color: #111;
+        border-color: #00ffcc;
+      }
+
       /* MAIN CONTENT GRID */
       #store-grid { 
         display: grid; 
@@ -245,6 +286,15 @@
       </div>
     </div>
     
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">ALL</button>
+      <button class="filter-btn" data-filter="apparel">APPAREL</button>
+      <button class="filter-btn" data-filter="art">ART</button>
+      <button class="filter-btn" data-filter="music">MUSIC</button>
+      <button class="filter-btn" data-filter="services">SERVICES</button>
+      <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
+    </div>
+
     <div id="store-grid">Loading the Bodega...</div>
 
     <footer class="bodega-footer">
