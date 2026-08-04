@@ -298,16 +298,36 @@
           /* Left-align so the ALL button is visible immediately instead of being
              centered off-screen when the buttons overflow on narrow widths */
           justify-content: flex-start;
+          gap: 0.4rem;
+          padding: 0.5rem 0.75rem;
+        }
+        .filter-btn {
+          /* Shrink the buttons so more of the menu fits before it needs to scroll */
+          padding: 0.4rem 0.6rem;
+          font-size: 0.6rem;
+          letter-spacing: 0.5px;
         }
         #store-grid {
-          grid-template-columns: 1fr; 
+          grid-template-columns: 1fr;
         }
         .product-card {
-          max-width: 100%; 
+          max-width: 100%;
         }
         .footer-links {
           flex-direction: column;
           gap: 1.2rem;
+        }
+      }
+
+      /* Extra-small phones: shrink the filter bar a bit further */
+      @media (max-width: 420px) {
+        .filter-bar {
+          gap: 0.3rem;
+          padding: 0.45rem 0.6rem;
+        }
+        .filter-btn {
+          padding: 0.35rem 0.5rem;
+          font-size: 0.55rem;
         }
       }
     </style>
