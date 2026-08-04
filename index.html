@@ -93,15 +93,19 @@
         box-shadow: 0 0 15px rgba(0, 255, 204, 0.6);
       }
       
-      /* CATEGORY FILTER BAR (palette pulled from bodegasign.png: gold, brick red, brown) */
+      /* CATEGORY FILTER BAR (palette pulled from bodegasign.png: gold, brick red, brown)
+         Sits as its own full-width strip above the header so it never competes for
+         space with (or gets clipped between) the logo and the gohome/poster images. */
       .filter-bar {
         display: flex;
         justify-content: center;
+        align-items: center;
         gap: 0.6rem;
         overflow-x: auto;
-        flex: 1 1 320px;
-        min-width: 0;
-        padding: 0.25rem 0.25rem 0.5rem 0.25rem;
+        width: 100%;
+        margin-bottom: 1.5rem;
+        padding: 0.6rem 0.25rem;
+        border-bottom: 1px solid rgba(232, 185, 35, 0.2);
         -webkit-overflow-scrolling: touch;
       }
       .filter-bar::-webkit-scrollbar { height: 4px; }
@@ -310,19 +314,19 @@
     </style>
   </head>
   <body>
+    <div class="filter-bar">
+      <button class="filter-btn active" data-filter="all">ALL</button>
+      <button class="filter-btn" data-filter="apparel">APPAREL</button>
+      <button class="filter-btn" data-filter="art">ART</button>
+      <button class="filter-btn" data-filter="music">MUSIC</button>
+      <button class="filter-btn" data-filter="services">SERVICES</button>
+      <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
+    </div>
+
     <div class="header-container">
       <button type="button" id="logo-home-filter" class="logo-btn" aria-label="Show all products">
         <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="bodega-logo">
       </button>
-
-      <div class="filter-bar">
-        <button class="filter-btn active" data-filter="all">ALL</button>
-        <button class="filter-btn" data-filter="apparel">APPAREL</button>
-        <button class="filter-btn" data-filter="art">ART</button>
-        <button class="filter-btn" data-filter="music">MUSIC</button>
-        <button class="filter-btn" data-filter="services">SERVICES</button>
-        <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
-      </div>
 
       <div class="header-right-col">
         <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
