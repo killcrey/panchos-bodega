@@ -237,7 +237,79 @@
         border: 1px solid rgba(255, 255, 255, 0.1); 
       }
 
-      audio { width: 100%; height: 35px; margin-bottom: 1rem; border-radius: 4px; opacity: 0.9; }
+      /* GLOBAL AUDIO PLAYER (docked bottom bar, replaces per-card inline players) */
+      #global-audio-player {
+        display: none;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: rgba(5, 5, 5, 0.95);
+        border-top: 1px solid #333;
+        z-index: 9999;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.6rem 1.5rem;
+        box-sizing: border-box;
+      }
+
+      #gap-title {
+        color: #fff;
+        font-size: 0.7rem;
+        flex: 1 1 160px;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #gap-toggle {
+        flex-shrink: 0;
+        width: 2.2rem;
+        height: 2.2rem;
+        border-radius: 50%;
+        background: none;
+        border: 1px solid #00ffcc;
+        color: #00ffcc;
+        font-weight: bold;
+        font-size: 0.8rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.2s ease;
+      }
+
+      #gap-toggle:hover {
+        background: rgba(0, 255, 204, 0.15);
+      }
+
+      #gap-seek {
+        flex: 3 1 200px;
+        min-width: 0;
+        accent-color: #00ffcc;
+        cursor: pointer;
+      }
+
+      #gap-close {
+        flex-shrink: 0;
+        background: none;
+        border: none;
+        color: #999;
+        font-size: 1rem;
+        cursor: pointer;
+        padding: 0.25rem;
+        transition: color 0.2s ease;
+      }
+
+      #gap-close:hover {
+        color: #fff;
+      }
+
+      /* Reserve space at the bottom of the page so the fixed player never covers content */
+      body.audio-player-active {
+        padding-bottom: 5.5rem;
+      }
 
       /* FOOTER STYLING */
       .bodega-footer {
@@ -307,6 +379,13 @@
           font-size: 0.6rem;
           letter-spacing: 0.5px;
         }
+        #global-audio-player {
+          gap: 0.6rem;
+          padding: 0.5rem 0.9rem;
+        }
+        #gap-title {
+          font-size: 0.6rem;
+        }
         #store-grid {
           grid-template-columns: 1fr;
         }
@@ -368,6 +447,13 @@
       </div>
       <p>&copy; 2026 The Invisible Panchos. All Rights Reserved. Stay Invisible.</p>
     </footer>
+
+    <div id="global-audio-player">
+      <span id="gap-title"></span>
+      <button type="button" id="gap-toggle" aria-label="Play or pause">▶</button>
+      <input type="range" id="gap-seek" min="0" max="100" value="0" step="0.1">
+      <button type="button" id="gap-close" aria-label="Close player">✖</button>
+    </div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

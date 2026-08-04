@@ -5,18 +5,94 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// INJECT 0: Global Audio Controller (Anti-Bleed Logic)
-// This listens for any play event and pauses all other audio elements.
-document.addEventListener('play', function(e) {
-  if (e.target.tagName === 'AUDIO') {
-    const allAudios = document.querySelectorAll('audio');
-    allAudios.forEach(audio => {
-      if (audio !== e.target) {
-        audio.pause();
-      }
-    });
+// GLOBAL AUDIO ENGINE
+// A single shared Audio() instance drives every "Play" trigger on the page,
+// so only one preview can ever be playing at once.
+const globalAudio = new Audio()
+let activePlayTrigger = null
+
+function setTriggerPlayingState(el, isPlaying) {
+  if (!el) return
+  const icon = el.querySelector('.play-icon')
+  if (icon) icon.textContent = isPlaying ? '❚❚' : '▶'
+
+  if (el.classList.contains('track-item')) {
+    el.style.background = isPlaying ? '#333' : '#222'
+    el.style.color = isPlaying ? '#fff' : '#ccc'
+  } else if (el.classList.contains('card-play-btn')) {
+    el.style.background = isPlaying ? 'rgba(0, 255, 204, 0.3)' : 'rgba(0, 255, 204, 0.1)'
   }
-}, true); // We use 'true' to capture the event as it trickles down the DOM
+}
+
+function playGlobalTrack(url, title, triggerEl) {
+  if (activePlayTrigger && activePlayTrigger !== triggerEl) {
+    setTriggerPlayingState(activePlayTrigger, false)
+  }
+  activePlayTrigger = triggerEl
+
+  const player = document.getElementById('global-audio-player')
+  document.getElementById('gap-title').textContent = title
+  player.style.display = 'flex'
+  document.body.classList.add('audio-player-active')
+
+  globalAudio.src = url
+  globalAudio.currentTime = 0
+  globalAudio.play()
+}
+
+function initGlobalAudioPlayer() {
+  const player = document.getElementById('global-audio-player')
+  const toggleBtn = document.getElementById('gap-toggle')
+  const seekBar = document.getElementById('gap-seek')
+  const closeBtn = document.getElementById('gap-close')
+
+  toggleBtn.addEventListener('click', () => {
+    if (globalAudio.paused) {
+      globalAudio.play()
+    } else {
+      globalAudio.pause()
+    }
+  })
+
+  globalAudio.addEventListener('play', () => {
+    toggleBtn.textContent = '❚❚'
+    setTriggerPlayingState(activePlayTrigger, true)
+  })
+
+  globalAudio.addEventListener('pause', () => {
+    toggleBtn.textContent = '▶'
+    setTriggerPlayingState(activePlayTrigger, false)
+  })
+
+  globalAudio.addEventListener('timeupdate', () => {
+    if (!isNaN(globalAudio.duration) && globalAudio.duration > 0) {
+      seekBar.value = (globalAudio.currentTime / globalAudio.duration) * 100
+    }
+  })
+
+  globalAudio.addEventListener('ended', () => {
+    seekBar.value = 0
+    setTriggerPlayingState(activePlayTrigger, false)
+  })
+
+  seekBar.addEventListener('input', () => {
+    if (!isNaN(globalAudio.duration) && globalAudio.duration > 0) {
+      globalAudio.currentTime = (seekBar.value / 100) * globalAudio.duration
+    }
+  })
+
+  closeBtn.addEventListener('click', () => {
+    globalAudio.pause()
+    globalAudio.currentTime = 0
+    seekBar.value = 0
+    player.style.display = 'none'
+    document.body.classList.remove('audio-player-active')
+    setTriggerPlayingState(activePlayTrigger, false)
+    activePlayTrigger = null
+  })
+}
+
+initGlobalAudioPlayer()
 
 async function loadBodega() {
   const storeGrid = document.getElementById('store-grid')
@@ -129,21 +205,19 @@ async function loadBodega() {
       : ''
 
     let audioHTML = ''
-    let isAlbum = false
 
     if (product.tracklist_snippets && product.tracklist_snippets.length > 0) {
-      isAlbum = true
       audioHTML = `
         <div class="album-player-container" style="background: #111; padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem; border: 1px solid #333;">
-          <audio class="card-master-audio" controls controlsList="nodownload" style="width: 100%; height: 25px; margin-bottom: 0.5rem; border-radius: 4px;">
-            <source src="${product.tracklist_snippets[0].url}" type="audio/mpeg">
-          </audio>
+          <button class="card-play-btn" data-url="${product.tracklist_snippets[0].url}" data-title="${product.title} — ${product.tracklist_snippets[0].title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+            <span class="play-icon">▶</span> Play Preview
+          </button>
           <p style="font-size: 0.5rem; color: #888; margin: 0 0 0.4rem 0; text-transform: uppercase; letter-spacing: 1px;">Preview Tracklist</p>
           <div class="tracklist-slider" style="max-height: 80px; overflow-y: auto; padding-right: 5px;">
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${product.tracklist_snippets.map((track, index) => `
-                <li class="track-item" data-url="${track.url}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
-                  <span style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${track.title}
+              ${product.tracklist_snippets.map((track) => `
+                <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
+                  <span class="play-icon" style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${track.title}
                 </li>
               `).join('')}
             </ul>
@@ -151,7 +225,11 @@ async function loadBodega() {
         </div>
       `
     } else if (product.audio_preview_url) {
-      audioHTML = `<audio controls controlsList="nodownload" style="width: 100%; height: 30px; margin-bottom: 1rem;"><source src="${product.audio_preview_url}" type="audio/mpeg"></audio>`
+      audioHTML = `
+        <button class="card-play-btn" data-url="${product.audio_preview_url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 1rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+          <span class="play-icon">▶</span> Play Preview
+        </button>
+      `
     }
 
     card.innerHTML = `
@@ -176,25 +254,13 @@ async function loadBodega() {
       })
     })
 
-    // Wire up Album Logic
-    if (isAlbum) {
-      const masterAudio = card.querySelector('.card-master-audio')
-      const trackItems = card.querySelectorAll('.track-item')
-
-      trackItems.forEach(item => {
-        item.addEventListener('click', () => {
-          masterAudio.src = item.getAttribute('data-url')
-          masterAudio.play()
-
-          trackItems.forEach(t => {
-            t.style.background = '#222'
-            t.style.color = '#ccc'
-          })
-          item.style.background = '#333'
-          item.style.color = '#fff'
-        })
+    // Wire up Play triggers (routed through the global audio engine)
+    const playTriggers = card.querySelectorAll('.card-play-btn, .track-item')
+    playTriggers.forEach(trigger => {
+      trigger.addEventListener('click', () => {
+        playGlobalTrack(trigger.getAttribute('data-url'), trigger.getAttribute('data-title'), trigger)
       })
-    }
+    })
 
     // Wire up Stripe Link
     const buyButton = card.querySelector('.buy-btn')
