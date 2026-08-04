@@ -121,6 +121,8 @@
       .filter-bar::-webkit-scrollbar-thumb { background: rgba(184, 41, 31, 0.5); border-radius: 4px; }
 
       .filter-btn {
+        display: inline-flex;
+        align-items: center;
         background: rgba(0, 0, 0, 0.35);
         color: #e8b923;
         border: 1px solid rgba(184, 41, 31, 0.6);
@@ -130,6 +132,7 @@
         font-weight: bold;
         letter-spacing: 1px;
         text-transform: uppercase;
+        text-decoration: none;
         cursor: pointer;
         white-space: nowrap;
         flex-shrink: 0;
@@ -317,6 +320,7 @@
       <button class="filter-btn" data-filter="music">MUSIC</button>
       <button class="filter-btn" data-filter="services">SERVICES</button>
       <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
+      <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="filter-btn">HOME</a>
     </div>
 
     <div class="header-container">

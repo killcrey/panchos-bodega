@@ -214,7 +214,7 @@ async function loadBodega() {
 
 // INJECT 3: Category Filter Bar Logic (local DOM filtering, no re-fetch)
 function setupCategoryFilters() {
-  const filterButtons = document.querySelectorAll('.filter-btn')
+  const filterButtons = document.querySelectorAll('.filter-btn[data-filter]')
   const logoLink = document.getElementById('logo-home-filter')
 
   function applyFilter(filter) {
