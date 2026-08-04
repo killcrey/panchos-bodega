@@ -16,7 +16,7 @@
         background-color: #050505; 
         color: #fff; 
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; 
-        padding: 0.5rem 2rem 2rem 2rem; 
+        padding: 4.5rem 2rem 2rem 2rem; /* top padding reserves room for the fixed filter bar */
         margin: 0;
         min-height: 100vh;
         display: flex;
@@ -94,18 +94,26 @@
       }
       
       /* CATEGORY FILTER BAR (palette pulled from bodegasign.png: gold, brick red, brown)
-         Sits as its own full-width strip above the header so it never competes for
-         space with (or gets clipped between) the logo and the gohome/poster images. */
+         Pinned to the top of the viewport at all screen sizes so it's always visible
+         while scrolling, and never competes for space with the logo/header images. */
       .filter-bar {
         display: flex;
         justify-content: center;
         align-items: center;
         gap: 0.6rem;
         overflow-x: auto;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
         width: 100%;
-        margin-bottom: 1.5rem;
-        padding: 0.6rem 0.25rem;
-        border-bottom: 1px solid rgba(232, 185, 35, 0.2);
+        margin: 0;
+        padding: 0.6rem 1rem;
+        background: rgba(5, 5, 5, 0.92);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border-bottom: 1px solid rgba(232, 185, 35, 0.25);
         -webkit-overflow-scrolling: touch;
       }
       .filter-bar::-webkit-scrollbar { height: 4px; }
@@ -265,7 +273,7 @@
       @media (max-width: 768px) {
         body {
           /* Extra top padding reserves room for the fixed filter bar */
-          padding: 4rem 1rem 1.5rem 1rem;
+          padding: 4.5rem 1rem 1.5rem 1rem;
         }
         .header-container {
           /* Allow wrapping if the 3 elements get too tight on narrow screens */
@@ -284,21 +292,9 @@
           flex-direction: row;
         }
         .filter-bar {
-          /* Pin to the very top of the viewport so it stays visible through the whole scroll
-             (sticky won't work here since its natural parent, .header-container, is too short
-             to keep it in view once the page scrolls past the header) */
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          z-index: 100;
+          /* Left-align so the ALL button is visible immediately instead of being
+             centered off-screen when the buttons overflow on narrow widths */
           justify-content: flex-start;
-          margin: 0;
-          padding: 0.6rem 1rem;
-          background: rgba(5, 5, 5, 0.92);
-          backdrop-filter: blur(6px);
-          -webkit-backdrop-filter: blur(6px);
-          border-bottom: 1px solid rgba(232, 185, 35, 0.25);
         }
         #store-grid {
           grid-template-columns: 1fr; 
