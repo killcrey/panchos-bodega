@@ -409,6 +409,97 @@
           font-size: 0.55rem;
         }
       }
+
+      /* ADMIN PORTAL (hidden unless ?mode=admin) */
+      #admin-portal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        z-index: 10000;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        box-sizing: border-box;
+      }
+
+      #login-view, #dashboard-view {
+        width: 100%;
+        max-width: 360px;
+      }
+
+      .admin-title {
+        font-size: 0.7rem;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: #e8b923;
+        text-align: center;
+        margin: 0 0 2rem 0;
+        border-bottom: 2px solid #e8b923;
+        padding-bottom: 1rem;
+      }
+
+      .admin-input {
+        width: 100%;
+        background: #000;
+        border: 2px solid #fff;
+        border-radius: 0;
+        color: #fff;
+        padding: 0.9rem 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.8rem;
+        letter-spacing: 1px;
+        box-sizing: border-box;
+        font-family: inherit;
+      }
+
+      .admin-input::placeholder {
+        color: #666;
+        text-transform: uppercase;
+        font-size: 0.7rem;
+        letter-spacing: 1px;
+      }
+
+      .admin-input:focus {
+        outline: none;
+        border-color: #00ffcc;
+      }
+
+      .admin-btn {
+        width: 100%;
+        padding: 0.9rem 1rem;
+        background: #fff;
+        color: #000;
+        border: 2px solid #fff;
+        border-radius: 0;
+        font-weight: bold;
+        font-size: 0.75rem;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .admin-btn:hover {
+        background: #00ffcc;
+        border-color: #00ffcc;
+      }
+
+      .admin-btn.admin-btn-danger {
+        background: transparent;
+        color: #fff;
+        border-color: #b8291f;
+        margin-top: 1.5rem;
+      }
+
+      .admin-btn.admin-btn-danger:hover {
+        background: #b8291f;
+        border-color: #b8291f;
+      }
     </style>
   </head>
   <body>
@@ -453,6 +544,20 @@
       <button type="button" id="gap-toggle" aria-label="Play or pause">▶</button>
       <input type="range" id="gap-seek" min="0" max="100" value="0" step="0.1">
       <button type="button" id="gap-close" aria-label="Close player">✖</button>
+    </div>
+
+    <div id="admin-portal">
+      <div id="login-view">
+        <p class="admin-title">Admin Access</p>
+        <input type="email" id="admin-email" class="admin-input" placeholder="Email" autocomplete="username">
+        <input type="password" id="admin-password" class="admin-input" placeholder="Password" autocomplete="current-password">
+        <button type="button" id="admin-login-btn" class="admin-btn">Login</button>
+      </div>
+      <div id="dashboard-view" style="display: none;">
+        <p class="admin-title">Dashboard</p>
+        <div id="upload-form-container"></div>
+        <button type="button" id="admin-logout-btn" class="admin-btn admin-btn-danger">Logout</button>
+      </div>
     </div>
 
     <script type="module" src="/src/main.js"></script>

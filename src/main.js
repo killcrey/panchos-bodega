@@ -5,6 +5,52 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// ADMIN PORTAL
+function initAdminPortal() {
+  const params = new URLSearchParams(window.location.search)
+  const isAdminMode = params.get('mode') === 'admin'
+
+  const adminPortal = document.getElementById('admin-portal')
+  const headerContainer = document.querySelector('.header-container')
+  const storeGrid = document.getElementById('store-grid')
+  const loginView = document.getElementById('login-view')
+  const dashboardView = document.getElementById('dashboard-view')
+  const loginBtn = document.getElementById('admin-login-btn')
+  const logoutBtn = document.getElementById('admin-logout-btn')
+  const emailInput = document.getElementById('admin-email')
+  const passwordInput = document.getElementById('admin-password')
+
+  if (isAdminMode) {
+    headerContainer.style.display = 'none'
+    storeGrid.style.display = 'none'
+    adminPortal.style.display = 'flex'
+  }
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    if (session) {
+      loginView.style.display = 'none'
+      dashboardView.style.display = 'block'
+    } else {
+      loginView.style.display = 'block'
+      dashboardView.style.display = 'none'
+    }
+  })
+
+  loginBtn.addEventListener('click', async () => {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: emailInput.value,
+      password: passwordInput.value
+    })
+    if (error) alert(error.message)
+  })
+
+  logoutBtn.addEventListener('click', async () => {
+    await supabase.auth.signOut()
+  })
+
+  return isAdminMode
+}
+
 // GLOBAL AUDIO ENGINE
 // A single shared Audio() instance drives every "Play" trigger on the page,
 // so only one preview can ever be playing at once.
@@ -302,4 +348,7 @@ function setupCategoryFilters() {
   }
 }
 
-loadBodega()
+const isAdminMode = initAdminPortal()
+if (!isAdminMode) {
+  loadBodega()
+}
