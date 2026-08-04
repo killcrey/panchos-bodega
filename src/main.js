@@ -48,6 +48,59 @@ function initAdminPortal() {
     await supabase.auth.signOut()
   })
 
+  const uploadForm = document.getElementById('upload-form')
+  const uploadStatus = document.getElementById('upload-status')
+  const uploadSubmitBtn = document.getElementById('upload-submit-btn')
+
+  uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    uploadSubmitBtn.disabled = true
+    uploadStatus.textContent = 'Deploying...'
+    uploadStatus.style.color = '#e8b923'
+
+    try {
+      const title = document.getElementById('upload-title').value
+      const price = parseFloat(document.getElementById('upload-price').value)
+      const description = document.getElementById('upload-description').value
+      const category = document.getElementById('upload-category').value
+      const imageFile = document.getElementById('upload-image').files[0]
+      const audioFile = document.getElementById('upload-audio').files[0]
+
+      const imagePath = `${Date.now()}-${imageFile.name}`
+      const { error: imageError } = await supabase.storage.from('bodega-images').upload(imagePath, imageFile)
+      if (imageError) throw imageError
+      const { data: imageUrlData } = supabase.storage.from('bodega-images').getPublicUrl(imagePath)
+
+      let audioUrl = null
+      if (audioFile) {
+        const audioPath = `${Date.now()}-${audioFile.name}`
+        const { error: audioError } = await supabase.storage.from('audio-vault').upload(audioPath, audioFile)
+        if (audioError) throw audioError
+        const { data: audioUrlData } = supabase.storage.from('audio-vault').getPublicUrl(audioPath)
+        audioUrl = audioUrlData.publicUrl
+      }
+
+      const { error: insertError } = await supabase.from('products').insert({
+        title,
+        price_cents: Math.round(price * 100),
+        description,
+        category,
+        cover_art_url: imageUrlData.publicUrl,
+        audio_preview_url: audioUrl
+      })
+      if (insertError) throw insertError
+
+      uploadStatus.textContent = 'Product Deployed Successfully'
+      uploadStatus.style.color = '#00ffcc'
+      uploadForm.reset()
+    } catch (err) {
+      uploadStatus.textContent = err.message || 'Something went wrong.'
+      uploadStatus.style.color = '#ff4d4d'
+    } finally {
+      uploadSubmitBtn.disabled = false
+    }
+  })
+
   return isAdminMode
 }
 

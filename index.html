@@ -500,6 +500,46 @@
         background: #b8291f;
         border-color: #b8291f;
       }
+
+      #upload-form-container {
+        width: 100%;
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+
+      textarea.admin-input {
+        resize: vertical;
+        min-height: 90px;
+      }
+
+      select.admin-input {
+        appearance: none;
+        -webkit-appearance: none;
+        cursor: pointer;
+      }
+
+      .admin-file-label {
+        display: block;
+        font-size: 0.6rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #888;
+        margin-bottom: 0.4rem;
+      }
+
+      input[type="file"].admin-input {
+        padding: 0.6rem 1rem;
+        color: #ccc;
+        font-size: 0.65rem;
+      }
+
+      #upload-status {
+        margin-top: 1rem;
+        font-size: 0.7rem;
+        letter-spacing: 0.5px;
+        text-align: center;
+        min-height: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -555,7 +595,27 @@
       </div>
       <div id="dashboard-view" style="display: none;">
         <p class="admin-title">Dashboard</p>
-        <div id="upload-form-container"></div>
+        <div id="upload-form-container">
+          <form id="upload-form">
+            <input type="text" id="upload-title" class="admin-input" placeholder="Title" required>
+            <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
+            <textarea id="upload-description" class="admin-input" placeholder="Description" required></textarea>
+            <select id="upload-category" class="admin-input" required>
+              <option value="" disabled selected>Select Category</option>
+              <option value="apparel">Apparel</option>
+              <option value="art">Art</option>
+              <option value="music">Music</option>
+              <option value="services">Services</option>
+              <option value="pancho picks">Pancho Picks</option>
+            </select>
+            <label class="admin-file-label" for="upload-image">Main Image</label>
+            <input type="file" id="upload-image" class="admin-input" accept="image/*" required>
+            <label class="admin-file-label" for="upload-audio">Audio Preview (optional)</label>
+            <input type="file" id="upload-audio" class="admin-input" accept="audio/*">
+            <button type="submit" id="upload-submit-btn" class="admin-btn">Deploy to Bodega</button>
+          </form>
+          <div id="upload-status"></div>
+        </div>
         <button type="button" id="admin-logout-btn" class="admin-btn admin-btn-danger">Logout</button>
       </div>
     </div>
