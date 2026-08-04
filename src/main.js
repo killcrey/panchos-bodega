@@ -275,8 +275,9 @@ async function loadBodega() {
   
   // BUILD CARDS
   products.forEach(product => {
+   try {
     const formattedPrice = (product.price_cents / 100).toFixed(2)
-    
+
     const card = document.createElement('div')
     card.className = 'product-card'
     card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
@@ -335,7 +336,7 @@ async function loadBodega() {
       ${galleryHTML}
       <h3 style="margin-top: 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>
       <p class="price" style="margin: 0.3rem 0; font-size: 0.65rem;">$${formattedPrice}</p>
-      <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin-bottom: 0.4rem;">${product.type.toUpperCase()}</p>
+      <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin-bottom: 0.4rem;">${(product.type || 'UNCATEGORIZED').toUpperCase()}</p>
       ${descriptionHTML}
       ${sizesHTML}
       ${audioHTML}
@@ -372,6 +373,9 @@ async function loadBodega() {
     })
 
     storeGrid.appendChild(card)
+   } catch (err) {
+     console.error('Skipping product due to render error:', product, err)
+   }
   })
 
   setupCategoryFilters()
