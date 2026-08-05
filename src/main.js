@@ -811,7 +811,7 @@ async function loadBodega() {
       ${galleryHTML}
       <h3 style="margin-top: 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>
       <p class="price" style="margin: 0.3rem 0; font-size: 0.65rem;">${formattedPrice}</p>
-      <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin-bottom: 0.4rem;">${(product.type || 'UNCATEGORIZED').toUpperCase()}</p>
+      <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin-bottom: 0.4rem;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
       ${descriptionHTML}
       ${sizesHTML}
       ${audioHTML}
