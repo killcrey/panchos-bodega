@@ -14,6 +14,45 @@ function extractStoragePath(url: string, bucket: string): string | null {
   return decodeURIComponent(url.slice(idx + marker.length))
 }
 
+async function sendDownloadEmail(email: string, title: string, downloadUrl: string) {
+  const resendKey = Deno.env.get('RESEND_API_KEY')
+  if (!resendKey) return
+
+  const html = `
+    <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+      <h2 style="letter-spacing: 1px;">Thanks for grabbing "${title}"!</h2>
+      <p>Here's your download link — it's good for the next 60 minutes:</p>
+      <p style="margin: 1.5rem 0;">
+        <a href="${downloadUrl}" style="display: inline-block; padding: 0.9rem 1.5rem; background: #000; color: #fff; text-decoration: none; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Download Now</a>
+      </p>
+      <p><strong>Windows / Android:</strong> Right-click (or tap and hold) the button above and choose "Save Link As" / "Download Link."</p>
+      <p><strong>Mac (Safari):</strong> Right-click the button and choose "Download Linked File."</p>
+      <p><strong>iPhone / iPad (Safari):</strong> Tap and hold the button, then choose "Download Linked File" — it saves to your Files app.</p>
+      <p><strong>Multiple files?</strong> This downloads as a single .ZIP file — unzip it to get everything inside.</p>
+      <p style="margin-top: 2rem; color: #666; font-size: 0.85rem;">— The Invisible Panchos</p>
+    </div>
+  `
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
+        to: [email],
+        subject: `Your download: ${title}`,
+        html
+      })
+    })
+  } catch (err) {
+    // A failed email should never block the buyer from getting their file.
+    console.error('Failed to send download email:', err)
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -37,7 +76,7 @@ serve(async (req) => {
 
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('price_cents, audio_preview_url, published')
+      .select('title, price_cents, audio_preview_url, published')
       .eq('id', productId)
       .single()
 
@@ -70,6 +109,8 @@ serve(async (req) => {
       .createSignedUrl(targetFilename, 3600, { download: downloadFilename })
 
     if (error) throw error
+
+    await sendDownloadEmail(email, product.title || 'your download', data.signedUrl)
 
     return new Response(
       JSON.stringify({ downloadUrl: data.signedUrl }),

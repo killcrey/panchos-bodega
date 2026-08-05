@@ -31,11 +31,18 @@ serve(async (req) => {
 
     // 2. Read the product details supplied by the admin form. `filePath` is the
     //    object's key in the audio-vault bucket (not the full public URL) — when
-    //    present, the buyer gets a real download after checkout.
-    const { title, priceCents, filePath } = await req.json()
+    //    present, the buyer gets a real download after checkout. `category` and
+    //    `sizes` drive apparel-specific checkout behavior (shipping + a size
+    //    picker) further down.
+    const { title, priceCents, filePath, category, sizes } = await req.json()
     if (!title || !priceCents || priceCents <= 0) {
       throw new Error('A product title and a positive price are required.')
     }
+
+    const isApparel = category === 'apparel'
+    const sizeOptions = isApparel && typeof sizes === 'string'
+      ? sizes.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : []
 
     // 3. Create the Stripe Product, Price, and a reusable Payment Link
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
@@ -62,6 +69,22 @@ serve(async (req) => {
           type: 'redirect',
           redirect: { url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}` }
         }
+      } : {}),
+      // Apparel is physical: collect a shipping address, and if the admin
+      // listed sizes, make the buyer pick one at checkout.
+      ...(isApparel ? { shipping_address_collection: { allowed_countries: ['US'] } } : {}),
+      ...(sizeOptions.length > 0 ? {
+        custom_fields: [{
+          key: 'size',
+          label: { type: 'custom', custom: 'Size' },
+          type: 'dropdown',
+          dropdown: {
+            options: sizeOptions.map((size: string, i: number) => ({
+              label: size.slice(0, 100),
+              value: `size_${i}_${size.toLowerCase().replace(/[^a-z0-9]/g, '_')}`.slice(0, 100)
+            }))
+          }
+        }]
       } : {})
     })
 

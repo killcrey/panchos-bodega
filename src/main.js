@@ -167,6 +167,10 @@ async function deleteProduct(product) {
   loadBodega()
 }
 
+function updateSizesVisibility(categoryValue, groupId) {
+  document.getElementById(groupId).style.display = categoryValue === 'apparel' ? 'block' : 'none'
+}
+
 function openEditModal(product) {
   editingProduct = product
   document.getElementById('edit-id').value = product.id
@@ -174,6 +178,8 @@ function openEditModal(product) {
   document.getElementById('edit-price').value = product.price_cents != null ? (product.price_cents / 100).toFixed(2) : ''
   document.getElementById('edit-description').value = product.description || ''
   document.getElementById('edit-category').value = product.category || ''
+  document.getElementById('edit-sizes').value = product.sizes || ''
+  updateSizesVisibility(product.category, 'edit-sizes-group')
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
 
@@ -279,9 +285,11 @@ async function describeFunctionError(err) {
   return err.message || 'Something went wrong.'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, existingFileUrl, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, existingFileUrl, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
+  const category = document.getElementById(categoryInputId).value
+  const sizes = category === 'apparel' ? document.getElementById(sizesInputId).value.trim() : ''
 
   if (!title) {
     statusEl.textContent = 'Enter a title before generating a link.'
@@ -319,7 +327,7 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
     }
 
     const { data, error } = await supabase.functions.invoke('create-stripe-link', {
-      body: { title, priceCents: Math.round(price * 100), filePath }
+      body: { title, priceCents: Math.round(price * 100), filePath, category, sizes }
     })
     if (error) throw error
 
@@ -386,11 +394,15 @@ function initAdminPortal() {
   const uploadStatus = document.getElementById('upload-status')
   const uploadSubmitBtn = document.getElementById('upload-submit-btn')
 
+  document.getElementById('upload-category').addEventListener('change', (e) => {
+    updateSizesVisibility(e.target.value, 'upload-sizes-group')
+  })
+
   const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', null, uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -404,6 +416,7 @@ function initAdminPortal() {
       const price = parseFloat(document.getElementById('upload-price').value)
       const description = document.getElementById('upload-description').value
       const category = document.getElementById('upload-category').value
+      const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
       const imageFile = document.getElementById('upload-image').files[0]
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
@@ -420,6 +433,7 @@ function initAdminPortal() {
         price_cents: Math.round(price * 100),
         description,
         category,
+        sizes,
         cover_art_url: imageUrlData.publicUrl,
         audio_preview_url: fileUrl,
         tracklist_snippets: tracklistSnippets,
@@ -447,11 +461,15 @@ function initAdminPortal() {
   const editSaveBtn = document.getElementById('edit-save-btn')
   const editCancelBtn = document.getElementById('edit-cancel-btn')
 
+  document.getElementById('edit-category').addEventListener('change', (e) => {
+    updateSizesVisibility(e.target.value, 'edit-sizes-group')
+  })
+
   const editGenerateStripeBtn = document.getElementById('edit-generate-stripe-btn')
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {
@@ -470,6 +488,7 @@ function initAdminPortal() {
       const price = parseFloat(document.getElementById('edit-price').value)
       const description = document.getElementById('edit-description').value
       const category = document.getElementById('edit-category').value
+      const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
       const newImageFile = document.getElementById('edit-image').files[0]
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
@@ -496,6 +515,7 @@ function initAdminPortal() {
         price_cents: Math.round(price * 100),
         description,
         category,
+        sizes,
         cover_art_url: imageUrl,
         audio_preview_url: fileUrl,
         tracklist_snippets: tracklistSnippets,

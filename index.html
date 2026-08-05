@@ -968,6 +968,10 @@
                   <option value="services">Services</option>
                   <option value="pancho picks">Pancho Picks</option>
                 </select>
+                <div id="upload-sizes-group" style="display: none;">
+                  <input type="text" id="upload-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
+                  <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
+                </div>
                 <label class="admin-file-label" for="upload-image">Main Image</label>
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" required>
                 <label class="admin-file-label" for="upload-file">Digital File(s) — audio, PDF, or image (optional; select multiple to bundle as a .zip)</label>
@@ -1012,6 +1016,10 @@
                 <option value="services">Services</option>
                 <option value="pancho picks">Pancho Picks</option>
               </select>
+              <div id="edit-sizes-group" style="display: none;">
+                <input type="text" id="edit-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
+                <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
+              </div>
               <label class="admin-file-label" for="edit-image">New Image (optional)</label>
               <input type="file" id="edit-image" class="admin-input" accept="image/*">
               <label class="admin-file-label" for="edit-file">New Digital File(s) — audio, PDF, or image (optional; select multiple to replace with a .zip bundle)</label>
