@@ -76,13 +76,15 @@ function initAdminPortal() {
   if (isAdminMode) {
     headerContainer.style.display = 'none'
     storeGrid.style.display = 'none'
+    document.querySelector('.bodega-footer').style.display = 'none'
+    document.body.style.overflow = 'hidden'
     adminPortal.style.display = 'flex'
   }
 
   supabase.auth.onAuthStateChange((_event, session) => {
     if (session) {
       loginView.style.display = 'none'
-      dashboardView.style.display = 'block'
+      dashboardView.style.display = 'flex'
       loadAdminInventory()
     } else {
       loginView.style.display = 'block'
