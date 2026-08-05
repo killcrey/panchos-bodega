@@ -667,6 +667,14 @@
         min-height: 0.8rem;
       }
 
+      .field-hint {
+        margin: 0.4rem 0 1rem 0;
+        font-size: 0.6rem;
+        letter-spacing: 0.5px;
+        color: #777;
+        line-height: 1.4;
+      }
+
       /* ADMIN INVENTORY LIST */
       #admin-inventory-list {
         flex: 1 1 auto;
@@ -809,6 +817,7 @@
         display: flex;
         flex-direction: column;
         min-height: 0;
+        overflow-y: auto;
       }
 
       #edit-product-form {
@@ -967,6 +976,7 @@
                   <input type="url" id="upload-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
                   <button type="button" id="upload-generate-stripe-btn" class="admin-btn admin-btn-small">Generate</button>
                 </div>
+                <p class="field-hint">Not necessary for free items — set price to $0 and the storefront offers a free download instead.</p>
                 <div id="upload-stripe-status" class="field-status"></div>
                 <label class="admin-checkbox-row">
                   <input type="checkbox" id="upload-published" checked>
@@ -1011,6 +1021,7 @@
                 <input type="url" id="edit-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
                 <button type="button" id="edit-generate-stripe-btn" class="admin-btn admin-btn-small">Generate</button>
               </div>
+              <p class="field-hint">Not necessary for free items — set price to $0 and the storefront offers a free download instead.</p>
               <div id="edit-stripe-status" class="field-status"></div>
               <label class="admin-checkbox-row">
                 <input type="checkbox" id="edit-published">
