@@ -197,6 +197,13 @@ function updateSizesVisibility(categoryValue, groupId) {
   document.getElementById(groupId).style.display = categoryValue === 'apparel' ? 'block' : 'none'
 }
 
+function parseShippingCents(inputId, category) {
+  if (category !== 'apparel') return null
+  const raw = document.getElementById(inputId).value.trim()
+  if (raw === '') return null
+  return Math.round(parseFloat(raw) * 100)
+}
+
 function openEditModal(product) {
   editingProduct = product
   document.getElementById('edit-id').value = product.id
@@ -205,7 +212,10 @@ function openEditModal(product) {
   document.getElementById('edit-description').value = product.description || ''
   document.getElementById('edit-category').value = product.category || ''
   document.getElementById('edit-sizes').value = product.sizes || ''
+  document.getElementById('edit-domestic-shipping').value = product.domestic_shipping_cents != null ? (product.domestic_shipping_cents / 100).toFixed(2) : ''
+  document.getElementById('edit-international-shipping').value = product.international_shipping_cents != null ? (product.international_shipping_cents / 100).toFixed(2) : ''
   updateSizesVisibility(product.category, 'edit-sizes-group')
+  updateSizesVisibility(product.category, 'edit-shipping-group')
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
 
@@ -317,11 +327,13 @@ async function describeFunctionError(err) {
   return err.message || 'Something went wrong.'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, existingFileUrl, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, domesticShippingInputId, internationalShippingInputId, existingFileUrl, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
   const category = document.getElementById(categoryInputId).value
   const sizes = category === 'apparel' ? document.getElementById(sizesInputId).value.trim() : ''
+  const domesticShippingCents = parseShippingCents(domesticShippingInputId, category)
+  const internationalShippingCents = parseShippingCents(internationalShippingInputId, category)
 
   if (!title) {
     statusEl.textContent = 'Enter a title before generating a link.'
@@ -359,7 +371,7 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
     }
 
     const { data, error } = await supabase.functions.invoke('create-stripe-link', {
-      body: { title, priceCents: Math.round(price * 100), filePath, category, sizes }
+      body: { title, priceCents: Math.round(price * 100), filePath, category, sizes, domesticShippingCents, internationalShippingCents }
     })
     if (error) throw error
 
@@ -428,13 +440,14 @@ function initAdminPortal() {
 
   document.getElementById('upload-category').addEventListener('change', (e) => {
     updateSizesVisibility(e.target.value, 'upload-sizes-group')
+    updateSizesVisibility(e.target.value, 'upload-shipping-group')
   })
 
   const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', null, uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-domestic-shipping', 'upload-international-shipping', null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -449,6 +462,8 @@ function initAdminPortal() {
       const description = document.getElementById('upload-description').value
       const category = document.getElementById('upload-category').value
       const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
+      const domesticShippingCents = parseShippingCents('upload-domestic-shipping', category)
+      const internationalShippingCents = parseShippingCents('upload-international-shipping', category)
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
 
@@ -462,6 +477,8 @@ function initAdminPortal() {
         description,
         category,
         sizes,
+        domestic_shipping_cents: domesticShippingCents,
+        international_shipping_cents: internationalShippingCents,
         cover_art_url: coverUrl,
         gallery_images: galleryImages,
         audio_preview_url: fileUrl,
@@ -492,13 +509,14 @@ function initAdminPortal() {
 
   document.getElementById('edit-category').addEventListener('change', (e) => {
     updateSizesVisibility(e.target.value, 'edit-sizes-group')
+    updateSizesVisibility(e.target.value, 'edit-shipping-group')
   })
 
   const editGenerateStripeBtn = document.getElementById('edit-generate-stripe-btn')
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-domestic-shipping', 'edit-international-shipping', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {
@@ -518,6 +536,8 @@ function initAdminPortal() {
       const description = document.getElementById('edit-description').value
       const category = document.getElementById('edit-category').value
       const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
+      const domesticShippingCents = parseShippingCents('edit-domestic-shipping', category)
+      const internationalShippingCents = parseShippingCents('edit-international-shipping', category)
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
 
@@ -549,6 +569,8 @@ function initAdminPortal() {
         description,
         category,
         sizes,
+        domestic_shipping_cents: domesticShippingCents,
+        international_shipping_cents: internationalShippingCents,
         cover_art_url: coverUrl,
         image_2_url: image2Url,
         image_3_url: image3Url,

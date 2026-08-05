@@ -1079,6 +1079,11 @@
                   <input type="text" id="upload-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                   <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
                 </div>
+                <div id="upload-shipping-group" style="display: none;">
+                  <input type="number" id="upload-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional)" step="0.01" min="0">
+                  <input type="number" id="upload-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional)" step="0.01" min="0">
+                  <p class="field-hint">Leave both blank for free shipping. Set International to also allow orders from outside the US — buyers pick the matching option at checkout.</p>
+                </div>
                 <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple required>
                 <label class="admin-file-label" for="upload-file">Digital File(s) — audio, PDF, or image (optional; select multiple to bundle as a .zip)</label>
@@ -1127,6 +1132,11 @@
               <div id="edit-sizes-group" style="display: none;">
                 <input type="text" id="edit-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                 <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
+              </div>
+              <div id="edit-shipping-group" style="display: none;">
+                <input type="number" id="edit-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional)" step="0.01" min="0">
+                <input type="number" id="edit-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional)" step="0.01" min="0">
+                <p class="field-hint">Leave both blank for free shipping. Set International to also allow orders from outside the US — buyers pick the matching option at checkout.</p>
               </div>
               <label class="admin-file-label" for="edit-image">New Product Photos (optional — select multiple to replace all photos, first is the main photo)</label>
               <span id="edit-image-current-info" class="field-status"></span>
