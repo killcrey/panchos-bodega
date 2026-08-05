@@ -34,11 +34,29 @@ async function loadAdminInventory() {
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
         <div class="inventory-item-meta">$${((product.price_cents || 0) / 100).toFixed(2)} — ${(product.category || 'uncategorized').toUpperCase()}</div>
       </div>
-      <button type="button" class="inventory-edit-btn">Edit</button>
+      <div class="inventory-item-actions">
+        <button type="button" class="inventory-edit-btn">Edit</button>
+        <button type="button" class="inventory-delete-btn">Delete</button>
+      </div>
     `
     item.querySelector('.inventory-edit-btn').addEventListener('click', () => openEditModal(product))
+    item.querySelector('.inventory-delete-btn').addEventListener('click', () => deleteProduct(product))
     listEl.appendChild(item)
   })
+}
+
+async function deleteProduct(product) {
+  const confirmed = window.confirm(`Delete "${product.title || 'this product'}"? This cannot be undone.`)
+  if (!confirmed) return
+
+  const { error } = await supabase.from('products').delete().eq('id', product.id)
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  loadAdminInventory()
+  loadBodega()
 }
 
 function openEditModal(product) {

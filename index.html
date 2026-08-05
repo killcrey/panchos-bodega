@@ -641,12 +641,16 @@
         margin-top: 0.2rem;
       }
 
-      .inventory-edit-btn {
+      .inventory-item-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-shrink: 0;
+      }
+
+      .inventory-edit-btn, .inventory-delete-btn {
         flex-shrink: 0;
         padding: 0.5rem 0.9rem;
         background: transparent;
-        color: #00ffcc;
-        border: 2px solid #00ffcc;
         border-radius: 0;
         font-weight: bold;
         font-size: 0.6rem;
@@ -657,9 +661,24 @@
         transition: background 0.15s ease, color 0.15s ease;
       }
 
+      .inventory-edit-btn {
+        color: #00ffcc;
+        border: 2px solid #00ffcc;
+      }
+
       .inventory-edit-btn:hover {
         background: #00ffcc;
         color: #000;
+      }
+
+      .inventory-delete-btn {
+        color: #ff4d4d;
+        border: 2px solid #b8291f;
+      }
+
+      .inventory-delete-btn:hover {
+        background: #b8291f;
+        color: #fff;
       }
 
       /* EDIT MODAL */
@@ -676,25 +695,53 @@
         z-index: 10001;
         align-items: center;
         justify-content: center;
-        padding: 2rem;
+        padding: 1.5rem;
         box-sizing: border-box;
-        overflow-y: auto;
       }
 
       .edit-modal-content {
         width: 100%;
         max-width: 360px;
+        max-height: 100%;
         background: #000;
         border: 2px solid #fff;
         padding: 1.5rem;
         box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+
+      #edit-product-form {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+
+      .edit-modal-fields {
+        overflow-y: auto;
+        min-height: 0;
+        flex: 1 1 auto;
+        padding-right: 0.5rem;
+      }
+
+      .edit-modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        flex-shrink: 0;
+        margin-top: 1rem;
+      }
+
+      .edit-modal-actions .admin-btn {
+        width: auto;
+        flex: 1;
       }
 
       #edit-cancel-btn {
         background: transparent;
         color: #fff;
         border-color: #666;
-        margin-top: 0.75rem;
       }
 
       #edit-cancel-btn:hover {
@@ -708,6 +755,7 @@
         letter-spacing: 0.5px;
         text-align: center;
         min-height: 1rem;
+        flex-shrink: 0;
       }
     </style>
   </head>
@@ -797,23 +845,27 @@
           <p class="admin-title">Edit Product</p>
           <form id="edit-product-form">
             <input type="hidden" id="edit-id">
-            <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
-            <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
-            <textarea id="edit-description" class="admin-input" placeholder="Description" required></textarea>
-            <select id="edit-category" class="admin-input" required>
-              <option value="" disabled>Select Category</option>
-              <option value="apparel">Apparel</option>
-              <option value="art">Art</option>
-              <option value="music">Music</option>
-              <option value="services">Services</option>
-              <option value="pancho picks">Pancho Picks</option>
-            </select>
-            <label class="admin-file-label" for="edit-image">New Image (optional)</label>
-            <input type="file" id="edit-image" class="admin-input" accept="image/*">
-            <label class="admin-file-label" for="edit-audio">New Audio Preview (optional)</label>
-            <input type="file" id="edit-audio" class="admin-input" accept="audio/*">
-            <button type="submit" id="edit-save-btn" class="admin-btn">Save Changes</button>
-            <button type="button" id="edit-cancel-btn" class="admin-btn">Cancel</button>
+            <div class="edit-modal-fields">
+              <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
+              <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
+              <textarea id="edit-description" class="admin-input" placeholder="Description" required></textarea>
+              <select id="edit-category" class="admin-input" required>
+                <option value="" disabled>Select Category</option>
+                <option value="apparel">Apparel</option>
+                <option value="art">Art</option>
+                <option value="music">Music</option>
+                <option value="services">Services</option>
+                <option value="pancho picks">Pancho Picks</option>
+              </select>
+              <label class="admin-file-label" for="edit-image">New Image (optional)</label>
+              <input type="file" id="edit-image" class="admin-input" accept="image/*">
+              <label class="admin-file-label" for="edit-audio">New Audio Preview (optional)</label>
+              <input type="file" id="edit-audio" class="admin-input" accept="audio/*">
+            </div>
+            <div class="edit-modal-actions">
+              <button type="button" id="edit-cancel-btn" class="admin-btn">Cancel</button>
+              <button type="submit" id="edit-save-btn" class="admin-btn">Save Changes</button>
+            </div>
           </form>
           <div id="edit-status"></div>
         </div>
