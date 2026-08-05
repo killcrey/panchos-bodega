@@ -7,6 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const SITE_URL = 'https://bodega.theinvisiblepanchos.com'
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -27,8 +29,10 @@ serve(async (req) => {
       throw new Error('You must be logged in as an admin to generate a checkout link.')
     }
 
-    // 2. Read the product details supplied by the admin form
-    const { title, priceCents } = await req.json()
+    // 2. Read the product details supplied by the admin form. `filePath` is the
+    //    object's key in the audio-vault bucket (not the full public URL) — when
+    //    present, the buyer gets a real download after checkout.
+    const { title, priceCents, filePath } = await req.json()
     if (!title || !priceCents || priceCents <= 0) {
       throw new Error('A product title and a positive price are required.')
     }
@@ -39,7 +43,10 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     })
 
-    const product = await stripe.products.create({ name: title })
+    const product = await stripe.products.create({
+      name: title,
+      ...(filePath ? { metadata: { file: filePath } } : {})
+    })
 
     const price = await stripe.prices.create({
       product: product.id,
@@ -49,6 +56,13 @@ serve(async (req) => {
 
     const paymentLink = await stripe.paymentLinks.create({
       line_items: [{ price: price.id, quantity: 1 }],
+      // Only digital products need to land on the download page after checkout.
+      ...(filePath ? {
+        after_completion: {
+          type: 'redirect',
+          redirect: { url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}` }
+        }
+      } : {})
     })
 
     return new Response(

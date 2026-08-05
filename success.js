@@ -34,12 +34,27 @@ async function secureTheBag() {
       <a href="${data.secureUrl}" class="btn" download>Download Audio Vault</a>
     `
   } catch (err) {
-    // 4. The bouncer rejected the receipt
+    // 4. Figure out what actually went wrong instead of always blaming the receipt
     console.error(err)
-    statusArea.innerHTML = `
-      <h2 class="error-text">VERIFICATION FAILED</h2>
-      <p>The bouncer rejected this receipt. It may be expired or invalid.</p>
-    `
+    let message = 'The bouncer rejected this receipt. It may be expired or invalid.'
+    try {
+      const body = await err.context.json()
+      if (body?.error) message = body.error
+    } catch (_parseErr) {
+      // Keep the generic fallback message above.
+    }
+
+    if (message.toLowerCase().includes('no digital file')) {
+      statusArea.innerHTML = `
+        <h2 style="color: #e8b923;">PAYMENT CONFIRMED</h2>
+        <p>Thanks for your purchase! This item doesn't have a digital download attached. Check your email receipt, or contact support if you were expecting a file.</p>
+      `
+    } else {
+      statusArea.innerHTML = `
+        <h2 class="error-text">VERIFICATION FAILED</h2>
+        <p>${message}</p>
+      `
+    }
   }
 }
 

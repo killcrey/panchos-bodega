@@ -108,7 +108,7 @@ function closeEditModal() {
   document.getElementById('edit-modal').style.display = 'none'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, audioInputId, existingAudioUrl, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
 
@@ -123,13 +123,29 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, status
   statusEl.style.color = '#e8b923'
 
   try {
+    // Attach whichever audio file is currently in play, so the buyer gets a
+    // real download after checkout instead of a dead end.
+    let filePath = null
+    const audioFile = document.getElementById(audioInputId).files[0]
+
+    if (audioFile) {
+      const audioPath = `${Date.now()}-${audioFile.name}`
+      const { error: audioError } = await supabase.storage.from('audio-vault').upload(audioPath, audioFile)
+      if (audioError) throw audioError
+      filePath = audioPath
+    } else if (existingAudioUrl) {
+      filePath = extractStoragePath(existingAudioUrl, 'audio-vault')
+    }
+
     const { data, error } = await supabase.functions.invoke('create-stripe-link', {
-      body: { title, priceCents: Math.round(price * 100) }
+      body: { title, priceCents: Math.round(price * 100), filePath }
     })
     if (error) throw error
 
     document.getElementById(urlInputId).value = data.url
-    statusEl.textContent = 'Stripe link generated.'
+    statusEl.textContent = filePath
+      ? 'Stripe link generated with download attached.'
+      : 'Stripe link generated (no digital file attached).'
     statusEl.style.color = '#00ffcc'
   } catch (err) {
     statusEl.textContent = err.message || 'Failed to generate Stripe link.'
@@ -193,7 +209,7 @@ function initAdminPortal() {
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-audio', null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -259,7 +275,7 @@ function initAdminPortal() {
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-audio', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {
