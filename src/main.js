@@ -45,6 +45,14 @@ async function loadAdminInventory() {
   })
 }
 
+function extractStoragePath(url, bucket) {
+  if (!url) return null
+  const marker = `/storage/v1/object/public/${bucket}/`
+  const idx = url.indexOf(marker)
+  if (idx === -1) return null
+  return decodeURIComponent(url.slice(idx + marker.length))
+}
+
 async function deleteProduct(product) {
   const confirmed = window.confirm(`Delete "${product.title || 'this product'}"? This cannot be undone.`)
   if (!confirmed) return
@@ -53,6 +61,22 @@ async function deleteProduct(product) {
   if (error) {
     alert(error.message)
     return
+  }
+
+  try {
+    const imagePaths = [product.cover_art_url, product.image_2_url, product.image_3_url]
+      .map(url => extractStoragePath(url, 'bodega-images'))
+      .filter(Boolean)
+    if (imagePaths.length > 0) {
+      await supabase.storage.from('bodega-images').remove(imagePaths)
+    }
+
+    const audioPath = extractStoragePath(product.audio_preview_url, 'audio-vault')
+    if (audioPath) {
+      await supabase.storage.from('audio-vault').remove([audioPath])
+    }
+  } catch (err) {
+    console.error('Failed to clean up storage files for deleted product:', err)
   }
 
   loadAdminInventory()
