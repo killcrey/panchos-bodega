@@ -6,6 +6,59 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // ADMIN PORTAL
+let editingProduct = null
+
+async function loadAdminInventory() {
+  const listEl = document.getElementById('admin-inventory-list')
+  if (!listEl) return
+
+  const { data: products, error } = await supabase.from('products').select('*')
+
+  if (error) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load inventory.</p>'
+    return
+  }
+
+  if (!products || products.length === 0) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No products yet.</p>'
+    return
+  }
+
+  listEl.innerHTML = ''
+
+  products.forEach(product => {
+    const item = document.createElement('div')
+    item.className = 'inventory-item'
+    item.innerHTML = `
+      <div class="inventory-item-info">
+        <div class="inventory-item-title">${product.title || 'Untitled'}</div>
+        <div class="inventory-item-meta">$${((product.price_cents || 0) / 100).toFixed(2)} — ${(product.category || 'uncategorized').toUpperCase()}</div>
+      </div>
+      <button type="button" class="inventory-edit-btn">Edit</button>
+    `
+    item.querySelector('.inventory-edit-btn').addEventListener('click', () => openEditModal(product))
+    listEl.appendChild(item)
+  })
+}
+
+function openEditModal(product) {
+  editingProduct = product
+  document.getElementById('edit-id').value = product.id
+  document.getElementById('edit-title').value = product.title || ''
+  document.getElementById('edit-price').value = product.price_cents != null ? (product.price_cents / 100).toFixed(2) : ''
+  document.getElementById('edit-description').value = product.description || ''
+  document.getElementById('edit-category').value = product.category || ''
+  document.getElementById('edit-image').value = ''
+  document.getElementById('edit-audio').value = ''
+  document.getElementById('edit-status').textContent = ''
+  document.getElementById('edit-modal').style.display = 'flex'
+}
+
+function closeEditModal() {
+  editingProduct = null
+  document.getElementById('edit-modal').style.display = 'none'
+}
+
 function initAdminPortal() {
   const params = new URLSearchParams(window.location.search)
   const isAdminMode = params.get('mode') === 'admin'
@@ -30,9 +83,11 @@ function initAdminPortal() {
     if (session) {
       loginView.style.display = 'none'
       dashboardView.style.display = 'block'
+      loadAdminInventory()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
+      closeEditModal()
     }
   })
 
@@ -93,11 +148,78 @@ function initAdminPortal() {
       uploadStatus.textContent = 'Product Deployed Successfully'
       uploadStatus.style.color = '#00ffcc'
       uploadForm.reset()
+      loadAdminInventory()
     } catch (err) {
       uploadStatus.textContent = err.message || 'Something went wrong.'
       uploadStatus.style.color = '#ff4d4d'
     } finally {
       uploadSubmitBtn.disabled = false
+    }
+  })
+
+  const editForm = document.getElementById('edit-product-form')
+  const editStatus = document.getElementById('edit-status')
+  const editSaveBtn = document.getElementById('edit-save-btn')
+  const editCancelBtn = document.getElementById('edit-cancel-btn')
+
+  editCancelBtn.addEventListener('click', () => {
+    closeEditModal()
+  })
+
+  editForm.addEventListener('submit', async (e) => {
+    e.preventDefault()
+    editSaveBtn.disabled = true
+    editStatus.textContent = 'Saving...'
+    editStatus.style.color = '#e8b923'
+
+    try {
+      const id = document.getElementById('edit-id').value
+      const title = document.getElementById('edit-title').value
+      const price = parseFloat(document.getElementById('edit-price').value)
+      const description = document.getElementById('edit-description').value
+      const category = document.getElementById('edit-category').value
+      const newImageFile = document.getElementById('edit-image').files[0]
+      const newAudioFile = document.getElementById('edit-audio').files[0]
+
+      let imageUrl = editingProduct ? editingProduct.cover_art_url : null
+      if (newImageFile) {
+        const imagePath = `${Date.now()}-${newImageFile.name}`
+        const { error: imageError } = await supabase.storage.from('bodega-images').upload(imagePath, newImageFile)
+        if (imageError) throw imageError
+        const { data: imageUrlData } = supabase.storage.from('bodega-images').getPublicUrl(imagePath)
+        imageUrl = imageUrlData.publicUrl
+      }
+
+      let audioUrl = editingProduct ? editingProduct.audio_preview_url : null
+      if (newAudioFile) {
+        const audioPath = `${Date.now()}-${newAudioFile.name}`
+        const { error: audioError } = await supabase.storage.from('audio-vault').upload(audioPath, newAudioFile)
+        if (audioError) throw audioError
+        const { data: audioUrlData } = supabase.storage.from('audio-vault').getPublicUrl(audioPath)
+        audioUrl = audioUrlData.publicUrl
+      }
+
+      const { error: updateError } = await supabase.from('products').update({
+        title,
+        price_cents: Math.round(price * 100),
+        description,
+        category,
+        cover_art_url: imageUrl,
+        audio_preview_url: audioUrl
+      }).eq('id', id)
+      if (updateError) throw updateError
+
+      closeEditModal()
+      uploadStatus.textContent = 'Product Updated Successfully'
+      uploadStatus.style.color = '#00ffcc'
+      loadAdminInventory()
+      loadBodega()
+    } catch (err) {
+      editStatus.textContent = err.message || 'Something went wrong.'
+      editStatus.style.color = '#ff4d4d'
+      alert(err.message || 'Something went wrong.')
+    } finally {
+      editSaveBtn.disabled = false
     }
   })
 

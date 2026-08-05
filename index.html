@@ -558,6 +558,113 @@
         text-align: center;
         min-height: 1rem;
       }
+
+      /* ADMIN INVENTORY LIST */
+      #admin-inventory-list {
+        width: 100%;
+        margin-top: 2rem;
+        border-top: 2px solid #fff;
+        padding-top: 1rem;
+      }
+
+      .inventory-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .inventory-item-info {
+        min-width: 0;
+        flex: 1;
+      }
+
+      .inventory-item-title {
+        font-size: 0.7rem;
+        color: #fff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .inventory-item-meta {
+        font-size: 0.6rem;
+        color: #888;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        margin-top: 0.2rem;
+      }
+
+      .inventory-edit-btn {
+        flex-shrink: 0;
+        padding: 0.5rem 0.9rem;
+        background: transparent;
+        color: #00ffcc;
+        border: 2px solid #00ffcc;
+        border-radius: 0;
+        font-weight: bold;
+        font-size: 0.6rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+
+      .inventory-edit-btn:hover {
+        background: #00ffcc;
+        color: #000;
+      }
+
+      /* EDIT MODAL */
+      #edit-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.92);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        z-index: 10001;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+
+      .edit-modal-content {
+        width: 100%;
+        max-width: 360px;
+        background: #000;
+        border: 2px solid #fff;
+        padding: 1.5rem;
+        box-sizing: border-box;
+      }
+
+      #edit-cancel-btn {
+        background: transparent;
+        color: #fff;
+        border-color: #666;
+        margin-top: 0.75rem;
+      }
+
+      #edit-cancel-btn:hover {
+        background: #333;
+        border-color: #666;
+      }
+
+      #edit-status {
+        margin-top: 1rem;
+        font-size: 0.7rem;
+        letter-spacing: 0.5px;
+        text-align: center;
+        min-height: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -635,7 +742,35 @@
           </form>
           <div id="upload-status"></div>
         </div>
+        <div id="admin-inventory-list"></div>
         <button type="button" id="admin-logout-btn" class="admin-btn admin-btn-danger">Logout</button>
+      </div>
+
+      <div id="edit-modal">
+        <div class="edit-modal-content">
+          <p class="admin-title">Edit Product</p>
+          <form id="edit-product-form">
+            <input type="hidden" id="edit-id">
+            <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
+            <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
+            <textarea id="edit-description" class="admin-input" placeholder="Description" required></textarea>
+            <select id="edit-category" class="admin-input" required>
+              <option value="" disabled>Select Category</option>
+              <option value="apparel">Apparel</option>
+              <option value="art">Art</option>
+              <option value="music">Music</option>
+              <option value="services">Services</option>
+              <option value="pancho picks">Pancho Picks</option>
+            </select>
+            <label class="admin-file-label" for="edit-image">New Image (optional)</label>
+            <input type="file" id="edit-image" class="admin-input" accept="image/*">
+            <label class="admin-file-label" for="edit-audio">New Audio Preview (optional)</label>
+            <input type="file" id="edit-audio" class="admin-input" accept="audio/*">
+            <button type="submit" id="edit-save-btn" class="admin-btn">Save Changes</button>
+            <button type="button" id="edit-cancel-btn" class="admin-btn">Cancel</button>
+          </form>
+          <div id="edit-status"></div>
+        </div>
       </div>
     </div>
 
