@@ -81,7 +81,7 @@ serve(async (req) => {
           dropdown: {
             options: sizeOptions.map((size: string, i: number) => ({
               label: size.slice(0, 100),
-              value: `size_${i}_${size.toLowerCase().replace(/[^a-z0-9]/g, '_')}`.slice(0, 100)
+              value: `size${i}${size.replace(/[^a-zA-Z0-9]/g, '')}`.slice(0, 100)
             }))
           }
         }]

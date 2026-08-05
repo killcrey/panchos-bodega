@@ -972,8 +972,8 @@
                   <input type="text" id="upload-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                   <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
                 </div>
-                <label class="admin-file-label" for="upload-image">Main Image</label>
-                <input type="file" id="upload-image" class="admin-input" accept="image/*" required>
+                <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
+                <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple required>
                 <label class="admin-file-label" for="upload-file">Digital File(s) — audio, PDF, or image (optional; select multiple to bundle as a .zip)</label>
                 <input type="file" id="upload-file" class="admin-input" accept="audio/*,application/pdf,image/*" multiple>
                 <div class="stripe-link-row">
@@ -1020,8 +1020,9 @@
                 <input type="text" id="edit-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                 <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
               </div>
-              <label class="admin-file-label" for="edit-image">New Image (optional)</label>
-              <input type="file" id="edit-image" class="admin-input" accept="image/*">
+              <label class="admin-file-label" for="edit-image">New Product Photos (optional — select multiple to replace all photos, first is the main photo)</label>
+              <span id="edit-image-current-info" class="field-status"></span>
+              <input type="file" id="edit-image" class="admin-input" accept="image/*" multiple>
               <label class="admin-file-label" for="edit-file">New Digital File(s) — audio, PDF, or image (optional; select multiple to replace with a .zip bundle)</label>
               <span id="edit-file-current-info" class="field-status"></span>
               <input type="file" id="edit-file" class="admin-input" accept="audio/*,application/pdf,image/*" multiple>

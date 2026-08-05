@@ -132,6 +132,27 @@ async function processDigitalFiles(fileInputId) {
   return { fileUrl, tracklistSnippets: null }
 }
 
+// Uploads every image currently selected in the given file input to
+// bodega-images. The first becomes the product's main/cover photo; the rest
+// become the scrollable gallery.
+async function processImageFiles(fileInputId) {
+  const files = Array.from(document.getElementById(fileInputId).files)
+  if (files.length === 0) {
+    return { coverUrl: null, galleryImages: null }
+  }
+
+  const urls = []
+  for (const file of files) {
+    const path = `${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('bodega-images').upload(path, file)
+    if (error) throw error
+    const { data } = supabase.storage.from('bodega-images').getPublicUrl(path)
+    urls.push(data.publicUrl)
+  }
+
+  return { coverUrl: urls[0], galleryImages: urls.length > 1 ? urls.slice(1) : null }
+}
+
 async function deleteProduct(product) {
   const confirmed = window.confirm(`Delete "${product.title || 'this product'}"? This cannot be undone.`)
   if (!confirmed) return
@@ -143,7 +164,12 @@ async function deleteProduct(product) {
   }
 
   try {
-    const imagePaths = [product.cover_art_url, product.image_2_url, product.image_3_url]
+    const imagePaths = [
+      product.cover_art_url,
+      product.image_2_url,
+      product.image_3_url,
+      ...(Array.isArray(product.gallery_images) ? product.gallery_images : [])
+    ]
       .map(url => extractStoragePath(url, 'bodega-images'))
       .filter(Boolean)
     if (imagePaths.length > 0) {
@@ -182,6 +208,12 @@ function openEditModal(product) {
   updateSizesVisibility(product.category, 'edit-sizes-group')
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
+
+  const imageCount = [product.cover_art_url, product.image_2_url, product.image_3_url]
+    .filter(Boolean).length + (Array.isArray(product.gallery_images) ? product.gallery_images.length : 0)
+  document.getElementById('edit-image-current-info').textContent = imageCount > 0
+    ? `Currently: ${imageCount} photo${imageCount === 1 ? '' : 's'}`
+    : 'Currently: no photos'
 
   const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
   const currentFileInfo = document.getElementById('edit-file-current-info')
@@ -417,14 +449,10 @@ function initAdminPortal() {
       const description = document.getElementById('upload-description').value
       const category = document.getElementById('upload-category').value
       const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
-      const imageFile = document.getElementById('upload-image').files[0]
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
 
-      const imagePath = `${Date.now()}-${imageFile.name}`
-      const { error: imageError } = await supabase.storage.from('bodega-images').upload(imagePath, imageFile)
-      if (imageError) throw imageError
-      const { data: imageUrlData } = supabase.storage.from('bodega-images').getPublicUrl(imagePath)
+      const { coverUrl, galleryImages } = await processImageFiles('upload-image')
 
       const { fileUrl, tracklistSnippets } = await processDigitalFiles('upload-file')
 
@@ -434,7 +462,8 @@ function initAdminPortal() {
         description,
         category,
         sizes,
-        cover_art_url: imageUrlData.publicUrl,
+        cover_art_url: coverUrl,
+        gallery_images: galleryImages,
         audio_preview_url: fileUrl,
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
@@ -489,17 +518,21 @@ function initAdminPortal() {
       const description = document.getElementById('edit-description').value
       const category = document.getElementById('edit-category').value
       const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
-      const newImageFile = document.getElementById('edit-image').files[0]
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
 
-      let imageUrl = editingProduct ? editingProduct.cover_art_url : null
-      if (newImageFile) {
-        const imagePath = `${Date.now()}-${newImageFile.name}`
-        const { error: imageError } = await supabase.storage.from('bodega-images').upload(imagePath, newImageFile)
-        if (imageError) throw imageError
-        const { data: imageUrlData } = supabase.storage.from('bodega-images').getPublicUrl(imagePath)
-        imageUrl = imageUrlData.publicUrl
+      let coverUrl = editingProduct ? editingProduct.cover_art_url : null
+      let galleryImages = editingProduct ? editingProduct.gallery_images : null
+      let image2Url = editingProduct ? editingProduct.image_2_url : null
+      let image3Url = editingProduct ? editingProduct.image_3_url : null
+      if (document.getElementById('edit-image').files.length > 0) {
+        const result = await processImageFiles('edit-image')
+        coverUrl = result.coverUrl
+        galleryImages = result.galleryImages
+        // New photos fully replace the old set, including the legacy
+        // image_2_url/image_3_url columns pre-dating the gallery feature.
+        image2Url = null
+        image3Url = null
       }
 
       let fileUrl = editingProduct ? editingProduct.audio_preview_url : null
@@ -516,7 +549,10 @@ function initAdminPortal() {
         description,
         category,
         sizes,
-        cover_art_url: imageUrl,
+        cover_art_url: coverUrl,
+        image_2_url: image2Url,
+        image_3_url: image3Url,
+        gallery_images: galleryImages,
         audio_preview_url: fileUrl,
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
@@ -725,6 +761,7 @@ async function loadBodega() {
     if (product.cover_art_url) availableImages.push(product.cover_art_url)
     if (product.image_2_url) availableImages.push(product.image_2_url)
     if (product.image_3_url) availableImages.push(product.image_3_url)
+    if (Array.isArray(product.gallery_images)) availableImages.push(...product.gallery_images)
 
     let galleryHTML = ''
     if (availableImages.length > 0) {
@@ -751,7 +788,7 @@ async function loadBodega() {
             <span class="play-icon">▶</span> Play Preview
           </button>
           <p style="font-size: 0.5rem; color: #888; margin: 0 0 0.4rem 0; text-transform: uppercase; letter-spacing: 1px;">Preview Tracklist</p>
-          <div class="tracklist-slider" style="max-height: 80px; overflow-y: auto; padding-right: 5px;">
+          <div class="tracklist-slider" style="max-height: 66px; overflow-y: auto; padding-right: 5px;">
             <ul style="list-style: none; padding: 0; margin: 0;">
               ${product.tracklist_snippets.map((track) => `
                 <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
