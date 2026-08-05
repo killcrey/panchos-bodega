@@ -641,6 +641,32 @@
         flex-shrink: 0;
       }
 
+      .stripe-link-row {
+        display: flex;
+        gap: 0.5rem;
+        align-items: stretch;
+      }
+
+      .stripe-link-row .admin-input {
+        flex: 1;
+        min-width: 0;
+        margin-bottom: 0;
+      }
+
+      .admin-btn-small {
+        width: auto;
+        flex-shrink: 0;
+        padding: 0 1rem;
+        font-size: 0.6rem;
+      }
+
+      .field-status {
+        margin: 0.4rem 0 1rem 0;
+        font-size: 0.6rem;
+        letter-spacing: 0.5px;
+        min-height: 0.8rem;
+      }
+
       /* ADMIN INVENTORY LIST */
       #admin-inventory-list {
         flex: 1 1 auto;
@@ -899,7 +925,11 @@
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" required>
                 <label class="admin-file-label" for="upload-audio">Audio Preview (optional)</label>
                 <input type="file" id="upload-audio" class="admin-input" accept="audio/*">
-                <input type="url" id="upload-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
+                <div class="stripe-link-row">
+                  <input type="url" id="upload-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
+                  <button type="button" id="upload-generate-stripe-btn" class="admin-btn admin-btn-small">Generate</button>
+                </div>
+                <div id="upload-stripe-status" class="field-status"></div>
                 <label class="admin-checkbox-row">
                   <input type="checkbox" id="upload-published" checked>
                   Publish Immediately
@@ -938,7 +968,11 @@
               <input type="file" id="edit-image" class="admin-input" accept="image/*">
               <label class="admin-file-label" for="edit-audio">New Audio Preview (optional)</label>
               <input type="file" id="edit-audio" class="admin-input" accept="audio/*">
-              <input type="url" id="edit-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
+              <div class="stripe-link-row">
+                <input type="url" id="edit-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
+                <button type="button" id="edit-generate-stripe-btn" class="admin-btn admin-btn-small">Generate</button>
+              </div>
+              <div id="edit-stripe-status" class="field-status"></div>
               <label class="admin-checkbox-row">
                 <input type="checkbox" id="edit-published">
                 Published

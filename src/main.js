@@ -99,12 +99,44 @@ function openEditModal(product) {
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
   document.getElementById('edit-published').checked = product.published !== false
   document.getElementById('edit-status').textContent = ''
+  document.getElementById('edit-stripe-status').textContent = ''
   document.getElementById('edit-modal').style.display = 'flex'
 }
 
 function closeEditModal() {
   editingProduct = null
   document.getElementById('edit-modal').style.display = 'none'
+}
+
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, statusEl, button) {
+  const title = document.getElementById(titleInputId).value.trim()
+  const price = parseFloat(document.getElementById(priceInputId).value)
+
+  if (!title || !price || price <= 0) {
+    statusEl.textContent = 'Enter a title and a price above 0 before generating a link.'
+    statusEl.style.color = '#ff4d4d'
+    return
+  }
+
+  button.disabled = true
+  statusEl.textContent = 'Generating Stripe link...'
+  statusEl.style.color = '#e8b923'
+
+  try {
+    const { data, error } = await supabase.functions.invoke('create-stripe-link', {
+      body: { title, priceCents: Math.round(price * 100) }
+    })
+    if (error) throw error
+
+    document.getElementById(urlInputId).value = data.url
+    statusEl.textContent = 'Stripe link generated.'
+    statusEl.style.color = '#00ffcc'
+  } catch (err) {
+    statusEl.textContent = err.message || 'Failed to generate Stripe link.'
+    statusEl.style.color = '#ff4d4d'
+  } finally {
+    button.disabled = false
+  }
 }
 
 function initAdminPortal() {
@@ -156,6 +188,13 @@ function initAdminPortal() {
   const uploadForm = document.getElementById('upload-form')
   const uploadStatus = document.getElementById('upload-status')
   const uploadSubmitBtn = document.getElementById('upload-submit-btn')
+
+  const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
+  const uploadStripeStatus = document.getElementById('upload-stripe-status')
+
+  uploadGenerateStripeBtn.addEventListener('click', () => {
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', uploadStripeStatus, uploadGenerateStripeBtn)
+  })
 
   uploadForm.addEventListener('submit', async (e) => {
     e.preventDefault()
@@ -215,6 +254,13 @@ function initAdminPortal() {
   const editStatus = document.getElementById('edit-status')
   const editSaveBtn = document.getElementById('edit-save-btn')
   const editCancelBtn = document.getElementById('edit-cancel-btn')
+
+  const editGenerateStripeBtn = document.getElementById('edit-generate-stripe-btn')
+  const editStripeStatus = document.getElementById('edit-stripe-status')
+
+  editGenerateStripeBtn.addEventListener('click', () => {
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', editStripeStatus, editGenerateStripeBtn)
+  })
 
   editCancelBtn.addEventListener('click', () => {
     closeEditModal()
