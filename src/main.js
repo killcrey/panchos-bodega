@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import JSZip from 'jszip'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -31,10 +32,11 @@ async function loadAdminInventory() {
     item.className = 'inventory-item'
     const isPublished = product.published !== false
     const hasStripeUrl = !!(product.stripe_url && product.stripe_url.trim())
+    const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
-        <div class="inventory-item-meta">$${((product.price_cents || 0) / 100).toFixed(2)} — ${(product.category || 'uncategorized').toUpperCase()}</div>
+        <div class="inventory-item-meta">$${((product.price_cents || 0) / 100).toFixed(2)} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}</div>
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
         ${hasStripeUrl ? '' : '<span class="inventory-status-badge status-warning">No Checkout Link</span>'}
       </div>
@@ -57,6 +59,55 @@ function extractStoragePath(url, bucket) {
   return decodeURIComponent(url.slice(idx + marker.length))
 }
 
+// Uploads whatever audio files are currently selected in the given file
+// input. A single file is uploaded as-is. Multiple files (an album) are each
+// uploaded individually — so every track can be previewed in the player —
+// and also bundled into one .zip, which becomes the actual purchasable
+// digital file (what audio_preview_url points to and what Generate/Stripe
+// tags as the download).
+async function processAudioFiles(fileInputId) {
+  const files = Array.from(document.getElementById(fileInputId).files)
+
+  if (files.length === 0) {
+    return { audioUrl: null, tracklistSnippets: null }
+  }
+
+  if (files.length === 1) {
+    const file = files[0]
+    const path = `${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('audio-vault').upload(path, file)
+    if (error) throw error
+    const { data } = supabase.storage.from('audio-vault').getPublicUrl(path)
+    return { audioUrl: data.publicUrl, tracklistSnippets: null }
+  }
+
+  const tracklistSnippets = []
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i]
+    const path = `${Date.now()}-${file.name}`
+    const { error } = await supabase.storage.from('audio-vault').upload(path, file)
+    if (error) throw error
+    const { data } = supabase.storage.from('audio-vault').getPublicUrl(path)
+    tracklistSnippets.push({
+      trackNumber: i + 1,
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      url: data.publicUrl
+    })
+  }
+
+  const zip = new JSZip()
+  files.forEach(file => zip.file(file.name, file))
+  const zipBlob = await zip.generateAsync({ type: 'blob' })
+  const zipPath = `${Date.now()}-album.zip`
+  const { error: zipError } = await supabase.storage
+    .from('audio-vault')
+    .upload(zipPath, zipBlob, { contentType: 'application/zip' })
+  if (zipError) throw zipError
+  const { data: zipData } = supabase.storage.from('audio-vault').getPublicUrl(zipPath)
+
+  return { audioUrl: zipData.publicUrl, tracklistSnippets }
+}
+
 async function deleteProduct(product) {
   const confirmed = window.confirm(`Delete "${product.title || 'this product'}"? This cannot be undone.`)
   if (!confirmed) return
@@ -75,9 +126,14 @@ async function deleteProduct(product) {
       await supabase.storage.from('bodega-images').remove(imagePaths)
     }
 
-    const audioPath = extractStoragePath(product.audio_preview_url, 'audio-vault')
-    if (audioPath) {
-      await supabase.storage.from('audio-vault').remove([audioPath])
+    const audioPaths = [
+      extractStoragePath(product.audio_preview_url, 'audio-vault'),
+      ...(Array.isArray(product.tracklist_snippets)
+        ? product.tracklist_snippets.map(track => extractStoragePath(track.url, 'audio-vault'))
+        : [])
+    ].filter(Boolean)
+    if (audioPaths.length > 0) {
+      await supabase.storage.from('audio-vault').remove(audioPaths)
     }
   } catch (err) {
     console.error('Failed to clean up storage files for deleted product:', err)
@@ -96,6 +152,15 @@ function openEditModal(product) {
   document.getElementById('edit-category').value = product.category || ''
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-audio').value = ''
+
+  const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
+  const currentAudioInfo = document.getElementById('edit-audio-current-info')
+  currentAudioInfo.textContent = trackCount > 0
+    ? `Currently: ${trackCount}-track album`
+    : product.audio_preview_url
+      ? 'Currently: single track'
+      : 'Currently: no audio attached'
+
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
   document.getElementById('edit-published').checked = product.published !== false
   document.getElementById('edit-status').textContent = ''
@@ -123,16 +188,14 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, audioI
   statusEl.style.color = '#e8b923'
 
   try {
-    // Attach whichever audio file is currently in play, so the buyer gets a
-    // real download after checkout instead of a dead end.
+    // Attach whichever audio is currently in play — a single track, or a
+    // freshly-bundled album zip — so the buyer gets a real download after
+    // checkout instead of a dead end.
     let filePath = null
-    const audioFile = document.getElementById(audioInputId).files[0]
+    const { audioUrl } = await processAudioFiles(audioInputId)
 
-    if (audioFile) {
-      const audioPath = `${Date.now()}-${audioFile.name}`
-      const { error: audioError } = await supabase.storage.from('audio-vault').upload(audioPath, audioFile)
-      if (audioError) throw audioError
-      filePath = audioPath
+    if (audioUrl) {
+      filePath = extractStoragePath(audioUrl, 'audio-vault')
     } else if (existingAudioUrl) {
       filePath = extractStoragePath(existingAudioUrl, 'audio-vault')
     }
@@ -224,7 +287,6 @@ function initAdminPortal() {
       const description = document.getElementById('upload-description').value
       const category = document.getElementById('upload-category').value
       const imageFile = document.getElementById('upload-image').files[0]
-      const audioFile = document.getElementById('upload-audio').files[0]
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
 
@@ -233,14 +295,7 @@ function initAdminPortal() {
       if (imageError) throw imageError
       const { data: imageUrlData } = supabase.storage.from('bodega-images').getPublicUrl(imagePath)
 
-      let audioUrl = null
-      if (audioFile) {
-        const audioPath = `${Date.now()}-${audioFile.name}`
-        const { error: audioError } = await supabase.storage.from('audio-vault').upload(audioPath, audioFile)
-        if (audioError) throw audioError
-        const { data: audioUrlData } = supabase.storage.from('audio-vault').getPublicUrl(audioPath)
-        audioUrl = audioUrlData.publicUrl
-      }
+      const { audioUrl, tracklistSnippets } = await processAudioFiles('upload-audio')
 
       const { error: insertError } = await supabase.from('products').insert({
         title,
@@ -249,12 +304,15 @@ function initAdminPortal() {
         category,
         cover_art_url: imageUrlData.publicUrl,
         audio_preview_url: audioUrl,
+        tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
         published
       })
       if (insertError) throw insertError
 
-      uploadStatus.textContent = 'Product Deployed Successfully'
+      uploadStatus.textContent = tracklistSnippets
+        ? `Product Deployed Successfully (${tracklistSnippets.length}-track album)`
+        : 'Product Deployed Successfully'
       uploadStatus.style.color = '#00ffcc'
       uploadForm.reset()
       loadAdminInventory()
@@ -295,7 +353,6 @@ function initAdminPortal() {
       const description = document.getElementById('edit-description').value
       const category = document.getElementById('edit-category').value
       const newImageFile = document.getElementById('edit-image').files[0]
-      const newAudioFile = document.getElementById('edit-audio').files[0]
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
 
@@ -309,12 +366,11 @@ function initAdminPortal() {
       }
 
       let audioUrl = editingProduct ? editingProduct.audio_preview_url : null
-      if (newAudioFile) {
-        const audioPath = `${Date.now()}-${newAudioFile.name}`
-        const { error: audioError } = await supabase.storage.from('audio-vault').upload(audioPath, newAudioFile)
-        if (audioError) throw audioError
-        const { data: audioUrlData } = supabase.storage.from('audio-vault').getPublicUrl(audioPath)
-        audioUrl = audioUrlData.publicUrl
+      let tracklistSnippets = editingProduct ? editingProduct.tracklist_snippets : null
+      if (document.getElementById('edit-audio').files.length > 0) {
+        const result = await processAudioFiles('edit-audio')
+        audioUrl = result.audioUrl
+        tracklistSnippets = result.tracklistSnippets
       }
 
       const { error: updateError } = await supabase.from('products').update({
@@ -324,6 +380,7 @@ function initAdminPortal() {
         category,
         cover_art_url: imageUrl,
         audio_preview_url: audioUrl,
+        tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
         published
       }).eq('id', id)
