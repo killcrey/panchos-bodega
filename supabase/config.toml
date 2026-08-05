@@ -429,3 +429,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/create-stripe-link/deno.json"
 entrypoint = "./functions/create-stripe-link/index.ts"
+
+[functions.free-download]
+enabled = true
+verify_jwt = false
+import_map = "./functions/free-download/deno.json"
+entrypoint = "./functions/free-download/index.ts"

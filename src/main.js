@@ -31,14 +31,16 @@ async function loadAdminInventory() {
     const item = document.createElement('div')
     item.className = 'inventory-item'
     const isPublished = product.published !== false
+    const isFree = (product.price_cents || 0) === 0
     const hasStripeUrl = !!(product.stripe_url && product.stripe_url.trim())
     const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
-        <div class="inventory-item-meta">$${((product.price_cents || 0) / 100).toFixed(2)} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}</div>
+        <div class="inventory-item-meta">${isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}</div>
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
-        ${hasStripeUrl ? '' : '<span class="inventory-status-badge status-warning">No Checkout Link</span>'}
+        ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
+        ${(!isFree && !hasStripeUrl) ? '<span class="inventory-status-badge status-warning">No Checkout Link</span>' : ''}
       </div>
       <div class="inventory-item-actions">
         <button type="button" class="inventory-edit-btn">Edit</button>
@@ -195,6 +197,73 @@ function closeEditModal() {
   document.getElementById('edit-modal').style.display = 'none'
 }
 
+let freeDownloadProduct = null
+
+function openFreeDownloadModal(product) {
+  freeDownloadProduct = product
+  document.getElementById('free-download-email').value = ''
+  document.getElementById('free-download-status').textContent = ''
+  document.getElementById('free-download-form-view').style.display = 'block'
+  document.getElementById('free-download-result-view').style.display = 'none'
+  document.getElementById('free-download-result-view').innerHTML = ''
+  document.getElementById('free-download-modal').style.display = 'flex'
+}
+
+function closeFreeDownloadModal() {
+  freeDownloadProduct = null
+  document.getElementById('free-download-modal').style.display = 'none'
+}
+
+function initFreeDownloadModal() {
+  const closeBtn = document.getElementById('free-download-close-btn')
+  const submitBtn = document.getElementById('free-download-submit-btn')
+  const emailInput = document.getElementById('free-download-email')
+  const statusEl = document.getElementById('free-download-status')
+
+  closeBtn.addEventListener('click', () => {
+    closeFreeDownloadModal()
+  })
+
+  submitBtn.addEventListener('click', async () => {
+    const email = emailInput.value.trim()
+    if (!email || !email.includes('@')) {
+      statusEl.textContent = 'Enter a valid email address.'
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
+    if (!freeDownloadProduct) return
+
+    submitBtn.disabled = true
+    statusEl.textContent = 'Getting your link...'
+    statusEl.style.color = '#e8b923'
+
+    try {
+      const { data, error } = await supabase.functions.invoke('free-download', {
+        body: { productId: freeDownloadProduct.id, email }
+      })
+      if (error) throw error
+
+      document.getElementById('free-download-form-view').style.display = 'none'
+      document.getElementById('free-download-result-view').style.display = 'block'
+      document.getElementById('free-download-result-view').innerHTML = `
+        <p style="font-size: 0.75rem; color: #00ffcc; margin: 0 0 1rem 0;">Your download is ready.</p>
+        <a href="${data.downloadUrl}" class="admin-btn" style="display: block; text-decoration: none; text-align: center; box-sizing: border-box;" download>Right-Click &amp; Download</a>
+        <div class="download-instructions">
+          <p><strong>Windows / Android:</strong> Right-click (or tap and hold) the button above and choose "Save Link As" / "Download Link" to save the file.</p>
+          <p><strong>Mac (Safari):</strong> Right-click the button and choose "Download Linked File."</p>
+          <p><strong>iPhone / iPad (Safari):</strong> Tap and hold the button, then choose "Download Linked File" — it saves to your Files app. If it opens a preview instead, use the Share icon and choose "Save to Files."</p>
+          <p><strong>Multiple files?</strong> This downloads as a single .ZIP file. Unzip it after downloading to get everything inside.</p>
+        </div>
+      `
+    } catch (err) {
+      statusEl.textContent = await describeFunctionError(err)
+      statusEl.style.color = '#ff4d4d'
+    } finally {
+      submitBtn.disabled = false
+    }
+  })
+}
+
 // supabase.functions.invoke() throws a generic "Edge Function returned a
 // non-2xx status code" message on failure — the real reason is in the
 // response body, which this pulls out instead.
@@ -214,8 +283,20 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
 
-  if (!title || !price || price <= 0) {
-    statusEl.textContent = 'Enter a title and a price above 0 before generating a link.'
+  if (!title) {
+    statusEl.textContent = 'Enter a title before generating a link.'
+    statusEl.style.color = '#ff4d4d'
+    return
+  }
+
+  if (price === 0) {
+    statusEl.textContent = 'Free products (price $0) don’t need a Stripe link — the storefront offers them as a free download instead.'
+    statusEl.style.color = '#e8b923'
+    return
+  }
+
+  if (!price || price < 0.5) {
+    statusEl.textContent = 'Stripe requires a price of at least $0.50 (or exactly $0 for a free download).'
     statusEl.style.color = '#ff4d4d'
     return
   }
@@ -612,7 +693,8 @@ async function loadBodega() {
   // BUILD CARDS
   products.forEach(product => {
    try {
-    const formattedPrice = (product.price_cents / 100).toFixed(2)
+    const isFree = (product.price_cents || 0) === 0
+    const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
 
     const card = document.createElement('div')
     card.className = 'product-card'
@@ -671,13 +753,13 @@ async function loadBodega() {
     card.innerHTML = `
       ${galleryHTML}
       <h3 style="margin-top: 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>
-      <p class="price" style="margin: 0.3rem 0; font-size: 0.65rem;">$${formattedPrice}</p>
+      <p class="price" style="margin: 0.3rem 0; font-size: 0.65rem;">${formattedPrice}</p>
       <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin-bottom: 0.4rem;">${(product.type || 'UNCATEGORIZED').toUpperCase()}</p>
       ${descriptionHTML}
       ${sizesHTML}
       ${audioHTML}
       <button class="buy-btn" style="margin-top: auto; width: 100%; padding: 0.5rem; background: #00ffcc; color: #111; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: pointer; text-transform: uppercase;">
-        Buy Now
+        ${isFree ? 'Get It Free' : 'Buy Now'}
       </button>
     `
     
@@ -698,10 +780,12 @@ async function loadBodega() {
       })
     })
 
-    // Wire up Stripe Link
+    // Wire up purchase / free download
     const buyButton = card.querySelector('.buy-btn')
     buyButton.addEventListener('click', () => {
-      if (product.stripe_url) {
+      if (isFree) {
+        openFreeDownloadModal(product)
+      } else if (product.stripe_url) {
         window.open(product.stripe_url, '_blank')
       } else {
         alert('Checkout link is currently being generated. Check back soon!')
@@ -740,6 +824,8 @@ function setupCategoryFilters() {
     logoLink.addEventListener('click', () => applyFilter('all'))
   }
 }
+
+initFreeDownloadModal()
 
 const isAdminMode = initAdminPortal()
 if (!isAdminMode) {

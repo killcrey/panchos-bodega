@@ -734,6 +734,12 @@
         font-weight: 900;
       }
 
+      .inventory-status-badge.status-free {
+        margin-left: 0.4rem;
+        color: #b19cd9;
+        border-color: #b19cd9;
+      }
+
       .inventory-item-actions {
         display: flex;
         gap: 0.5rem;
@@ -775,7 +781,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal {
+      #edit-modal, #free-download-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -850,6 +856,21 @@
         min-height: 1rem;
         flex-shrink: 0;
       }
+
+      .download-instructions {
+        text-align: left;
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #444;
+      }
+      .download-instructions p {
+        font-size: 0.72rem;
+        color: #999;
+        margin: 0 0 0.8rem 0;
+        line-height: 1.5;
+      }
+      .download-instructions p:last-child { margin-bottom: 0; }
+      .download-instructions strong { color: #ccc; }
     </style>
   </head>
   <body>
@@ -894,6 +915,23 @@
       <button type="button" id="gap-toggle" aria-label="Play or pause">▶</button>
       <input type="range" id="gap-seek" min="0" max="100" value="0" step="0.1">
       <button type="button" id="gap-close" aria-label="Close player">✖</button>
+    </div>
+
+    <div id="free-download-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Free Download</p>
+
+        <div id="free-download-form-view">
+          <p style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Enter your email and we'll get you the download link.</p>
+          <input type="email" id="free-download-email" class="admin-input" placeholder="Email">
+          <div id="free-download-status" class="field-status"></div>
+          <button type="button" id="free-download-submit-btn" class="admin-btn">Get Download</button>
+        </div>
+
+        <div id="free-download-result-view" style="display: none;"></div>
+
+        <button type="button" id="free-download-close-btn" class="admin-btn admin-btn-danger">Close</button>
+      </div>
     </div>
 
     <div id="admin-portal">
