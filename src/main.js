@@ -195,6 +195,21 @@ function closeEditModal() {
   document.getElementById('edit-modal').style.display = 'none'
 }
 
+// supabase.functions.invoke() throws a generic "Edge Function returned a
+// non-2xx status code" message on failure — the real reason is in the
+// response body, which this pulls out instead.
+async function describeFunctionError(err) {
+  if (err && err.context && typeof err.context.json === 'function') {
+    try {
+      const body = await err.context.json()
+      if (body && body.error) return body.error
+    } catch (_parseErr) {
+      // Fall through to the generic message below.
+    }
+  }
+  return err.message || 'Something went wrong.'
+}
+
 async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, existingFileUrl, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
@@ -233,7 +248,7 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
       : 'Stripe link generated (no digital file attached).'
     statusEl.style.color = '#00ffcc'
   } catch (err) {
-    statusEl.textContent = err.message || 'Failed to generate Stripe link.'
+    statusEl.textContent = await describeFunctionError(err)
     statusEl.style.color = '#ff4d4d'
   } finally {
     button.disabled = false
