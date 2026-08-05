@@ -30,11 +30,13 @@ async function loadAdminInventory() {
     const item = document.createElement('div')
     item.className = 'inventory-item'
     const isPublished = product.published !== false
+    const hasStripeUrl = !!(product.stripe_url && product.stripe_url.trim())
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
         <div class="inventory-item-meta">$${((product.price_cents || 0) / 100).toFixed(2)} — ${(product.category || 'uncategorized').toUpperCase()}</div>
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
+        ${hasStripeUrl ? '' : '<span class="inventory-status-badge status-warning">No Checkout Link</span>'}
       </div>
       <div class="inventory-item-actions">
         <button type="button" class="inventory-edit-btn">Edit</button>
