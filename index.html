@@ -516,6 +516,26 @@
         }
       }
 
+      #admin-live-site-link {
+        display: inline-block;
+        flex-shrink: 0;
+        margin-bottom: 1.25rem;
+        color: #00ffcc;
+        font-size: 0.65rem;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        text-decoration: none;
+        border-bottom: 1px solid rgba(0, 255, 204, 0.5);
+        padding-bottom: 0.15rem;
+        transition: color 0.2s ease, border-color 0.2s ease;
+      }
+
+      #admin-live-site-link:hover {
+        color: #fff;
+        border-color: #fff;
+      }
+
       #login-view {
         width: 100%;
         max-width: 360px;
@@ -1030,6 +1050,7 @@
 
     <div id="admin-portal">
       <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/adminlogo.png" alt="Admin" class="admin-logo">
+      <a href="https://bodega.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" id="admin-live-site-link">Go to Live Site</a>
       <div id="login-view">
         <p class="admin-title">Admin Access</p>
         <input type="email" id="admin-email" class="admin-input" placeholder="Email" autocomplete="username">
@@ -1044,6 +1065,7 @@
               <form id="upload-form">
                 <input type="text" id="upload-title" class="admin-input" placeholder="Title" required>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
+                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
                 <textarea id="upload-description" class="admin-input" placeholder="Description" required></textarea>
                 <select id="upload-category" class="admin-input" required>
                   <option value="" disabled selected>Select Category</option>
@@ -1092,6 +1114,7 @@
             <div class="edit-modal-fields">
               <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
               <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
+              <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
               <textarea id="edit-description" class="admin-input" placeholder="Description" required></textarea>
               <select id="edit-category" class="admin-input" required>
                 <option value="" disabled>Select Category</option>
