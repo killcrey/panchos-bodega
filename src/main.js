@@ -880,6 +880,28 @@ function setupCategoryFilters() {
   if (logoLink) {
     logoLink.addEventListener('click', () => applyFilter('all'))
   }
+
+  // Land on the MUSIC filter by default
+  applyFilter('music')
+}
+
+// INJECT 4: First-visit "Enter" gate. Shown once per browser session (sessionStorage),
+// so it reappears only after the visitor closes/leaves and comes back in a new tab/session.
+function initEnterOverlay() {
+  const overlay = document.getElementById('enter-overlay')
+  const enterBtn = document.getElementById('enter-btn')
+  if (!overlay || !enterBtn) return
+
+  if (sessionStorage.getItem('bodegaEntered') !== 'true') {
+    overlay.style.display = 'flex'
+    document.body.classList.add('overlay-open')
+  }
+
+  enterBtn.addEventListener('click', () => {
+    sessionStorage.setItem('bodegaEntered', 'true')
+    overlay.style.display = 'none'
+    document.body.classList.remove('overlay-open')
+  })
 }
 
 initFreeDownloadModal()
@@ -887,4 +909,5 @@ initFreeDownloadModal()
 const isAdminMode = initAdminPortal()
 if (!isAdminMode) {
   loadBodega()
+  initEnterOverlay()
 }

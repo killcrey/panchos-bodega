@@ -311,6 +311,79 @@
         padding-bottom: 5.5rem;
       }
 
+      /* ENTER OVERLAY (first-visit landing gate, hidden by default and shown via JS) */
+      #enter-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: rgba(5, 5, 5, 0.96);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+
+      body.overlay-open {
+        overflow: hidden;
+      }
+
+      .enter-card {
+        max-width: 420px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.25rem;
+        text-align: center;
+      }
+
+      .enter-heading {
+        margin: 0;
+        color: #e8b923;
+        font-size: 1rem;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+      }
+
+      .enter-sign {
+        width: 100%;
+        max-width: 300px;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.8);
+      }
+
+      .enter-copy {
+        margin: 0;
+        color: #ddd;
+        font-size: 0.8rem;
+        line-height: 1.6;
+      }
+
+      .enter-btn {
+        background: #e8b923;
+        color: #7a1518;
+        border: 1px solid #b8291f;
+        padding: 0.75rem 3rem;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: bold;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        cursor: pointer;
+        font-family: inherit;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+      }
+
+      .enter-btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 0 20px rgba(232, 185, 35, 0.4);
+      }
+
       /* FOOTER STYLING */
       .bodega-footer {
         margin-top: 4rem;
@@ -883,11 +956,23 @@
     </style>
   </head>
   <body>
+    <div id="enter-overlay">
+      <div class="enter-card">
+        <h2 class="enter-heading">Welcome to the Bodega</h2>
+        <img src="/opensign.jpg" alt="The Invisible Panchos — Open 24 Hours" class="enter-sign">
+        <p class="enter-copy">
+          Every item in this store is hand-picked, made, or curated personally by The Invisible Panchos —
+          music, art, apparel and more, stocked by us, for you.
+        </p>
+        <button type="button" id="enter-btn" class="enter-btn">Enter</button>
+      </div>
+    </div>
+
     <div class="filter-bar">
-      <button class="filter-btn active" data-filter="all">ALL</button>
+      <button class="filter-btn" data-filter="all">ALL</button>
       <button class="filter-btn" data-filter="apparel">APPAREL</button>
       <button class="filter-btn" data-filter="art">ART</button>
-      <button class="filter-btn" data-filter="music">MUSIC</button>
+      <button class="filter-btn active" data-filter="music">MUSIC</button>
       <button class="filter-btn" data-filter="services">SERVICES</button>
       <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
       <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="filter-btn">HOME</a>
