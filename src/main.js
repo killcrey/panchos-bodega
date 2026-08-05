@@ -29,10 +29,12 @@ async function loadAdminInventory() {
   products.forEach(product => {
     const item = document.createElement('div')
     item.className = 'inventory-item'
+    const isPublished = product.published !== false
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
         <div class="inventory-item-meta">$${((product.price_cents || 0) / 100).toFixed(2)} — ${(product.category || 'uncategorized').toUpperCase()}</div>
+        <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
       </div>
       <div class="inventory-item-actions">
         <button type="button" class="inventory-edit-btn">Edit</button>
@@ -93,6 +95,7 @@ function openEditModal(product) {
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-audio').value = ''
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
+  document.getElementById('edit-published').checked = product.published !== false
   document.getElementById('edit-status').textContent = ''
   document.getElementById('edit-modal').style.display = 'flex'
 }
@@ -166,6 +169,7 @@ function initAdminPortal() {
       const imageFile = document.getElementById('upload-image').files[0]
       const audioFile = document.getElementById('upload-audio').files[0]
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
+      const published = document.getElementById('upload-published').checked
 
       const imagePath = `${Date.now()}-${imageFile.name}`
       const { error: imageError } = await supabase.storage.from('bodega-images').upload(imagePath, imageFile)
@@ -188,7 +192,8 @@ function initAdminPortal() {
         category,
         cover_art_url: imageUrlData.publicUrl,
         audio_preview_url: audioUrl,
-        stripe_url: stripeUrl
+        stripe_url: stripeUrl,
+        published
       })
       if (insertError) throw insertError
 
@@ -228,6 +233,7 @@ function initAdminPortal() {
       const newImageFile = document.getElementById('edit-image').files[0]
       const newAudioFile = document.getElementById('edit-audio').files[0]
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
+      const published = document.getElementById('edit-published').checked
 
       let imageUrl = editingProduct ? editingProduct.cover_art_url : null
       if (newImageFile) {
@@ -254,7 +260,8 @@ function initAdminPortal() {
         category,
         cover_art_url: imageUrl,
         audio_preview_url: audioUrl,
-        stripe_url: stripeUrl
+        stripe_url: stripeUrl,
+        published
       }).eq('id', id)
       if (updateError) throw updateError
 
@@ -429,7 +436,7 @@ async function loadBodega() {
   }
 
   // FETCH DATA
-  const { data: products, error } = await supabase.from('products').select('*')
+  const { data: products, error } = await supabase.from('products').select('*').eq('published', true)
 
   if (error) {
     console.error('Database connection error:', error)

@@ -621,6 +621,26 @@
         min-height: 1rem;
       }
 
+      .admin-checkbox-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-bottom: 1rem;
+        font-size: 0.65rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        color: #ccc;
+        cursor: pointer;
+      }
+
+      .admin-checkbox-row input[type="checkbox"] {
+        width: 1.1rem;
+        height: 1.1rem;
+        accent-color: #00ffcc;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
       /* ADMIN INVENTORY LIST */
       #admin-inventory-list {
         flex: 1 1 auto;
@@ -657,6 +677,27 @@
         letter-spacing: 0.5px;
         text-transform: uppercase;
         margin-top: 0.2rem;
+      }
+
+      .inventory-status-badge {
+        display: inline-block;
+        margin-top: 0.4rem;
+        padding: 0.15rem 0.4rem;
+        font-size: 0.55rem;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        border: 1px solid;
+      }
+
+      .inventory-status-badge.status-published {
+        color: #00ffcc;
+        border-color: #00ffcc;
+      }
+
+      .inventory-status-badge.status-draft {
+        color: #e8b923;
+        border-color: #e8b923;
       }
 
       .inventory-item-actions {
@@ -851,6 +892,10 @@
                 <label class="admin-file-label" for="upload-audio">Audio Preview (optional)</label>
                 <input type="file" id="upload-audio" class="admin-input" accept="audio/*">
                 <input type="url" id="upload-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
+                <label class="admin-checkbox-row">
+                  <input type="checkbox" id="upload-published" checked>
+                  Publish Immediately
+                </label>
                 <button type="submit" id="upload-submit-btn" class="admin-btn">Deploy to Bodega</button>
               </form>
               <div id="upload-status"></div>
@@ -886,6 +931,10 @@
               <label class="admin-file-label" for="edit-audio">New Audio Preview (optional)</label>
               <input type="file" id="edit-audio" class="admin-input" accept="audio/*">
               <input type="url" id="edit-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
+              <label class="admin-checkbox-row">
+                <input type="checkbox" id="edit-published">
+                Published
+              </label>
             </div>
             <div class="edit-modal-actions">
               <button type="button" id="edit-cancel-btn" class="admin-btn">Cancel</button>
