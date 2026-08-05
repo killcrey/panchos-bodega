@@ -31,7 +31,13 @@ async function secureTheBag() {
     statusArea.innerHTML = `
       <h2 style="color: #00ffcc;">VERIFIED</h2>
       <p>Your secure link is ready. It will self-destruct in 60 minutes.</p>
-      <a href="${data.secureUrl}" class="btn" download>Download Audio Vault</a>
+      <a href="${data.secureUrl}" class="btn" download>Right-Click &amp; Download</a>
+      <div class="download-instructions">
+        <p><strong>Windows / Android:</strong> Right-click (or tap and hold) the button above and choose "Save Link As" / "Download Link" to save the file.</p>
+        <p><strong>Mac (Safari):</strong> Right-click the button and choose "Download Linked File."</p>
+        <p><strong>iPhone / iPad (Safari):</strong> Tap and hold the button, then choose "Download Linked File" — it saves to your Files app. If it opens a preview instead, use the Share icon and choose "Save to Files."</p>
+        <p><strong>Buying an album or bundle?</strong> Multi-track purchases download as a single .ZIP file. Unzip it after downloading to get the individual tracks.</p>
+      </div>
     `
   } catch (err) {
     // 4. Figure out what actually went wrong instead of always blaming the receipt
