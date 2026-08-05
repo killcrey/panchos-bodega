@@ -45,14 +45,20 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
-    // `download: true` tells Supabase Storage to send Content-Disposition:
-    // attachment on the signed URL itself, so the browser downloads the file
-    // instead of opening it in an inline player (the HTML `download` attribute
-    // alone is ignored for cross-origin links like this one).
+    // Uploads are stored as "<timestamp>-<original name>" to avoid collisions
+    // in the bucket. Strip that prefix so the file saves locally under its
+    // original name instead of the storage key.
+    const downloadFilename = targetFilename.replace(/^\d+-/, '')
+
+    // Passing a filename (rather than just `true`) for `download` tells
+    // Supabase Storage to send Content-Disposition: attachment with that name
+    // on the signed URL itself, so the browser downloads the file under a
+    // clean name instead of opening it in an inline player (the HTML
+    // `download` attribute alone is ignored for cross-origin links like this).
     const { data, error } = await supabase
       .storage
       .from('audio-vault')
-      .createSignedUrl(targetFilename, 3600, { download: true })
+      .createSignedUrl(targetFilename, 3600, { download: downloadFilename })
 
     if (error) throw error
 
