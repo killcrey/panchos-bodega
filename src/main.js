@@ -92,6 +92,7 @@ function openEditModal(product) {
   document.getElementById('edit-category').value = product.category || ''
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-audio').value = ''
+  document.getElementById('edit-stripe-url').value = product.stripe_url || ''
   document.getElementById('edit-status').textContent = ''
   document.getElementById('edit-modal').style.display = 'flex'
 }
@@ -164,6 +165,7 @@ function initAdminPortal() {
       const category = document.getElementById('upload-category').value
       const imageFile = document.getElementById('upload-image').files[0]
       const audioFile = document.getElementById('upload-audio').files[0]
+      const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
 
       const imagePath = `${Date.now()}-${imageFile.name}`
       const { error: imageError } = await supabase.storage.from('bodega-images').upload(imagePath, imageFile)
@@ -185,7 +187,8 @@ function initAdminPortal() {
         description,
         category,
         cover_art_url: imageUrlData.publicUrl,
-        audio_preview_url: audioUrl
+        audio_preview_url: audioUrl,
+        stripe_url: stripeUrl
       })
       if (insertError) throw insertError
 
@@ -224,6 +227,7 @@ function initAdminPortal() {
       const category = document.getElementById('edit-category').value
       const newImageFile = document.getElementById('edit-image').files[0]
       const newAudioFile = document.getElementById('edit-audio').files[0]
+      const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
 
       let imageUrl = editingProduct ? editingProduct.cover_art_url : null
       if (newImageFile) {
@@ -249,7 +253,8 @@ function initAdminPortal() {
         description,
         category,
         cover_art_url: imageUrl,
-        audio_preview_url: audioUrl
+        audio_preview_url: audioUrl,
+        stripe_url: stripeUrl
       }).eq('id', id)
       if (updateError) throw updateError
 

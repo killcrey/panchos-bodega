@@ -850,6 +850,7 @@
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" required>
                 <label class="admin-file-label" for="upload-audio">Audio Preview (optional)</label>
                 <input type="file" id="upload-audio" class="admin-input" accept="audio/*">
+                <input type="url" id="upload-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
                 <button type="submit" id="upload-submit-btn" class="admin-btn">Deploy to Bodega</button>
               </form>
               <div id="upload-status"></div>
@@ -884,6 +885,7 @@
               <input type="file" id="edit-image" class="admin-input" accept="image/*">
               <label class="admin-file-label" for="edit-audio">New Audio Preview (optional)</label>
               <input type="file" id="edit-audio" class="admin-input" accept="audio/*">
+              <input type="url" id="edit-stripe-url" class="admin-input" placeholder="Stripe Checkout URL (optional)">
             </div>
             <div class="edit-modal-actions">
               <button type="button" id="edit-cancel-btn" class="admin-btn">Cancel</button>
