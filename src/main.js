@@ -34,12 +34,15 @@ async function loadAdminInventory() {
     const isFree = (product.price_cents || 0) === 0
     const hasStripeUrl = !!(product.stripe_url && product.stripe_url.trim())
     const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
+    const isTracked = product.inventory_count != null
+    const isSoldOut = isTracked && product.inventory_count <= 0
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
-        <div class="inventory-item-meta">${isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}</div>
+        <div class="inventory-item-meta">${isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}${isTracked ? ` — ${product.inventory_count} IN STOCK` : ''}</div>
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
         ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
+        ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
         ${(!isFree && !hasStripeUrl) ? '<span class="inventory-status-badge status-warning">No Checkout Link</span>' : ''}
       </div>
       <div class="inventory-item-actions">
@@ -209,6 +212,8 @@ function openEditModal(product) {
   document.getElementById('edit-id').value = product.id
   document.getElementById('edit-title').value = product.title || ''
   document.getElementById('edit-price').value = product.price_cents != null ? (product.price_cents / 100).toFixed(2) : ''
+  document.getElementById('edit-inventory').value = product.inventory_count != null ? product.inventory_count : ''
+  document.getElementById('edit-stripe-product-id').value = product.stripe_product_id || ''
   document.getElementById('edit-description').value = product.description || ''
   document.getElementById('edit-category').value = product.category || ''
   document.getElementById('edit-sizes').value = product.sizes || ''
@@ -327,7 +332,7 @@ async function describeFunctionError(err) {
   return err.message || 'Something went wrong.'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, domesticShippingInputId, internationalShippingInputId, existingFileUrl, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, domesticShippingInputId, internationalShippingInputId, stripeProductIdInputId, existingFileUrl, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
   const category = document.getElementById(categoryInputId).value
@@ -376,6 +381,7 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
     if (error) throw error
 
     document.getElementById(urlInputId).value = data.url
+    document.getElementById(stripeProductIdInputId).value = data.productId || ''
     statusEl.textContent = filePath
       ? 'Stripe link generated with download attached.'
       : 'Stripe link generated (no digital file attached).'
@@ -447,7 +453,7 @@ function initAdminPortal() {
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-domestic-shipping', 'upload-international-shipping', null, uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-domestic-shipping', 'upload-international-shipping', 'upload-stripe-product-id', null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -464,6 +470,9 @@ function initAdminPortal() {
       const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
       const domesticShippingCents = parseShippingCents('upload-domestic-shipping', category)
       const internationalShippingCents = parseShippingCents('upload-international-shipping', category)
+      const inventoryRaw = document.getElementById('upload-inventory').value.trim()
+      const inventoryCount = inventoryRaw === '' ? null : parseInt(inventoryRaw, 10)
+      const stripeProductId = document.getElementById('upload-stripe-product-id').value.trim() || null
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
 
@@ -479,6 +488,8 @@ function initAdminPortal() {
         sizes,
         domestic_shipping_cents: domesticShippingCents,
         international_shipping_cents: internationalShippingCents,
+        inventory_count: inventoryCount,
+        stripe_product_id: stripeProductId,
         cover_art_url: coverUrl,
         gallery_images: galleryImages,
         audio_preview_url: fileUrl,
@@ -516,7 +527,7 @@ function initAdminPortal() {
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-domestic-shipping', 'edit-international-shipping', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-domestic-shipping', 'edit-international-shipping', 'edit-stripe-product-id', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {
@@ -538,6 +549,9 @@ function initAdminPortal() {
       const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
       const domesticShippingCents = parseShippingCents('edit-domestic-shipping', category)
       const internationalShippingCents = parseShippingCents('edit-international-shipping', category)
+      const inventoryRaw = document.getElementById('edit-inventory').value.trim()
+      const inventoryCount = inventoryRaw === '' ? null : parseInt(inventoryRaw, 10)
+      const stripeProductId = document.getElementById('edit-stripe-product-id').value.trim() || null
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
 
@@ -571,6 +585,8 @@ function initAdminPortal() {
         sizes,
         domestic_shipping_cents: domesticShippingCents,
         international_shipping_cents: internationalShippingCents,
+        inventory_count: inventoryCount,
+        stripe_product_id: stripeProductId,
         cover_art_url: coverUrl,
         image_2_url: image2Url,
         image_3_url: image3Url,
@@ -773,6 +789,7 @@ async function loadBodega() {
    try {
     const isFree = (product.price_cents || 0) === 0
     const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
+    const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
 
     const card = document.createElement('div')
     card.className = 'product-card'
@@ -837,8 +854,8 @@ async function loadBodega() {
       ${descriptionHTML}
       ${sizesHTML}
       ${audioHTML}
-      <button class="buy-btn" style="margin-top: auto; width: 100%; padding: 0.5rem; background: #00ffcc; color: #111; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: pointer; text-transform: uppercase;">
-        ${isFree ? 'Get It Free' : 'Buy Now'}
+      <button class="buy-btn" ${isSoldOut ? 'disabled' : ''} style="margin-top: auto; width: 100%; padding: 0.5rem; background: ${isSoldOut ? '#444' : '#00ffcc'}; color: ${isSoldOut ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
+        ${isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Buy Now')}
       </button>
     `
     
@@ -862,7 +879,9 @@ async function loadBodega() {
     // Wire up purchase / free download
     const buyButton = card.querySelector('.buy-btn')
     buyButton.addEventListener('click', () => {
-      if (isFree) {
+      if (isSoldOut) {
+        return
+      } else if (isFree) {
         openFreeDownloadModal(product)
       } else if (product.stripe_url) {
         window.open(product.stripe_url, '_blank')

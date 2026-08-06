@@ -137,7 +137,7 @@ serve(async (req) => {
     })
 
     return new Response(
-      JSON.stringify({ url: paymentLink.url }),
+      JSON.stringify({ url: paymentLink.url, productId: product.id }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 

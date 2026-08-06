@@ -1066,6 +1066,9 @@
                 <input type="text" id="upload-title" class="admin-input" placeholder="Title" required>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
                 <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
+                <input type="number" id="upload-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
+                <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
+                <input type="hidden" id="upload-stripe-product-id">
                 <textarea id="upload-description" class="admin-input" placeholder="Description" required></textarea>
                 <select id="upload-category" class="admin-input" required>
                   <option value="" disabled selected>Select Category</option>
@@ -1120,6 +1123,9 @@
               <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
               <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
               <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
+              <input type="number" id="edit-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
+              <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
+              <input type="hidden" id="edit-stripe-product-id">
               <textarea id="edit-description" class="admin-input" placeholder="Description" required></textarea>
               <select id="edit-category" class="admin-input" required>
                 <option value="" disabled>Select Category</option>
