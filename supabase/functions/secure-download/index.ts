@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import Stripe from "https://esm.sh/stripe@12.0.0"
+import JSZip from "https://esm.sh/jszip@3.10.1"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,9 +35,23 @@ serve(async (req) => {
 
     // @ts-ignore - bypassing strict type checking for the expanded product
     const product = session.line_items.data[0].price.product
-    const targetFilename = product.metadata?.file
+    const metadata = product.metadata || {}
 
-    if (!targetFilename) {
+    // Albums are stored as individual track keys (file_0, file_1, ...) rather
+    // than one pre-made zip, since a single big zip object can exceed
+    // Storage's per-file size cap. `file_count` marks that scheme; `file` is
+    // the older single-file format, kept for products created before this.
+    let targetFilenames: string[] = []
+    if (metadata.file_count) {
+      const count = parseInt(metadata.file_count, 10)
+      for (let i = 0; i < count; i++) {
+        if (metadata[`file_${i}`]) targetFilenames.push(metadata[`file_${i}`])
+      }
+    } else if (metadata.file) {
+      targetFilenames = [metadata.file]
+    }
+
+    if (targetFilenames.length === 0) {
       throw new Error("No digital file attached to this product in Stripe Metadata.")
     }
 
@@ -45,30 +60,54 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
-    // Uploads are stored as "<timestamp>-<original name>" to avoid collisions
-    // in the bucket. Strip that prefix so the file saves locally under its
-    // original name instead of the storage key.
-    const downloadFilename = targetFilename.replace(/^\d+-/, '')
+    if (targetFilenames.length === 1) {
+      // Uploads are stored as "<timestamp>-<original name>" to avoid collisions
+      // in the bucket. Strip that prefix so the file saves locally under its
+      // original name instead of the storage key.
+      const downloadFilename = targetFilenames[0].replace(/^\d+-/, '')
 
-    // Passing a filename (rather than just `true`) for `download` tells
-    // Supabase Storage to send Content-Disposition: attachment with that name
-    // on the signed URL itself, so the browser downloads the file under a
-    // clean name instead of opening it in an inline player (the HTML
-    // `download` attribute alone is ignored for cross-origin links like this).
-    const { data, error } = await supabase
-      .storage
-      .from('audio-vault')
-      .createSignedUrl(targetFilename, 3600, { download: downloadFilename })
+      // Passing a filename (rather than just `true`) for `download` tells
+      // Supabase Storage to send Content-Disposition: attachment with that name
+      // on the signed URL itself, so the browser downloads the file under a
+      // clean name instead of opening it in an inline player (the HTML
+      // `download` attribute alone is ignored for cross-origin links like this).
+      const { data, error } = await supabase
+        .storage
+        .from('audio-vault')
+        .createSignedUrl(targetFilenames[0], 3600, { download: downloadFilename })
 
-    if (error) throw error
+      if (error) throw error
 
-    return new Response(
-      JSON.stringify({ secureUrl: data.signedUrl }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
-      }
-    )
+      return new Response(
+        JSON.stringify({ secureUrl: data.signedUrl }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200
+        }
+      )
+    }
+
+    // Multiple tracks: fetch each from Storage server-side and zip them here,
+    // streaming the finished zip straight back in this response. Nothing gets
+    // written back to Storage, so there's no risk of the assembled zip itself
+    // hitting the per-file size cap.
+    const zip = new JSZip()
+    for (const path of targetFilenames) {
+      const { data, error } = await supabase.storage.from('audio-vault').download(path)
+      if (error) throw error
+      zip.file(path.replace(/^\d+-/, ''), await data.arrayBuffer())
+    }
+    const zipBytes = await zip.generateAsync({ type: 'uint8array' })
+    const zipFilename = `${(product.name || 'download').replace(/[^a-zA-Z0-9._-]/g, '_')}.zip`
+
+    return new Response(zipBytes, {
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="${zipFilename}"`
+      },
+      status: 200
+    })
   } catch (error) {
     return new Response(
       JSON.stringify({ error: error.message }),

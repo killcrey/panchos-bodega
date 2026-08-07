@@ -49,14 +49,28 @@ serve(async (req) => {
       throw new Error('You must be logged in as an admin to generate a checkout link.')
     }
 
-    // 2. Read the product details supplied by the admin form. `filePath` is the
-    //    object's key in the audio-vault bucket (not the full public URL) — when
-    //    present, the buyer gets a real download after checkout. `category`,
+    // 2. Read the product details supplied by the admin form. `filePaths` are the
+    //    object's key(s) in the audio-vault bucket (not the full public URL) — when
+    //    present, the buyer gets a real download after checkout. A multi-track
+    //    album is several individual track keys (never bundled into one big zip
+    //    at upload time, so each stays well under Storage's per-file size cap);
+    //    the zip a buyer actually receives is assembled on demand at download
+    //    time by secure-download, from these same individual files. `category`,
     //    `sizes`, and the two shipping cost fields drive apparel-specific
     //    checkout behavior (shipping rates + a size picker) further down.
-    const { title, priceCents, filePath, category, sizes, domesticShippingCents, internationalShippingCents } = await req.json()
+    const { title, priceCents, filePaths, category, sizes, domesticShippingCents, internationalShippingCents } = await req.json()
     if (!title || !priceCents || priceCents <= 0) {
       throw new Error('A product title and a positive price are required.')
+    }
+
+    const hasFiles = Array.isArray(filePaths) && filePaths.length > 0
+    // Stripe metadata values are capped at 500 chars each, which a long file
+    // path list could exceed — so each file gets its own numbered key instead
+    // of packing them into one JSON string.
+    const fileMetadata: Record<string, string> = {}
+    if (hasFiles) {
+      fileMetadata.file_count = String(filePaths.length)
+      filePaths.forEach((path: string, i: number) => { fileMetadata[`file_${i}`] = path })
     }
 
     const isApparel = category === 'apparel'
@@ -74,7 +88,7 @@ serve(async (req) => {
 
     const product = await stripe.products.create({
       name: title,
-      ...(filePath ? { metadata: { file: filePath } } : {})
+      ...(hasFiles ? { metadata: fileMetadata } : {})
     })
 
     const price = await stripe.prices.create({
@@ -110,7 +124,7 @@ serve(async (req) => {
     const paymentLink = await stripe.paymentLinks.create({
       line_items: [{ price: price.id, quantity: 1 }],
       // Only digital products need to land on the download page after checkout.
-      ...(filePath ? {
+      ...(hasFiles ? {
         after_completion: {
           type: 'redirect',
           redirect: { url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}` }

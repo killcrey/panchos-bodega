@@ -99,12 +99,16 @@ async function zipAndUploadToVault(files, baseName) {
 
 // Uploads whatever digital files (audio, PDF, image, etc.) are currently
 // selected in the given file input. A single file is uploaded as-is. Multiple
-// audio files (an album) are each uploaded individually — so every track can
-// be previewed in the player — and also bundled into one .zip. Multiple
-// non-audio files (e.g. a set of hi-res images) are just bundled into one
-// .zip, since there's nothing to individually preview. Either way, the
-// returned fileUrl is the actual purchasable digital file — what
-// audio_preview_url points to and what Generate/Stripe tags as the download.
+// audio files (an album) are each uploaded individually, never bundled into
+// one zip here — a single zip object for a whole album can exceed Storage's
+// per-file size cap, while each individual track comfortably stays under it.
+// The zip a buyer actually receives is assembled on demand at download time
+// (see secure-download / free-download) from these same individual files.
+// Multiple non-audio files (e.g. a set of hi-res images) are still bundled
+// into one .zip, since there's nothing to individually preview or reassemble.
+// Either way, the returned fileUrl is the single purchasable digital file for
+// non-album cases — what audio_preview_url points to and what Generate
+// Stripe Link tags as the download.
 async function processDigitalFiles(fileInputId) {
   const files = Array.from(document.getElementById(fileInputId).files)
 
@@ -127,8 +131,7 @@ async function processDigitalFiles(fileInputId) {
         url
       })
     }
-    const fileUrl = await zipAndUploadToVault(files, 'album')
-    return { fileUrl, tracklistSnippets }
+    return { fileUrl: null, tracklistSnippets }
   }
 
   const fileUrl = await zipAndUploadToVault(files, 'bundle')
@@ -267,6 +270,46 @@ function closeFreeDownloadModal() {
   document.getElementById('free-download-modal').style.display = 'none'
 }
 
+// Calls a download-delivering Edge Function directly (bypassing
+// supabase.functions.invoke, which assumes a JSON response) so a multi-track
+// album's zip — assembled server-side and streamed back as raw bytes — can
+// be received as a Blob instead. Single-file products still get back plain
+// JSON with a direct signed URL, unchanged.
+async function invokeDownloadFunction(functionName, body) {
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': supabaseAnonKey,
+      'Authorization': `Bearer ${supabaseAnonKey}`
+    },
+    body: JSON.stringify(body)
+  })
+
+  const contentType = response.headers.get('content-type') || ''
+
+  if (!response.ok) {
+    let message = 'Something went wrong.'
+    try {
+      const errBody = await response.json()
+      if (errBody && errBody.error) message = errBody.error
+    } catch (_parseErr) {
+      // Keep the generic fallback message above.
+    }
+    throw new Error(message)
+  }
+
+  if (contentType.includes('application/json')) {
+    const data = await response.json()
+    return { kind: 'link', url: data.downloadUrl || data.secureUrl }
+  }
+
+  const blob = await response.blob()
+  const disposition = response.headers.get('content-disposition') || ''
+  const match = disposition.match(/filename="?([^"]+)"?/)
+  return { kind: 'blob', url: URL.createObjectURL(blob), filename: match ? match[1] : 'download.zip' }
+}
+
 function initFreeDownloadModal() {
   const closeBtn = document.getElementById('free-download-close-btn')
   const submitBtn = document.getElementById('free-download-submit-btn')
@@ -291,16 +334,13 @@ function initFreeDownloadModal() {
     statusEl.style.color = '#e8b923'
 
     try {
-      const { data, error } = await supabase.functions.invoke('free-download', {
-        body: { productId: freeDownloadProduct.id, email }
-      })
-      if (error) throw error
+      const result = await invokeDownloadFunction('free-download', { productId: freeDownloadProduct.id, email })
 
       document.getElementById('free-download-form-view').style.display = 'none'
       document.getElementById('free-download-result-view').style.display = 'block'
       document.getElementById('free-download-result-view').innerHTML = `
         <p style="font-size: 0.75rem; color: #00ffcc; margin: 0 0 1rem 0;">Your download is ready.</p>
-        <a href="${data.downloadUrl}" class="admin-btn" style="display: block; text-decoration: none; text-align: center; box-sizing: border-box;" download>Right-Click &amp; Download</a>
+        <a href="${result.url}" class="admin-btn" style="display: block; text-decoration: none; text-align: center; box-sizing: border-box;" download${result.kind === 'blob' ? `="${result.filename}"` : ''}>Right-Click &amp; Download</a>
         <div class="download-instructions">
           <p><strong>Windows / Android:</strong> Right-click (or tap and hold) the button above and choose "Save Link As" / "Download Link" to save the file.</p>
           <p><strong>Mac (Safari):</strong> Right-click the button and choose "Download Linked File."</p>
@@ -309,7 +349,7 @@ function initFreeDownloadModal() {
         </div>
       `
     } catch (err) {
-      statusEl.textContent = await describeFunctionError(err)
+      statusEl.textContent = err.message || 'Something went wrong.'
       statusEl.style.color = '#ff4d4d'
     } finally {
       submitBtn.disabled = false
@@ -332,7 +372,7 @@ async function describeFunctionError(err) {
   return err.message || 'Something went wrong.'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, domesticShippingInputId, internationalShippingInputId, stripeProductIdInputId, existingFileUrl, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, domesticShippingInputId, internationalShippingInputId, stripeProductIdInputId, existingFileUrl, existingTracklistSnippets, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
   const category = document.getElementById(categoryInputId).value
@@ -363,26 +403,30 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
   statusEl.style.color = '#e8b923'
 
   try {
-    // Attach whichever digital file is currently in play — a single file, or
-    // a freshly-bundled zip — so the buyer gets a real download after
-    // checkout instead of a dead end.
-    let filePath = null
-    const { fileUrl } = await processDigitalFiles(fileInputId)
+    // Attach whichever digital file(s) are currently in play — a freshly
+    // selected single file/album, or whatever's already on the product — so
+    // the buyer gets a real download after checkout instead of a dead end.
+    const { fileUrl, tracklistSnippets } = await processDigitalFiles(fileInputId)
 
-    if (fileUrl) {
-      filePath = extractStoragePath(fileUrl, 'audio-vault')
+    let filePaths = []
+    if (tracklistSnippets) {
+      filePaths = tracklistSnippets.map(t => extractStoragePath(t.url, 'audio-vault')).filter(Boolean)
+    } else if (fileUrl) {
+      filePaths = [extractStoragePath(fileUrl, 'audio-vault')].filter(Boolean)
+    } else if (Array.isArray(existingTracklistSnippets) && existingTracklistSnippets.length > 0) {
+      filePaths = existingTracklistSnippets.map(t => extractStoragePath(t.url, 'audio-vault')).filter(Boolean)
     } else if (existingFileUrl) {
-      filePath = extractStoragePath(existingFileUrl, 'audio-vault')
+      filePaths = [extractStoragePath(existingFileUrl, 'audio-vault')].filter(Boolean)
     }
 
     const { data, error } = await supabase.functions.invoke('create-stripe-link', {
-      body: { title, priceCents: Math.round(price * 100), filePath, category, sizes, domesticShippingCents, internationalShippingCents }
+      body: { title, priceCents: Math.round(price * 100), filePaths, category, sizes, domesticShippingCents, internationalShippingCents }
     })
     if (error) throw error
 
     document.getElementById(urlInputId).value = data.url
     document.getElementById(stripeProductIdInputId).value = data.productId || ''
-    statusEl.textContent = filePath
+    statusEl.textContent = filePaths.length > 0
       ? 'Stripe link generated with download attached.'
       : 'Stripe link generated (no digital file attached).'
     statusEl.style.color = '#00ffcc'
@@ -453,7 +497,7 @@ function initAdminPortal() {
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-domestic-shipping', 'upload-international-shipping', 'upload-stripe-product-id', null, uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-domestic-shipping', 'upload-international-shipping', 'upload-stripe-product-id', null, null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -527,7 +571,7 @@ function initAdminPortal() {
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-domestic-shipping', 'edit-international-shipping', 'edit-stripe-product-id', editingProduct ? editingProduct.audio_preview_url : null, editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-domestic-shipping', 'edit-international-shipping', 'edit-stripe-product-id', editingProduct ? editingProduct.audio_preview_url : null, editingProduct ? editingProduct.tracklist_snippets : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {
