@@ -92,14 +92,18 @@ async function uploadToVault(file) {
 // free-download) from these same individual files.
 //
 // Returns:
-//   fileUrl          - the first file's URL (single-file products' download,
-//                       and a non-null "this product has a file" signal)
+//   fileUrl          - an audio file's URL if one was uploaded (so the
+//                       storefront's single-track player can find it),
+//                       otherwise the first file's URL
 //   filePaths        - every file's storage path, for Generate/Stripe to tag
 //   downloadFiles    - {name, url} for every file, saved on the product so
 //                       free-download (which has no Stripe session to read
 //                       metadata from) knows what to zip
-//   tracklistSnippets - populated only when every file is audio, for the
-//                       storefront's preview player
+//   tracklistSnippets - built from whichever uploaded files are audio, even
+//                       when non-audio files (cover art, tracklist images)
+//                       are bundled alongside them; populated only when 2+
+//                       audio files are present, for the storefront's
+//                       multi-track preview player
 async function processDigitalFiles(fileInputId) {
   const files = Array.from(document.getElementById(fileInputId).files)
 
@@ -107,10 +111,9 @@ async function processDigitalFiles(fileInputId) {
     return { fileUrl: null, filePaths: [], downloadFiles: null, tracklistSnippets: null }
   }
 
-  const allAudio = files.length > 1 && files.every(isAudioFile)
-  const tracklistSnippets = allAudio ? [] : null
   const filePaths = []
   const downloadFiles = []
+  const audioTracks = []
   let fileUrl = null
 
   for (let i = 0; i < files.length; i++) {
@@ -118,14 +121,17 @@ async function processDigitalFiles(fileInputId) {
     if (i === 0) fileUrl = url
     filePaths.push(path)
     downloadFiles.push({ name: files[i].name, url })
-    if (allAudio) {
-      tracklistSnippets.push({
-        trackNumber: i + 1,
+    if (isAudioFile(files[i])) {
+      audioTracks.push({
+        trackNumber: audioTracks.length + 1,
         title: files[i].name.replace(/\.[^/.]+$/, ''),
         url
       })
     }
   }
+
+  if (audioTracks.length === 1) fileUrl = audioTracks[0].url
+  const tracklistSnippets = audioTracks.length > 1 ? audioTracks : null
 
   return { fileUrl, filePaths, downloadFiles, tracklistSnippets }
 }
@@ -870,16 +876,28 @@ async function loadBodega() {
 
     let audioHTML = ''
 
-    if (product.tracklist_snippets && product.tracklist_snippets.length > 0) {
+    // Prefer the saved tracklist_snippets, but fall back to deriving tracks
+    // from download_files directly (filtering to just the audio ones) — this
+    // is what makes bundles saved before this fallback existed, or bundles
+    // that mix audio with cover art/tracklist images, still get a player.
+    const playableTracks = (product.tracklist_snippets && product.tracklist_snippets.length > 0)
+      ? product.tracklist_snippets
+      : (Array.isArray(product.download_files)
+          ? product.download_files
+              .filter(f => isAudioUrl(f.url))
+              .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
+          : [])
+
+    if (playableTracks.length > 1) {
       audioHTML = `
         <div class="album-player-container" style="background: #111; padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem; border: 1px solid #333;">
-          <button class="card-play-btn" data-url="${product.tracklist_snippets[0].url}" data-title="${product.title} — ${product.tracklist_snippets[0].title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+          <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title} — ${playableTracks[0].title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
             <span class="play-icon">▶</span> Play Preview
           </button>
           <p style="font-size: 0.5rem; color: #888; margin: 0 0 0.4rem 0; text-transform: uppercase; letter-spacing: 1px;">Preview Tracklist</p>
           <div class="tracklist-slider" style="max-height: 66px; overflow-y: auto; padding-right: 5px;">
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${product.tracklist_snippets.map((track) => `
+              ${playableTracks.map((track) => `
                 <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
                   <span class="play-icon" style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${track.title}
                 </li>
@@ -887,6 +905,12 @@ async function loadBodega() {
             </ul>
           </div>
         </div>
+      `
+    } else if (playableTracks.length === 1) {
+      audioHTML = `
+        <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 1rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+          <span class="play-icon">▶</span> Play Preview
+        </button>
       `
     } else if (isAudioUrl(product.audio_preview_url)) {
       audioHTML = `
