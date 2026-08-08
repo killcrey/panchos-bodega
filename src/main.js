@@ -55,6 +55,11 @@ async function loadAdminInventory() {
   })
 }
 
+// Matches the maxlength on #upload-description / #edit-description in index.html.
+// Enforced again here at render time so descriptions saved before this limit
+// existed can't blow out the product card either.
+const MAX_DESCRIPTION_LENGTH = 200
+
 const AUDIO_URL_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
 
 function isAudioUrl(url) {
@@ -866,8 +871,8 @@ async function loadBodega() {
       galleryHTML = `<div class="no-image">NO IMAGE</div>`
     }
 
-    const descriptionHTML = product.description 
-      ? `<p class="description">${product.description}</p>` 
+    const descriptionHTML = product.description
+      ? `<p class="description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>`
       : ''
 
     const sizesHTML = product.sizes 
@@ -922,9 +927,9 @@ async function loadBodega() {
 
     card.innerHTML = `
       ${galleryHTML}
-      <h3 style="margin-top: 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>
-      <p class="price" style="margin: 0.3rem 0; font-size: 0.65rem;">${formattedPrice}</p>
-      <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin-bottom: 0.4rem;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
+      <h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>
+      <p class="price" style="margin: 0 0 0.15rem 0; font-size: 0.65rem;">${formattedPrice}</p>
+      <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
       ${descriptionHTML}
       ${sizesHTML}
       ${audioHTML}
