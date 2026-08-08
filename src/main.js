@@ -58,7 +58,7 @@ async function loadAdminInventory() {
 // Matches the maxlength on #upload-description / #edit-description in index.html.
 // Enforced again here at render time so descriptions saved before this limit
 // existed can't blow out the product card either.
-const MAX_DESCRIPTION_LENGTH = 200
+const MAX_DESCRIPTION_LENGTH = 400
 
 const AUDIO_URL_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
 
@@ -895,7 +895,7 @@ async function loadBodega() {
 
     if (playableTracks.length > 1) {
       audioHTML = `
-        <div class="album-player-container" style="background: #111; padding: 0.5rem; border-radius: 6px; margin-bottom: 1rem; border: 1px solid #333;">
+        <div class="album-player-container" style="background: #111; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.3rem; border: 1px solid #333;">
           <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title} — ${playableTracks[0].title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
             <span class="play-icon">▶</span> Play Preview
           </button>
@@ -913,13 +913,13 @@ async function loadBodega() {
       `
     } else if (playableTracks.length === 1) {
       audioHTML = `
-        <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 1rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+        <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
           <span class="play-icon">▶</span> Play Preview
         </button>
       `
     } else if (isAudioUrl(product.audio_preview_url)) {
       audioHTML = `
-        <button class="card-play-btn" data-url="${product.audio_preview_url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 1rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+        <button class="card-play-btn" data-url="${product.audio_preview_url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
           <span class="play-icon">▶</span> Play Preview
         </button>
       `
@@ -932,8 +932,9 @@ async function loadBodega() {
       <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
       ${descriptionHTML}
       ${sizesHTML}
+      <div style="margin-top: auto;"></div>
       ${audioHTML}
-      <button class="buy-btn" ${isSoldOut ? 'disabled' : ''} style="margin-top: auto; width: 100%; padding: 0.5rem; background: ${isSoldOut ? '#444' : '#00ffcc'}; color: ${isSoldOut ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
+      <button class="buy-btn" ${isSoldOut ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isSoldOut ? '#444' : '#00ffcc'}; color: ${isSoldOut ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
         ${isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Buy Now')}
       </button>
     `
