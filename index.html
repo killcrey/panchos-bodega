@@ -508,12 +508,25 @@
         margin-bottom: 1rem;
         flex-shrink: 0;
         filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.8));
+        transition: max-width 0.2s ease, margin-bottom 0.2s ease;
       }
 
       @media (max-width: 768px) {
         .admin-logo {
           max-width: 90px;
           margin-bottom: 0.75rem;
+        }
+      }
+
+      .admin-logo.admin-logo-compact {
+        max-width: 70px;
+        margin-bottom: 0.5rem;
+      }
+
+      @media (max-width: 768px) {
+        .admin-logo.admin-logo-compact {
+          max-width: 48px;
+          margin-bottom: 0.4rem;
         }
       }
 

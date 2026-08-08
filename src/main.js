@@ -443,6 +443,7 @@ function initAdminPortal() {
   const isAdminMode = params.get('mode') === 'admin'
 
   const adminPortal = document.getElementById('admin-portal')
+  const adminLogo = document.querySelector('.admin-logo')
   const headerContainer = document.querySelector('.header-container')
   const storeGrid = document.getElementById('store-grid')
   const loginView = document.getElementById('login-view')
@@ -464,10 +465,12 @@ function initAdminPortal() {
     if (session) {
       loginView.style.display = 'none'
       dashboardView.style.display = 'flex'
+      adminLogo.classList.add('admin-logo-compact')
       loadAdminInventory()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
+      adminLogo.classList.remove('admin-logo-compact')
       closeEditModal()
     }
   })
