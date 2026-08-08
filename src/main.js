@@ -1,5 +1,4 @@
 import { createClient } from '@supabase/supabase-js'
-import JSZip from 'jszip'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -81,61 +80,54 @@ async function uploadToVault(file) {
   const { error } = await supabase.storage.from('audio-vault').upload(path, file)
   if (error) throw error
   const { data } = supabase.storage.from('audio-vault').getPublicUrl(path)
-  return data.publicUrl
-}
-
-async function zipAndUploadToVault(files, baseName) {
-  const zip = new JSZip()
-  files.forEach(file => zip.file(file.name, file))
-  const zipBlob = await zip.generateAsync({ type: 'blob' })
-  const zipPath = `${Date.now()}-${baseName}.zip`
-  const { error } = await supabase.storage
-    .from('audio-vault')
-    .upload(zipPath, zipBlob, { contentType: 'application/zip' })
-  if (error) throw error
-  const { data } = supabase.storage.from('audio-vault').getPublicUrl(zipPath)
-  return data.publicUrl
+  return { url: data.publicUrl, path }
 }
 
 // Uploads whatever digital files (audio, PDF, image, etc.) are currently
-// selected in the given file input. A single file is uploaded as-is. Multiple
-// audio files (an album) are each uploaded individually, never bundled into
-// one zip here — a single zip object for a whole album can exceed Storage's
-// per-file size cap, while each individual track comfortably stays under it.
-// The zip a buyer actually receives is assembled on demand at download time
-// (see secure-download / free-download) from these same individual files.
-// Multiple non-audio files (e.g. a set of hi-res images) are still bundled
-// into one .zip, since there's nothing to individually preview or reassemble.
-// Either way, the returned fileUrl is the single purchasable digital file for
-// non-album cases — what audio_preview_url points to and what Generate
-// Stripe Link tags as the download.
+// selected in the given file input. Every file — one or many, audio or not —
+// is uploaded individually and never bundled into a zip here: a combined zip
+// for an 11-track album can exceed Storage's per-file size cap, while each
+// individual file comfortably stays under it. The zip a buyer actually
+// receives is assembled on demand at download time (see secure-download /
+// free-download) from these same individual files.
+//
+// Returns:
+//   fileUrl          - the first file's URL (single-file products' download,
+//                       and a non-null "this product has a file" signal)
+//   filePaths        - every file's storage path, for Generate/Stripe to tag
+//   downloadFiles    - {name, url} for every file, saved on the product so
+//                       free-download (which has no Stripe session to read
+//                       metadata from) knows what to zip
+//   tracklistSnippets - populated only when every file is audio, for the
+//                       storefront's preview player
 async function processDigitalFiles(fileInputId) {
   const files = Array.from(document.getElementById(fileInputId).files)
 
   if (files.length === 0) {
-    return { fileUrl: null, tracklistSnippets: null }
+    return { fileUrl: null, filePaths: [], downloadFiles: null, tracklistSnippets: null }
   }
 
-  if (files.length === 1) {
-    const fileUrl = await uploadToVault(files[0])
-    return { fileUrl, tracklistSnippets: null }
-  }
+  const allAudio = files.length > 1 && files.every(isAudioFile)
+  const tracklistSnippets = allAudio ? [] : null
+  const filePaths = []
+  const downloadFiles = []
+  let fileUrl = null
 
-  if (files.every(isAudioFile)) {
-    const tracklistSnippets = []
-    for (let i = 0; i < files.length; i++) {
-      const url = await uploadToVault(files[i])
+  for (let i = 0; i < files.length; i++) {
+    const { url, path } = await uploadToVault(files[i])
+    if (i === 0) fileUrl = url
+    filePaths.push(path)
+    downloadFiles.push({ name: files[i].name, url })
+    if (allAudio) {
       tracklistSnippets.push({
         trackNumber: i + 1,
         title: files[i].name.replace(/\.[^/.]+$/, ''),
         url
       })
     }
-    return { fileUrl: null, tracklistSnippets }
   }
 
-  const fileUrl = await zipAndUploadToVault(files, 'bundle')
-  return { fileUrl, tracklistSnippets: null }
+  return { fileUrl, filePaths, downloadFiles, tracklistSnippets }
 }
 
 // Uploads every image currently selected in the given file input to
@@ -186,6 +178,9 @@ async function deleteProduct(product) {
       extractStoragePath(product.audio_preview_url, 'audio-vault'),
       ...(Array.isArray(product.tracklist_snippets)
         ? product.tracklist_snippets.map(track => extractStoragePath(track.url, 'audio-vault'))
+        : []),
+      ...(Array.isArray(product.download_files)
+        ? product.download_files.map(f => extractStoragePath(f.url, 'audio-vault'))
         : [])
     ].filter(Boolean)
     if (audioPaths.length > 0) {
@@ -234,12 +229,15 @@ function openEditModal(product) {
     : 'Currently: no photos'
 
   const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
+  const fileCount = Array.isArray(product.download_files) ? product.download_files.length : 0
   const currentFileInfo = document.getElementById('edit-file-current-info')
   currentFileInfo.textContent = trackCount > 0
     ? `Currently: ${trackCount}-track album`
-    : product.audio_preview_url
-      ? 'Currently: digital file attached'
-      : 'Currently: no digital file attached'
+    : fileCount > 1
+      ? `Currently: ${fileCount}-file bundle`
+      : product.audio_preview_url
+        ? 'Currently: digital file attached'
+        : 'Currently: no digital file attached'
 
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
   document.getElementById('edit-published').checked = product.published !== false
@@ -372,7 +370,7 @@ async function describeFunctionError(err) {
   return err.message || 'Something went wrong.'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, domesticShippingInputId, internationalShippingInputId, stripeProductIdInputId, existingFileUrl, existingTracklistSnippets, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, domesticShippingInputId, internationalShippingInputId, stripeProductIdInputId, existingFileUrl, existingTracklistSnippets, existingDownloadFiles, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
   const category = document.getElementById(categoryInputId).value
@@ -404,19 +402,20 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
 
   try {
     // Attach whichever digital file(s) are currently in play — a freshly
-    // selected single file/album, or whatever's already on the product — so
-    // the buyer gets a real download after checkout instead of a dead end.
-    const { fileUrl, tracklistSnippets } = await processDigitalFiles(fileInputId)
+    // selected single file/album/bundle, or whatever's already on the
+    // product — so the buyer gets a real download after checkout instead of
+    // a dead end.
+    const { filePaths: newFilePaths } = await processDigitalFiles(fileInputId)
 
-    let filePaths = []
-    if (tracklistSnippets) {
-      filePaths = tracklistSnippets.map(t => extractStoragePath(t.url, 'audio-vault')).filter(Boolean)
-    } else if (fileUrl) {
-      filePaths = [extractStoragePath(fileUrl, 'audio-vault')].filter(Boolean)
-    } else if (Array.isArray(existingTracklistSnippets) && existingTracklistSnippets.length > 0) {
-      filePaths = existingTracklistSnippets.map(t => extractStoragePath(t.url, 'audio-vault')).filter(Boolean)
-    } else if (existingFileUrl) {
-      filePaths = [extractStoragePath(existingFileUrl, 'audio-vault')].filter(Boolean)
+    let filePaths = newFilePaths
+    if (filePaths.length === 0) {
+      if (Array.isArray(existingDownloadFiles) && existingDownloadFiles.length > 0) {
+        filePaths = existingDownloadFiles.map(f => extractStoragePath(f.url, 'audio-vault')).filter(Boolean)
+      } else if (Array.isArray(existingTracklistSnippets) && existingTracklistSnippets.length > 0) {
+        filePaths = existingTracklistSnippets.map(t => extractStoragePath(t.url, 'audio-vault')).filter(Boolean)
+      } else if (existingFileUrl) {
+        filePaths = [extractStoragePath(existingFileUrl, 'audio-vault')].filter(Boolean)
+      }
     }
 
     const { data, error } = await supabase.functions.invoke('create-stripe-link', {
@@ -500,7 +499,7 @@ function initAdminPortal() {
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-domestic-shipping', 'upload-international-shipping', 'upload-stripe-product-id', null, null, uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-domestic-shipping', 'upload-international-shipping', 'upload-stripe-product-id', null, null, null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -525,7 +524,7 @@ function initAdminPortal() {
 
       const { coverUrl, galleryImages } = await processImageFiles('upload-image')
 
-      const { fileUrl, tracklistSnippets } = await processDigitalFiles('upload-file')
+      const { fileUrl, downloadFiles, tracklistSnippets } = await processDigitalFiles('upload-file')
 
       const { error: insertError } = await supabase.from('products').insert({
         title,
@@ -540,6 +539,7 @@ function initAdminPortal() {
         cover_art_url: coverUrl,
         gallery_images: galleryImages,
         audio_preview_url: fileUrl,
+        download_files: downloadFiles,
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
         published
@@ -574,7 +574,7 @@ function initAdminPortal() {
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-domestic-shipping', 'edit-international-shipping', 'edit-stripe-product-id', editingProduct ? editingProduct.audio_preview_url : null, editingProduct ? editingProduct.tracklist_snippets : null, editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-domestic-shipping', 'edit-international-shipping', 'edit-stripe-product-id', editingProduct ? editingProduct.audio_preview_url : null, editingProduct ? editingProduct.tracklist_snippets : null, editingProduct ? editingProduct.download_files : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {
@@ -617,10 +617,12 @@ function initAdminPortal() {
       }
 
       let fileUrl = editingProduct ? editingProduct.audio_preview_url : null
+      let downloadFiles = editingProduct ? editingProduct.download_files : null
       let tracklistSnippets = editingProduct ? editingProduct.tracklist_snippets : null
       if (document.getElementById('edit-file').files.length > 0) {
         const result = await processDigitalFiles('edit-file')
         fileUrl = result.fileUrl
+        downloadFiles = result.downloadFiles
         tracklistSnippets = result.tracklistSnippets
       }
 
@@ -639,6 +641,7 @@ function initAdminPortal() {
         image_3_url: image3Url,
         gallery_images: galleryImages,
         audio_preview_url: fileUrl,
+        download_files: downloadFiles,
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
         published

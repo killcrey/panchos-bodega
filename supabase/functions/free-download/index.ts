@@ -123,7 +123,7 @@ serve(async (req) => {
 
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('title, price_cents, audio_preview_url, tracklist_snippets, published')
+      .select('title, price_cents, audio_preview_url, tracklist_snippets, download_files, published')
       .eq('id', productId)
       .single()
 
@@ -141,12 +141,17 @@ serve(async (req) => {
       throw new Error("This product is not free.")
     }
 
-    // Albums are stored as individual track files rather than one pre-made
-    // zip (a single big zip object can exceed Storage's per-file size cap),
-    // so build the array from tracklist_snippets when present.
+    // Multi-file products (albums, or a bundle of images/PDFs) are stored as
+    // individual files rather than one pre-made zip (a single big zip object
+    // can exceed Storage's per-file size cap). download_files is the general
+    // record of every file for a product, populated regardless of file type;
+    // tracklist_snippets (audio only) and audio_preview_url (single legacy
+    // file) are kept as fallbacks for products created before this existed.
+    const downloadFiles = Array.isArray(product.download_files) ? product.download_files : []
     const tracks = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets : []
-    const targetFilenames = tracks.length > 0
-      ? tracks.map((t: { url: string }) => extractStoragePath(t.url, 'audio-vault')).filter(Boolean)
+    const items = downloadFiles.length > 0 ? downloadFiles : tracks
+    const targetFilenames = items.length > 0
+      ? items.map((t: { url: string }) => extractStoragePath(t.url, 'audio-vault')).filter(Boolean)
       : [extractStoragePath(product.audio_preview_url, 'audio-vault')].filter(Boolean)
 
     if (targetFilenames.length === 0) {
@@ -185,7 +190,7 @@ serve(async (req) => {
         .from('audio-vault')
         .createSignedUrl(targetFilenames[i], 3600, { download: downloadFilename })
       if (error) throw error
-      trackLinks.push({ title: tracks[i]?.title || `Track ${i + 1}`, url: data.signedUrl })
+      trackLinks.push({ title: items[i]?.title || items[i]?.name || `File ${i + 1}`, url: data.signedUrl })
     }
     await sendTrackListEmail(email, product.title || 'your download', trackLinks)
 
