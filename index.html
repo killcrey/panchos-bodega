@@ -492,46 +492,50 @@
         z-index: 10000;
         flex-direction: column;
         align-items: center;
-        padding: 1.25rem 2rem;
+        padding: 0.75rem 1.5rem;
         box-sizing: border-box;
         overflow-y: auto;
       }
 
+      .admin-header {
+        width: 100%;
+        max-width: 1100px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-shrink: 0;
+        padding-bottom: 0.6rem;
+        margin-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .admin-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-shrink: 0;
+      }
+
       .admin-logo {
-        max-width: 160px;
+        max-width: 44px;
         width: 100%;
         height: auto;
-        margin-bottom: 1rem;
         flex-shrink: 0;
         filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.8));
-        transition: max-width 0.2s ease, margin-bottom 0.2s ease;
       }
 
       @media (max-width: 768px) {
         .admin-logo {
-          max-width: 90px;
-          margin-bottom: 0.75rem;
-        }
-      }
-
-      .admin-logo.admin-logo-compact {
-        max-width: 70px;
-        margin-bottom: 0.5rem;
-      }
-
-      @media (max-width: 768px) {
-        .admin-logo.admin-logo-compact {
-          max-width: 48px;
-          margin-bottom: 0.4rem;
+          max-width: 34px;
         }
       }
 
       #admin-live-site-link {
         display: inline-block;
         flex-shrink: 0;
-        margin-bottom: 1.25rem;
         color: #00ffcc;
-        font-size: 0.65rem;
+        font-size: 0.6rem;
         font-weight: bold;
         letter-spacing: 1px;
         text-transform: uppercase;
@@ -554,7 +558,7 @@
 
       #dashboard-view {
         width: 100%;
-        max-width: 900px;
+        max-width: 1100px;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -590,6 +594,14 @@
         min-height: 0;
         display: flex;
         flex-direction: column;
+      }
+
+      .dashboard-panel-primary {
+        flex: 2 1 0;
+      }
+
+      .dashboard-panel-secondary {
+        flex: 1 1 0;
       }
 
       .dashboard-panel + .dashboard-panel {
@@ -675,6 +687,10 @@
         border-color: #b8291f;
         margin-top: 1rem;
         flex-shrink: 0;
+      }
+
+      .admin-header .admin-btn-danger {
+        margin-top: 0;
       }
 
       .admin-btn.admin-btn-danger:hover {
@@ -1059,8 +1075,13 @@
     </div>
 
     <div id="admin-portal">
-      <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/adminlogo.png" alt="Admin" class="admin-logo">
-      <a href="https://bodega.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" id="admin-live-site-link">Go to Live Site</a>
+      <div class="admin-header">
+        <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/adminlogo.png" alt="Admin" class="admin-logo">
+        <div class="admin-header-actions">
+          <a href="https://bodega.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" id="admin-live-site-link">Go to Live Site</a>
+          <button type="button" id="admin-logout-btn" class="admin-btn admin-btn-small admin-btn-danger" style="display: none;">Logout</button>
+        </div>
+      </div>
       <div id="login-view">
         <p class="admin-title">Admin Access</p>
         <input type="email" id="admin-email" class="admin-input" placeholder="Email" autocomplete="username">
@@ -1069,7 +1090,7 @@
       </div>
       <div id="dashboard-view" style="display: none;">
         <div class="dashboard-panels">
-          <div class="dashboard-panel">
+          <div class="dashboard-panel dashboard-panel-primary">
             <p class="panel-title">Stock the Shelf</p>
             <div id="upload-form-container">
               <form id="upload-form">
@@ -1117,12 +1138,11 @@
               <div id="upload-status"></div>
             </div>
           </div>
-          <div class="dashboard-panel">
+          <div class="dashboard-panel dashboard-panel-secondary">
             <p class="panel-title">Inventory</p>
             <div id="admin-inventory-list"></div>
           </div>
         </div>
-        <button type="button" id="admin-logout-btn" class="admin-btn admin-btn-danger">Logout</button>
       </div>
 
       <div id="edit-modal">
