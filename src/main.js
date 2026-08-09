@@ -981,7 +981,6 @@ async function loadBodega() {
 // INJECT 3: Category Filter Bar Logic (local DOM filtering, no re-fetch)
 function setupCategoryFilters() {
   const filterButtons = document.querySelectorAll('.filter-btn[data-filter]')
-  const logoLink = document.getElementById('logo-home-filter')
 
   function applyFilter(filter) {
     filterButtons.forEach(b => b.classList.toggle('active', b.getAttribute('data-filter') === filter))
@@ -996,10 +995,6 @@ function setupCategoryFilters() {
   filterButtons.forEach(btn => {
     btn.addEventListener('click', () => applyFilter(btn.getAttribute('data-filter')))
   })
-
-  if (logoLink) {
-    logoLink.addEventListener('click', () => applyFilter('all'))
-  }
 
   // Land on the MUSIC filter by default
   applyFilter('music')
