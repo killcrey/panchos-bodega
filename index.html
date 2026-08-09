@@ -531,7 +531,7 @@
         }
       }
 
-      #admin-live-site-link {
+      .live-site-link {
         display: inline-block;
         flex-shrink: 0;
         color: #00ffcc;
@@ -545,9 +545,26 @@
         transition: color 0.2s ease, border-color 0.2s ease;
       }
 
-      #admin-live-site-link:hover {
+      .live-site-link:hover {
         color: #fff;
         border-color: #fff;
+      }
+
+      .edit-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin: 0 0 1rem 0;
+        border-bottom: 2px solid #e8b923;
+        padding-bottom: 0.75rem;
+      }
+
+      .edit-modal-header .admin-title {
+        margin: 0;
+        border-bottom: none;
+        padding-bottom: 0;
+        text-align: left;
       }
 
       #login-view {
@@ -1078,7 +1095,7 @@
       <div class="admin-header">
         <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/adminlogo.png" alt="Admin" class="admin-logo">
         <div class="admin-header-actions">
-          <a href="https://bodega.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" id="admin-live-site-link">Go to Live Site</a>
+          <a href="https://bodega.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="live-site-link">Go to Live Site</a>
           <button type="button" id="admin-logout-btn" class="admin-btn admin-btn-small admin-btn-danger" style="display: none;">Logout</button>
         </div>
       </div>
@@ -1147,7 +1164,10 @@
 
       <div id="edit-modal">
         <div class="edit-modal-content">
-          <p class="admin-title">Edit Product</p>
+          <div class="edit-modal-header">
+            <p class="admin-title">Edit Product</p>
+            <a href="https://bodega.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="live-site-link">Go to Live Site</a>
+          </div>
           <form id="edit-product-form">
             <input type="hidden" id="edit-id">
             <div class="edit-modal-fields">
