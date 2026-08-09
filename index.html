@@ -83,13 +83,27 @@
         max-width: 100px; /* Kept the 20% increase */
         width: 100%;
         height: auto;
-        filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.8)); 
+        filter: drop-shadow(0 0 10px rgba(255, 0, 0, 0.8));
         transition: transform 0.2s, filter 0.2s, max-width 0.3s ease;
       }
 
       .home-link-img:hover {
         transform: scale(1.05);
-        filter: drop-shadow(0 0 15px rgba(255, 0, 0, 1)); 
+        filter: drop-shadow(0 0 15px rgba(255, 0, 0, 1));
+      }
+
+      .footer-bodega-logo {
+        max-width: 150px;
+        width: 100%;
+        height: auto;
+        border-radius: 4px;
+        filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.8));
+        transition: transform 0.2s ease, filter 0.2s ease;
+      }
+
+      .footer-side-left:hover .footer-bodega-logo {
+        transform: scale(1.05);
+        filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.8)) brightness(1.08);
       }
 
       .game-poster-img {
@@ -438,6 +452,9 @@
         }
         .home-link-img, .game-poster-img {
           max-width: 60px; /* Keep them flanking the footer without crowding it */
+        }
+        .footer-bodega-logo {
+          max-width: 110px;
         }
         .footer-content {
           /* Too narrow to keep the images flanking the text on one row —
@@ -1043,7 +1060,7 @@
     </div>
 
     <div class="filter-bar">
-      <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="logo-btn">
+      <a href="https://theinvisiblepanchos.com/" class="logo-btn">
         <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="bodega-logo">
       </a>
       <button class="filter-btn" data-filter="all">ALL</button>
@@ -1058,9 +1075,9 @@
 
     <footer class="bodega-footer">
       <div class="footer-content">
-        <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="footer-side-link footer-side-left">
-          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="home-link-img">
-        </a>
+        <button type="button" id="footer-logo-filter" class="footer-side-link footer-side-left logo-btn" aria-label="Show all products">
+          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="footer-bodega-logo">
+        </button>
 
         <div class="footer-center">
           <div class="footer-links">

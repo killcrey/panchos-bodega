@@ -996,6 +996,11 @@ function setupCategoryFilters() {
     btn.addEventListener('click', () => applyFilter(btn.getAttribute('data-filter')))
   })
 
+  const footerLogoBtn = document.getElementById('footer-logo-filter')
+  if (footerLogoBtn) {
+    footerLogoBtn.addEventListener('click', () => applyFilter('all'))
+  }
+
   // Land on the MUSIC filter by default
   applyFilter('music')
 }
