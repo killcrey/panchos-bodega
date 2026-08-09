@@ -24,23 +24,13 @@
         flex-direction: column;
       }
 
-      /* HEADER STYLING */
-      .header-container {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.75rem;
-        margin-top: 0;
-        flex-wrap: wrap;
-        gap: 1rem;
-      }
-
+      /* MENU LOGO (small bodega sign, sits inline in the filter bar) */
       .bodega-logo {
-        max-width: 280px;
-        width: 100%;
+        max-height: 1.9rem;
+        width: auto;
         height: auto;
-        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.8));
-        transition: max-width 0.3s ease;
+        border-radius: 3px;
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
       }
 
       .logo-btn {
@@ -51,19 +41,42 @@
         cursor: pointer;
         line-height: 0;
         flex-shrink: 0;
+        display: flex;
+        align-items: center;
       }
 
       .logo-btn:hover .bodega-logo {
-        filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.8)) brightness(1.08);
+        filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8)) brightness(1.08);
       }
 
-      /* Right Column for Side-by-Side Header Images */
-      .header-right-col {
+      /* FOOTER SIDE IMAGES (go-home + game poster flank the footer links) */
+      .footer-content {
         display: flex;
-        flex-direction: row; /* Switched from column to row */
         align-items: center;
-        justify-content: flex-end;
-        gap: 1.5rem; /* Slightly wider gap for horizontal breathing room */
+        justify-content: space-between;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+      }
+
+      .footer-center {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        flex: 1 1 auto;
+        order: 2;
+      }
+
+      .footer-side-link {
+        flex-shrink: 0;
+      }
+
+      .footer-side-left {
+        order: 1;
+      }
+
+      .footer-side-right {
+        order: 3;
       }
 
       .home-link-img {
@@ -420,21 +433,19 @@
           /* Extra top padding reserves room for the fixed filter bar */
           padding: 2.75rem 0.75rem 1rem 0.75rem;
         }
-        .header-container {
-          /* Allow wrapping if the 3 elements get too tight on narrow screens */
-          flex-wrap: wrap;
-          gap: 1rem;
-        }
         .bodega-logo {
-          max-width: 200px;
+          max-height: 1.5rem;
         }
         .home-link-img, .game-poster-img {
-          max-width: 72px; /* Exact uniform width maintained */
+          max-width: 60px; /* Keep them flanking the footer without crowding it */
         }
-        .header-right-col {
-          gap: 0.8rem;
-          /* Keep them side-by-side on mobile */
-          flex-direction: row;
+        .footer-content {
+          /* Too narrow to keep the images flanking the text on one row —
+             stack them centered instead of letting them wrap left-aligned */
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          gap: 1rem;
         }
         .filter-bar {
           /* Left-align so the ALL button is visible immediately instead of being
@@ -1032,6 +1043,9 @@
     </div>
 
     <div class="filter-bar">
+      <button type="button" id="logo-home-filter" class="logo-btn" aria-label="Show all products">
+        <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="bodega-logo">
+      </button>
       <button class="filter-btn" data-filter="all">ALL</button>
       <button class="filter-btn" data-filter="apparel">APPAREL</button>
       <button class="filter-btn" data-filter="art">ART</button>
@@ -1041,30 +1055,27 @@
       <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="filter-btn">HOME</a>
     </div>
 
-    <div class="header-container">
-      <button type="button" id="logo-home-filter" class="logo-btn" aria-label="Show all products">
-        <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/bodegasign.png" alt="Panchos Bodega" class="bodega-logo">
-      </button>
-
-      <div class="header-right-col">
-        <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
-          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="home-link-img">
-        </a>
-        <a href="https://game.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
-          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gameposter.jpeg" alt="Play The Invisible Panchos Game" class="game-poster-img">
-        </a>
-      </div>
-    </div>
-
     <div id="store-grid">Loading the Bodega...</div>
 
     <footer class="bodega-footer">
-      <div class="footer-links">
-        <a href="https://theinvisiblepanchos.com/" target="_blank">The Mothership</a>
-        <a href="https://game.theinvisiblepanchos.com/" target="_blank">Our Video Game</a>
-        <a href="mailto:contact@theinvisiblepanchos.com">Contact</a>
+      <div class="footer-content">
+        <a href="https://theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="footer-side-link footer-side-left">
+          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="home-link-img">
+        </a>
+
+        <div class="footer-center">
+          <div class="footer-links">
+            <a href="https://theinvisiblepanchos.com/" target="_blank">The Mothership</a>
+            <a href="https://game.theinvisiblepanchos.com/" target="_blank">Our Video Game</a>
+            <a href="mailto:contact@theinvisiblepanchos.com">Contact</a>
+          </div>
+          <p>&copy; 2026 The Invisible Panchos. All Rights Reserved. Stay Invisible.</p>
+        </div>
+
+        <a href="https://game.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="footer-side-link footer-side-right">
+          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gameposter.jpeg" alt="Play The Invisible Panchos Game" class="game-poster-img">
+        </a>
       </div>
-      <p>&copy; 2026 The Invisible Panchos. All Rights Reserved. Stay Invisible.</p>
     </footer>
 
     <div id="global-audio-player">

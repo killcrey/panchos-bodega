@@ -453,7 +453,7 @@ function initAdminPortal() {
   const isAdminMode = params.get('mode') === 'admin'
 
   const adminPortal = document.getElementById('admin-portal')
-  const headerContainer = document.querySelector('.header-container')
+  const filterBar = document.querySelector('.filter-bar')
   const storeGrid = document.getElementById('store-grid')
   const loginView = document.getElementById('login-view')
   const dashboardView = document.getElementById('dashboard-view')
@@ -463,7 +463,7 @@ function initAdminPortal() {
   const passwordInput = document.getElementById('admin-password')
 
   if (isAdminMode) {
-    headerContainer.style.display = 'none'
+    filterBar.style.display = 'none'
     storeGrid.style.display = 'none'
     document.querySelector('.bodega-footer').style.display = 'none'
     document.body.style.overflow = 'hidden'
