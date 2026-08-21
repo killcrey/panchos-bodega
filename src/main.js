@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
+import { loadStripe } from '@stripe/stripe-js'
 import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasPhysicalItems } from './cart.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
@@ -618,23 +620,53 @@ function initCartModal() {
 }
 
 // SHIPPING CHECKOUT (physical items)
-// Collects one shipping address for the whole cart, gets a live combined
-// Shippo rate for every physical item in it (apparel, or any art/pancho
-// picks item with a weight set), then hands the chosen rate off to
-// create-checkout-session to build a single Stripe Checkout Session
+// Collects one shipping address for the whole cart via Stripe's Address
+// Element (autocomplete-as-you-type, validated as the buyer types), gets a
+// live combined Shippo rate for every physical item in it (apparel, or any
+// art/pancho picks item with a weight set), then hands the chosen rate off
+// to create-checkout-session to build a single Stripe Checkout Session
 // covering the entire cart — physical and digital items alike.
 let selectedShippingRateId = null
+let stripeAddressElementPromise = null
+
+// Created and mounted once, then reused for every time the modal opens —
+// Stripe Elements aren't meant to be torn down and recreated repeatedly.
+function getAddressElement() {
+  if (!stripeAddressElementPromise) {
+    stripeAddressElementPromise = loadStripe(stripePublishableKey).then(stripe => {
+      const elements = stripe.elements({
+        appearance: {
+          theme: 'night',
+          variables: {
+            colorBackground: '#000',
+            colorText: '#fff',
+            colorTextPlaceholder: '#666',
+            colorPrimary: '#00ffcc',
+            colorDanger: '#ff4d4d',
+            borderRadius: '0px',
+            fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+            spacingUnit: '4px',
+          },
+          rules: {
+            '.Input': { border: '2px solid #fff', padding: '0.9rem 1rem' },
+          },
+        },
+      })
+      const addressElement = elements.create('address', {
+        mode: 'shipping',
+        allowedCountries: ['US'],
+      })
+      addressElement.mount('#address-element')
+      return addressElement
+    })
+  }
+  return stripeAddressElementPromise
+}
 
 function openShippingCheckoutModal() {
   selectedShippingRateId = null
 
-  document.getElementById('shipping-name').value = ''
-  document.getElementById('shipping-street1').value = ''
-  document.getElementById('shipping-street2').value = ''
-  document.getElementById('shipping-city').value = ''
-  document.getElementById('shipping-state').value = ''
-  document.getElementById('shipping-zip').value = ''
-  document.getElementById('shipping-country').value = 'US'
+  getAddressElement()
   document.getElementById('shipping-form-status').textContent = ''
   document.getElementById('shipping-rates-status').textContent = ''
   document.getElementById('shipping-form-view').style.display = 'block'
@@ -675,21 +707,22 @@ function initShippingCheckoutModal() {
     const physicalItems = cart.filter(i => i.weightOz != null && i.weightOz > 0)
     if (physicalItems.length === 0) return
 
-    const toAddress = {
-      name: document.getElementById('shipping-name').value.trim(),
-      street1: document.getElementById('shipping-street1').value.trim(),
-      street2: document.getElementById('shipping-street2').value.trim(),
-      city: document.getElementById('shipping-city').value.trim(),
-      state: document.getElementById('shipping-state').value.trim(),
-      zip: document.getElementById('shipping-zip').value.trim(),
-      country: (document.getElementById('shipping-country').value.trim() || 'US').toUpperCase()
-    }
-
-    const required = ['name', 'street1', 'city', 'state', 'zip', 'country']
-    if (required.some(f => !toAddress[f])) {
+    const addressElement = await getAddressElement()
+    const { complete, value } = await addressElement.getValue()
+    if (!complete) {
       formStatus.textContent = 'Fill in all required address fields.'
       formStatus.style.color = '#ff4d4d'
       return
+    }
+
+    const toAddress = {
+      name: value.name || '',
+      street1: value.address.line1 || '',
+      street2: value.address.line2 || '',
+      city: value.address.city || '',
+      state: value.address.state || '',
+      zip: value.address.postal_code || '',
+      country: value.address.country || 'US'
     }
 
     getRatesBtn.disabled = true

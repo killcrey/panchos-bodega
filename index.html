@@ -848,6 +848,10 @@
         border: 1px solid #444;
       }
 
+      .address-element-container {
+        margin-bottom: 1rem;
+      }
+
       input[type="file"].admin-input {
         padding: 0.6rem 1rem;
         color: #ccc;
@@ -1407,13 +1411,7 @@
 
         <div id="shipping-form-view">
           <p style="font-size: 0.7rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Your order includes a physical item — enter a shipping address for a live rate.</p>
-          <input type="text" id="shipping-name" class="admin-input" placeholder="Full Name">
-          <input type="text" id="shipping-street1" class="admin-input" placeholder="Street Address">
-          <input type="text" id="shipping-street2" class="admin-input" placeholder="Apt / Suite (optional)">
-          <input type="text" id="shipping-city" class="admin-input" placeholder="City">
-          <input type="text" id="shipping-state" class="admin-input" placeholder="State">
-          <input type="text" id="shipping-zip" class="admin-input" placeholder="ZIP / Postal Code">
-          <input type="text" id="shipping-country" class="admin-input" placeholder="Country Code (e.g. US)" value="US" maxlength="2">
+          <div id="address-element" class="address-element-container"></div>
           <div id="shipping-form-status" class="field-status"></div>
           <button type="button" id="shipping-get-rates-btn" class="admin-btn">Get Shipping Rates</button>
         </div>
