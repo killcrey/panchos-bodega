@@ -226,6 +226,7 @@ function openEditModal(product) {
   document.getElementById('edit-description').value = product.description || ''
   document.getElementById('edit-category').value = product.category || ''
   document.getElementById('edit-sizes').value = product.sizes || ''
+  document.getElementById('edit-weight').value = product.weight_oz != null ? product.weight_oz : ''
   document.getElementById('edit-domestic-shipping').value = product.domestic_shipping_cents != null ? (product.domestic_shipping_cents / 100).toFixed(2) : ''
   document.getElementById('edit-international-shipping').value = product.international_shipping_cents != null ? (product.international_shipping_cents / 100).toFixed(2) : ''
   updateSizesVisibility(product.category, 'edit-sizes-group')
@@ -362,6 +363,160 @@ function initFreeDownloadModal() {
       statusEl.style.color = '#ff4d4d'
     } finally {
       submitBtn.disabled = false
+    }
+  })
+}
+
+// APPAREL SHIPPING CHECKOUT
+// Collects the buyer's address, gets live Shippo rates for it, then hands
+// the chosen rate off to create-checkout-session to build a real Stripe
+// Checkout Session (rather than the admin's static Payment Link, which can
+// only offer flat pre-set shipping costs).
+let shippingCheckoutProduct = null
+let selectedShippingRateId = null
+
+function openShippingCheckoutModal(product) {
+  shippingCheckoutProduct = product
+  selectedShippingRateId = null
+
+  const sizeGroup = document.getElementById('shipping-size-group')
+  const sizeSelect = document.getElementById('shipping-size')
+  if (product.sizes) {
+    sizeSelect.innerHTML = '<option value="" disabled selected>Select Size</option>' +
+      product.sizes.split(',').map(s => s.trim()).filter(Boolean)
+        .map(s => `<option value="${s}">${s}</option>`).join('')
+    sizeGroup.style.display = 'block'
+  } else {
+    sizeGroup.style.display = 'none'
+  }
+
+  document.getElementById('shipping-name').value = ''
+  document.getElementById('shipping-street1').value = ''
+  document.getElementById('shipping-street2').value = ''
+  document.getElementById('shipping-city').value = ''
+  document.getElementById('shipping-state').value = ''
+  document.getElementById('shipping-zip').value = ''
+  document.getElementById('shipping-country').value = 'US'
+  document.getElementById('shipping-form-status').textContent = ''
+  document.getElementById('shipping-rates-status').textContent = ''
+  document.getElementById('shipping-form-view').style.display = 'block'
+  document.getElementById('shipping-rates-view').style.display = 'none'
+  document.getElementById('shipping-checkout-modal').style.display = 'flex'
+}
+
+function closeShippingCheckoutModal() {
+  shippingCheckoutProduct = null
+  selectedShippingRateId = null
+  document.getElementById('shipping-checkout-modal').style.display = 'none'
+}
+
+function initShippingCheckoutModal() {
+  const closeBtn = document.getElementById('shipping-checkout-close-btn')
+  const getRatesBtn = document.getElementById('shipping-get-rates-btn')
+  const backBtn = document.getElementById('shipping-back-btn')
+  const continueBtn = document.getElementById('shipping-continue-btn')
+  const formStatus = document.getElementById('shipping-form-status')
+  const ratesStatus = document.getElementById('shipping-rates-status')
+  const ratesList = document.getElementById('shipping-rates-list')
+  const sizeSelect = document.getElementById('shipping-size')
+
+  closeBtn.addEventListener('click', closeShippingCheckoutModal)
+
+  backBtn.addEventListener('click', () => {
+    document.getElementById('shipping-rates-view').style.display = 'none'
+    document.getElementById('shipping-form-view').style.display = 'block'
+  })
+
+  getRatesBtn.addEventListener('click', async () => {
+    if (!shippingCheckoutProduct) return
+
+    if (shippingCheckoutProduct.sizes && !sizeSelect.value) {
+      formStatus.textContent = 'Select a size.'
+      formStatus.style.color = '#ff4d4d'
+      return
+    }
+
+    const toAddress = {
+      name: document.getElementById('shipping-name').value.trim(),
+      street1: document.getElementById('shipping-street1').value.trim(),
+      street2: document.getElementById('shipping-street2').value.trim(),
+      city: document.getElementById('shipping-city').value.trim(),
+      state: document.getElementById('shipping-state').value.trim(),
+      zip: document.getElementById('shipping-zip').value.trim(),
+      country: (document.getElementById('shipping-country').value.trim() || 'US').toUpperCase()
+    }
+
+    const required = ['name', 'street1', 'city', 'state', 'zip', 'country']
+    if (required.some(f => !toAddress[f])) {
+      formStatus.textContent = 'Fill in all required address fields.'
+      formStatus.style.color = '#ff4d4d'
+      return
+    }
+
+    getRatesBtn.disabled = true
+    formStatus.textContent = 'Getting live shipping rates...'
+    formStatus.style.color = '#e8b923'
+
+    try {
+      const { data, error } = await supabase.functions.invoke('get-shipping-rates', {
+        body: { productId: shippingCheckoutProduct.id, toAddress }
+      })
+      if (error) throw error
+
+      shippingCheckoutProduct._toAddress = toAddress
+      shippingCheckoutProduct._size = sizeSelect.value || null
+
+      ratesList.innerHTML = data.rates.map((rate, i) => `
+        <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem; border: 1px solid #333; border-radius: 4px; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.7rem;">
+          <input type="radio" name="shipping-rate" value="${rate.id}" ${i === 0 ? 'checked' : ''}>
+          <span style="flex: 1;">${rate.provider} ${rate.service}${rate.estimatedDays ? ` — ${rate.estimatedDays}d` : ''}</span>
+          <span style="color: #00ffcc; font-weight: bold;">$${parseFloat(rate.amount).toFixed(2)}</span>
+        </label>
+      `).join('')
+
+      selectedShippingRateId = data.rates[0] ? data.rates[0].id : null
+      continueBtn.disabled = !selectedShippingRateId
+      ratesStatus.textContent = ''
+
+      document.getElementById('shipping-form-view').style.display = 'none'
+      document.getElementById('shipping-rates-view').style.display = 'block'
+    } catch (err) {
+      formStatus.textContent = await describeFunctionError(err)
+      formStatus.style.color = '#ff4d4d'
+    } finally {
+      getRatesBtn.disabled = false
+    }
+  })
+
+  ratesList.addEventListener('change', (e) => {
+    if (e.target.name === 'shipping-rate') {
+      selectedShippingRateId = e.target.value
+      continueBtn.disabled = false
+    }
+  })
+
+  continueBtn.addEventListener('click', async () => {
+    if (!shippingCheckoutProduct || !selectedShippingRateId) return
+
+    continueBtn.disabled = true
+    ratesStatus.textContent = 'Redirecting to payment...'
+    ratesStatus.style.color = '#e8b923'
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+        body: {
+          productId: shippingCheckoutProduct.id,
+          rateId: selectedShippingRateId,
+          size: shippingCheckoutProduct._size,
+          toAddress: shippingCheckoutProduct._toAddress
+        }
+      })
+      if (error) throw error
+      window.location.href = data.url
+    } catch (err) {
+      ratesStatus.textContent = await describeFunctionError(err)
+      ratesStatus.style.color = '#ff4d4d'
+      continueBtn.disabled = false
     }
   })
 }
@@ -524,6 +679,8 @@ function initAdminPortal() {
       const description = document.getElementById('upload-description').value
       const category = document.getElementById('upload-category').value
       const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
+      const weightRaw = category === 'apparel' ? document.getElementById('upload-weight').value.trim() : ''
+      const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
       const domesticShippingCents = parseShippingCents('upload-domestic-shipping', category)
       const internationalShippingCents = parseShippingCents('upload-international-shipping', category)
       const inventoryRaw = document.getElementById('upload-inventory').value.trim()
@@ -542,6 +699,7 @@ function initAdminPortal() {
         description,
         category,
         sizes,
+        weight_oz: weightOz,
         domestic_shipping_cents: domesticShippingCents,
         international_shipping_cents: internationalShippingCents,
         inventory_count: inventoryCount,
@@ -604,6 +762,8 @@ function initAdminPortal() {
       const description = document.getElementById('edit-description').value
       const category = document.getElementById('edit-category').value
       const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
+      const weightRaw = category === 'apparel' ? document.getElementById('edit-weight').value.trim() : ''
+      const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
       const domesticShippingCents = parseShippingCents('edit-domestic-shipping', category)
       const internationalShippingCents = parseShippingCents('edit-international-shipping', category)
       const inventoryRaw = document.getElementById('edit-inventory').value.trim()
@@ -642,6 +802,7 @@ function initAdminPortal() {
         description,
         category,
         sizes,
+        weight_oz: weightOz,
         domestic_shipping_cents: domesticShippingCents,
         international_shipping_cents: internationalShippingCents,
         inventory_count: inventoryCount,
@@ -962,6 +1123,8 @@ async function loadBodega() {
         return
       } else if (isFree) {
         openFreeDownloadModal(product)
+      } else if (product.category === 'apparel') {
+        openShippingCheckoutModal(product)
       } else if (product.stripe_url) {
         window.open(product.stripe_url, '_blank')
       } else {
@@ -1025,6 +1188,7 @@ function initEnterOverlay() {
 }
 
 initFreeDownloadModal()
+initShippingCheckoutModal()
 
 const isAdminMode = initAdminPortal()
 if (!isAdminMode) {

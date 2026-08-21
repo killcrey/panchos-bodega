@@ -953,7 +953,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal, #free-download-modal {
+      #edit-modal, #free-download-modal, #shipping-checkout-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -1118,6 +1118,42 @@
       </div>
     </div>
 
+    <div id="shipping-checkout-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Shipping Checkout</p>
+
+        <div id="shipping-form-view">
+          <p style="font-size: 0.7rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Enter your shipping address for a live rate.</p>
+          <div id="shipping-size-group" style="display: none;">
+            <select id="shipping-size" class="admin-input">
+              <option value="" disabled selected>Select Size</option>
+            </select>
+          </div>
+          <input type="text" id="shipping-name" class="admin-input" placeholder="Full Name">
+          <input type="text" id="shipping-street1" class="admin-input" placeholder="Street Address">
+          <input type="text" id="shipping-street2" class="admin-input" placeholder="Apt / Suite (optional)">
+          <input type="text" id="shipping-city" class="admin-input" placeholder="City">
+          <input type="text" id="shipping-state" class="admin-input" placeholder="State">
+          <input type="text" id="shipping-zip" class="admin-input" placeholder="ZIP / Postal Code">
+          <input type="text" id="shipping-country" class="admin-input" placeholder="Country Code (e.g. US)" value="US" maxlength="2">
+          <div id="shipping-form-status" class="field-status"></div>
+          <button type="button" id="shipping-get-rates-btn" class="admin-btn">Get Shipping Rates</button>
+        </div>
+
+        <div id="shipping-rates-view" style="display: none;">
+          <p style="font-size: 0.7rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Choose a shipping option:</p>
+          <div id="shipping-rates-list"></div>
+          <div id="shipping-rates-status" class="field-status"></div>
+          <div class="edit-modal-actions">
+            <button type="button" id="shipping-back-btn" class="admin-btn" style="background: transparent; color: #fff; border-color: #666;">Back</button>
+            <button type="button" id="shipping-continue-btn" class="admin-btn" disabled>Continue to Payment</button>
+          </div>
+        </div>
+
+        <button type="button" id="shipping-checkout-close-btn" class="admin-btn admin-btn-danger">Close</button>
+      </div>
+    </div>
+
     <div id="admin-portal">
       <div class="admin-header">
         <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/adminlogo.png" alt="Admin" class="admin-logo">
@@ -1159,9 +1195,11 @@
                   <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
                 </div>
                 <div id="upload-shipping-group" style="display: none;">
-                  <input type="number" id="upload-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional)" step="0.01" min="0">
-                  <input type="number" id="upload-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional)" step="0.01" min="0">
-                  <p class="field-hint">Leave both blank for free shipping. Set International to also allow orders from outside the US — buyers pick the matching option at checkout.</p>
+                  <input type="number" id="upload-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
+                  <p class="field-hint">Required to sell this item — buyers get a live shipping rate from Shippo at checkout based on this weight.</p>
+                  <input type="number" id="upload-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional, legacy)" step="0.01" min="0">
+                  <input type="number" id="upload-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional, legacy)" step="0.01" min="0">
+                  <p class="field-hint">These two only apply to the old manual Stripe link below, not the live checkout — leave them blank unless you need that fallback.</p>
                 </div>
                 <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple required>
@@ -1219,9 +1257,11 @@
                 <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
               </div>
               <div id="edit-shipping-group" style="display: none;">
-                <input type="number" id="edit-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional)" step="0.01" min="0">
-                <input type="number" id="edit-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional)" step="0.01" min="0">
-                <p class="field-hint">Leave both blank for free shipping. Set International to also allow orders from outside the US — buyers pick the matching option at checkout.</p>
+                <input type="number" id="edit-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
+                <p class="field-hint">Required to sell this item — buyers get a live shipping rate from Shippo at checkout based on this weight.</p>
+                <input type="number" id="edit-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional, legacy)" step="0.01" min="0">
+                <input type="number" id="edit-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional, legacy)" step="0.01" min="0">
+                <p class="field-hint">These two only apply to the old manual Stripe link below, not the live checkout — leave them blank unless you need that fallback.</p>
               </div>
               <label class="admin-file-label" for="edit-image">New Product Photos (optional — select multiple to replace all photos, first is the main photo)</label>
               <span id="edit-image-current-info" class="field-status"></span>
