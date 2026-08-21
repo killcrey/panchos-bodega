@@ -60,9 +60,12 @@ async function loadAdminOrders() {
   const listEl = document.getElementById('admin-orders-list')
   if (!listEl) return
 
+  // Once an order is marked shipped it drops off this list — it's meant to
+  // be the active/to-do queue, not a full order history.
   const { data: orders, error } = await supabase
     .from('orders')
     .select('*, order_items(*)')
+    .is('fulfilled_at', null)
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -71,7 +74,7 @@ async function loadAdminOrders() {
   }
 
   if (!orders || orders.length === 0) {
-    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No orders yet.</p>'
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No open orders.</p>'
     return
   }
 
@@ -108,14 +111,13 @@ async function loadAdminOrders() {
         ${hasShipping && order.label_status === 'failed' && order.label_error ? `<br><strong>Error:</strong> ${order.label_error}` : ''}
       </div>
       ${hasShipping ? `<span class="order-status-badge status-${order.label_status}">${statusLabel}</span>` : ''}
-      ${order.fulfilled_at ? '<span class="order-status-badge status-shipped">Shipped</span>' : ''}
       <div class="order-item-actions">
         ${hasShipping ? (order.label_status === 'purchased'
           ? `<a href="${order.label_url}" target="_blank" rel="noopener noreferrer">Print Label</a>`
           : `<button type="button" class="buy-label-btn">${order.label_status === 'failed' ? 'Retry Label' : 'Buy Label'}</button>`
         ) : ''}
         ${order.tracking_url ? `<a href="${order.tracking_url}" target="_blank" rel="noopener noreferrer">Track</a>` : ''}
-        ${hasShipping ? `<button type="button" class="mark-shipped-btn">${order.fulfilled_at ? 'Unmark Shipped' : 'Mark Shipped'}</button>` : ''}
+        ${hasShipping ? `<button type="button" class="mark-shipped-btn">Mark Shipped</button>` : ''}
       </div>
     `
 
@@ -140,14 +142,17 @@ async function loadAdminOrders() {
 
     const markShippedBtn = item.querySelector('.mark-shipped-btn')
     if (markShippedBtn) markShippedBtn.addEventListener('click', async () => {
+      markShippedBtn.disabled = true
       const { error: updateError } = await supabase
         .from('orders')
-        .update({ fulfilled_at: order.fulfilled_at ? null : new Date().toISOString() })
+        .update({ fulfilled_at: new Date().toISOString() })
         .eq('id', order.id)
       if (updateError) {
         alert(updateError.message)
+        markShippedBtn.disabled = false
         return
       }
+      // Shipped orders drop off this list — the row just disappears.
       loadAdminOrders()
     })
 
