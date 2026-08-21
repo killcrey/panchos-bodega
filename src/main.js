@@ -342,12 +342,24 @@ function previewSelectedImages(fileInput, previewEl) {
     .join('')
 }
 
-// Shows small thumbnails of a product's already-saved photos.
-function previewExistingImages(urls, previewEl) {
-  previewEl.innerHTML = urls
-    .filter(Boolean)
-    .map(url => `<img src="${url}" alt="">`)
-    .join('')
+// The edit form's existing-photo thumbnails, each with a remove button —
+// separate from previewSelectedImages's newly-picked-file preview so newly
+// added photos never clobber this list. Saving combines whatever's left
+// here with any newly selected files, so editing photos is additive
+// (add more, remove individual ones) instead of replace-the-whole-set.
+let editKeptImages = []
+
+function renderEditImagePreview() {
+  const previewEl = document.getElementById('edit-image-preview')
+  previewEl.innerHTML = editKeptImages.map((url, idx) => `
+    <div class="admin-image-thumb">
+      <img src="${url}" alt="">
+      <button type="button" class="admin-image-remove-btn" data-idx="${idx}" aria-label="Remove photo">&times;</button>
+    </div>
+  `).join('')
+  document.getElementById('edit-image-current-info').textContent = editKeptImages.length > 0
+    ? `Currently: ${editKeptImages.length} photo${editKeptImages.length === 1 ? '' : 's'}`
+    : 'Currently: no photos'
 }
 
 function openEditModal(product) {
@@ -365,14 +377,12 @@ function openEditModal(product) {
   updateWeightVisibility(product.category, 'edit-weight-group')
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
+  document.getElementById('edit-image-new-preview').innerHTML = ''
 
-  const existingImages = [product.cover_art_url, product.image_2_url, product.image_3_url]
+  editKeptImages = [product.cover_art_url, product.image_2_url, product.image_3_url]
     .concat(Array.isArray(product.gallery_images) ? product.gallery_images : [])
     .filter(Boolean)
-  document.getElementById('edit-image-current-info').textContent = existingImages.length > 0
-    ? `Currently: ${existingImages.length} photo${existingImages.length === 1 ? '' : 's'}`
-    : 'Currently: no photos'
-  previewExistingImages(existingImages, document.getElementById('edit-image-preview'))
+  renderEditImagePreview()
 
   const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
   const fileCount = Array.isArray(product.download_files) ? product.download_files.length : 0
@@ -394,6 +404,7 @@ function openEditModal(product) {
 
 function closeEditModal() {
   editingProduct = null
+  editKeptImages = []
   document.getElementById('edit-modal').style.display = 'none'
 }
 
@@ -935,7 +946,14 @@ function initAdminPortal() {
   })
 
   document.getElementById('edit-image').addEventListener('change', (e) => {
-    previewSelectedImages(e.target, document.getElementById('edit-image-preview'))
+    previewSelectedImages(e.target, document.getElementById('edit-image-new-preview'))
+  })
+
+  document.getElementById('edit-image-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-image-remove-btn')
+    if (!removeBtn) return
+    editKeptImages.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderEditImagePreview()
   })
 
   const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
@@ -1045,19 +1063,18 @@ function initAdminPortal() {
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
 
-      let coverUrl = editingProduct ? editingProduct.cover_art_url : null
-      let galleryImages = editingProduct ? editingProduct.gallery_images : null
-      let image2Url = editingProduct ? editingProduct.image_2_url : null
-      let image3Url = editingProduct ? editingProduct.image_3_url : null
-      if (document.getElementById('edit-image').files.length > 0) {
-        const result = await processImageFiles('edit-image')
-        coverUrl = result.coverUrl
-        galleryImages = result.galleryImages
-        // New photos fully replace the old set, including the legacy
-        // image_2_url/image_3_url columns pre-dating the gallery feature.
-        image2Url = null
-        image3Url = null
-      }
+      // New photos are appended to whatever's left in editKeptImages (the
+      // admin can remove individual existing photos via the × on each
+      // thumbnail, but simply adding more never drops the old ones). This
+      // also folds the legacy image_2_url/image_3_url columns into
+      // gallery_images going forward, since they're always recomputed here.
+      const newPhotos = await processImageFiles('edit-image')
+      const newPhotoUrls = newPhotos.coverUrl ? [newPhotos.coverUrl, ...(newPhotos.galleryImages || [])] : []
+      const allImages = [...editKeptImages, ...newPhotoUrls]
+      const coverUrl = allImages[0] || null
+      const galleryImages = allImages.length > 1 ? allImages.slice(1) : null
+      const image2Url = null
+      const image3Url = null
 
       let fileUrl = editingProduct ? editingProduct.audio_preview_url : null
       let downloadFiles = editingProduct ? editingProduct.download_files : null
@@ -1294,10 +1311,22 @@ async function loadBodega() {
     if (product.image_3_url) availableImages.push(product.image_3_url)
     if (Array.isArray(product.gallery_images)) availableImages.push(...product.gallery_images)
 
+    // Shows one image at a time with click-through arrows instead of a
+    // scrolling strip. The <img> itself is swapped in place on each click
+    // rather than rebuilding the gallery, since there's only ever one
+    // element to update.
     let galleryHTML = ''
     if (availableImages.length > 0) {
-      const imageTags = availableImages.map((url, idx) => `<img src="${url}" alt="${product.title}" class="lightbox-trigger" data-idx="${idx}" style="cursor: pointer; transition: opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1">`).join('')
-      galleryHTML = `<div class="image-gallery">${imageTags}</div>`
+      galleryHTML = `
+        <div class="image-gallery">
+          <img src="${availableImages[0]}" alt="${product.title}" class="lightbox-trigger gallery-current-img" data-idx="0">
+          ${availableImages.length > 1 ? `
+            <button type="button" class="gallery-arrow gallery-prev" aria-label="Previous photo">&#10094;</button>
+            <button type="button" class="gallery-arrow gallery-next" aria-label="Next photo">&#10095;</button>
+            <div class="gallery-counter">1 / ${availableImages.length}</div>
+          ` : ''}
+        </div>
+      `
     } else {
       galleryHTML = `<div class="no-image">NO IMAGE</div>`
     }
@@ -1390,6 +1419,28 @@ async function loadBodega() {
         window.openLightbox(availableImages, idx)
       })
     })
+
+    // Wire up gallery prev/next arrows — swap the single <img>'s src rather
+    // than scrolling, since only one photo shows at a time now.
+    const galleryImg = card.querySelector('.gallery-current-img')
+    const galleryCounter = card.querySelector('.gallery-counter')
+    const galleryPrevBtn = card.querySelector('.gallery-prev')
+    const galleryNextBtn = card.querySelector('.gallery-next')
+    if (galleryImg && (galleryPrevBtn || galleryNextBtn)) {
+      const showGalleryImage = (idx) => {
+        galleryImg.src = availableImages[idx]
+        galleryImg.setAttribute('data-idx', idx)
+        if (galleryCounter) galleryCounter.textContent = `${idx + 1} / ${availableImages.length}`
+      }
+      galleryPrevBtn.addEventListener('click', () => {
+        const current = parseInt(galleryImg.getAttribute('data-idx'))
+        showGalleryImage((current - 1 + availableImages.length) % availableImages.length)
+      })
+      galleryNextBtn.addEventListener('click', () => {
+        const current = parseInt(galleryImg.getAttribute('data-idx'))
+        showGalleryImage((current + 1) % availableImages.length)
+      })
+    }
 
     // Wire up Play triggers (routed through the global audio engine)
     const playTriggers = card.querySelectorAll('.card-play-btn, .track-item')

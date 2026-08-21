@@ -263,25 +263,62 @@
       .price { color: #00ffcc; font-weight: bold; }
 
       .image-gallery {
-        display: flex;
-        overflow-x: auto;
-        gap: 0.5rem;
+        position: relative;
         margin-bottom: 0.5rem;
-        scroll-snap-type: x mandatory;
-        padding-bottom: 0.5rem;
       }
-      .image-gallery::-webkit-scrollbar { height: 4px; }
-      .image-gallery::-webkit-scrollbar-track { background: transparent; border-radius: 4px; }
-      .image-gallery::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.2); border-radius: 4px; }
-      
-      .image-gallery img { 
-        width: 100%; 
-        height: 150px; 
-        object-fit: contain; 
-        background-color: rgba(0, 0, 0, 0.4); 
-        flex-shrink: 0; 
-        scroll-snap-align: center; 
-        border-radius: 4px; 
+
+      .image-gallery img {
+        display: block;
+        width: 100%;
+        height: 150px;
+        object-fit: contain;
+        background-color: rgba(0, 0, 0, 0.4);
+        border-radius: 4px;
+        cursor: pointer;
+        transition: opacity 0.2s ease;
+      }
+
+      .image-gallery img:hover {
+        opacity: 0.8;
+      }
+
+      .gallery-arrow {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        background: rgba(0, 0, 0, 0.55);
+        color: #00ffcc;
+        border: 1px solid rgba(0, 255, 204, 0.5);
+        border-radius: 50%;
+        width: 1.8rem;
+        height: 1.8rem;
+        font-size: 0.7rem;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+
+      .gallery-arrow:hover {
+        background: rgba(0, 0, 0, 0.8);
+        border-color: #00ffcc;
+      }
+
+      .gallery-prev { left: 0.4rem; }
+      .gallery-next { right: 0.4rem; }
+
+      .gallery-counter {
+        position: absolute;
+        bottom: 0.4rem;
+        right: 0.4rem;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        font-size: 0.55rem;
+        letter-spacing: 0.5px;
+        padding: 0.15rem 0.4rem;
+        border-radius: 3px;
       }
       
       .no-image {
@@ -846,6 +883,40 @@
         object-fit: cover;
         border-radius: 3px;
         border: 1px solid #444;
+      }
+
+      .admin-image-thumb {
+        position: relative;
+        width: 48px;
+        height: 48px;
+      }
+
+      .admin-image-thumb img {
+        width: 100%;
+        height: 100%;
+      }
+
+      .admin-image-remove-btn {
+        position: absolute;
+        top: -0.4rem;
+        right: -0.4rem;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        background: #b8291f;
+        color: #fff;
+        border: 1px solid #000;
+        font-size: 0.65rem;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+
+      .admin-image-remove-btn:hover {
+        background: #ff4d4d;
       }
 
       .address-element-container {
@@ -1560,9 +1631,11 @@
                 <input type="number" id="edit-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
                 <p class="field-hint">Leave blank for a pure digital download. Set a weight to sell this as a physical item — buyers get a live shipping rate from Shippo at checkout based on it.</p>
               </div>
-              <label class="admin-file-label" for="edit-image">New Product Photos (optional — select multiple to replace all photos, first is the main photo)</label>
+              <label class="admin-file-label">Current Photos (click × to remove one)</label>
               <span id="edit-image-current-info" class="field-status"></span>
               <div id="edit-image-preview" class="admin-image-preview"></div>
+              <label class="admin-file-label" for="edit-image">Add More Photos (optional — added to the photos above, doesn't replace them)</label>
+              <div id="edit-image-new-preview" class="admin-image-preview"></div>
               <input type="file" id="edit-image" class="admin-input" accept="image/*" multiple>
               <label class="admin-file-label" for="edit-file">New Digital File(s) — audio, PDF, or image (optional; select multiple to replace with a .zip bundle)</label>
               <span id="edit-file-current-info" class="field-status"></span>
