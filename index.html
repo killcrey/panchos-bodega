@@ -991,6 +991,10 @@
         line-height: 1.4;
       }
 
+      .field-hint-danger {
+        color: #ff4d4d;
+      }
+
       /* CART MODAL */
       #cart-items-list {
         flex: 1 1 auto;
@@ -1577,6 +1581,7 @@
                   <button type="button" id="upload-generate-stripe-btn" class="admin-btn admin-btn-small">Generate</button>
                 </div>
                 <p class="field-hint">Not necessary for free items — set price to $0 and the storefront offers a free download instead.</p>
+                <p class="field-hint field-hint-danger">This link charges a fixed price set when you click Generate — changing the price above later does NOT update it. Click Generate again after any price change, or the link keeps charging the old price.</p>
                 <div id="upload-stripe-status" class="field-status"></div>
                 <label class="admin-checkbox-row">
                   <input type="checkbox" id="upload-published" checked>
@@ -1645,6 +1650,7 @@
                 <button type="button" id="edit-generate-stripe-btn" class="admin-btn admin-btn-small">Generate</button>
               </div>
               <p class="field-hint">Not necessary for free items — set price to $0 and the storefront offers a free download instead.</p>
+              <p class="field-hint field-hint-danger">This link charges a fixed price set when you click Generate — changing the price above later does NOT update it. Click Generate again after any price change, or the link keeps charging the old price.</p>
               <div id="edit-stripe-status" class="field-status"></div>
               <label class="admin-checkbox-row">
                 <input type="checkbox" id="edit-published">
