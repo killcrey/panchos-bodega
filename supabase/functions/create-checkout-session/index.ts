@@ -28,7 +28,7 @@ serve(async (req) => {
 
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('title, price_cents, category, stripe_product_id, published, inventory_count')
+      .select('title, price_cents, category, stripe_product_id, published, inventory_count, weight_oz')
       .eq('id', productId)
       .single()
 
@@ -76,8 +76,13 @@ serve(async (req) => {
 
     // The address was already collected to price the shipping rate, so it's
     // attached as metadata for fulfillment instead of asking for it again on
-    // Stripe's page.
+    // Stripe's page. product_id/weight_oz/shipping_rate_id let the webhook
+    // build an order row and purchase the actual shipping label afterward.
     const metadata: Record<string, string> = {
+      product_id: productId,
+      product_title: product.title || '',
+      weight_oz: product.weight_oz != null ? String(product.weight_oz) : '',
+      shipping_rate_id: rateId,
       shipping_name: toAddress?.name || '',
       shipping_street1: toAddress?.street1 || '',
       shipping_street2: toAddress?.street2 || '',

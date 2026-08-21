@@ -15,6 +15,8 @@ const ADDRESS_FROM = {
   state: 'CA',
   zip: '91902',
   country: 'US',
+  email: 'info@theinvisiblepanchos.com',
+  phone: '619-777-8451',
 }
 
 // Admins only enter a package weight per product — every apparel item ships

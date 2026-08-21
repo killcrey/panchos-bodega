@@ -956,6 +956,97 @@
         color: #fff;
       }
 
+      /* ADMIN ORDERS LIST */
+      #admin-orders-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        box-sizing: border-box;
+      }
+
+      .order-item {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .order-item-title {
+        font-size: 0.7rem;
+        color: #fff;
+      }
+
+      .order-item-meta {
+        font-size: 0.6rem;
+        color: #888;
+        letter-spacing: 0.5px;
+        margin-top: 0.3rem;
+        line-height: 1.6;
+      }
+
+      .order-item-meta strong {
+        color: #ccc;
+      }
+
+      .order-status-badge {
+        display: inline-block;
+        margin-top: 0.4rem;
+        padding: 0.15rem 0.4rem;
+        font-size: 0.55rem;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        border: 1px solid;
+      }
+
+      .order-status-badge.status-purchased {
+        color: #00ffcc;
+        border-color: #00ffcc;
+      }
+
+      .order-status-badge.status-pending {
+        color: #e8b923;
+        border-color: #e8b923;
+      }
+
+      .order-status-badge.status-failed {
+        color: #ff4d4d;
+        border-color: #b8291f;
+      }
+
+      .order-status-badge.status-shipped {
+        margin-left: 0.4rem;
+        color: #b19cd9;
+        border-color: #b19cd9;
+      }
+
+      .order-item-actions {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        margin-top: 0.5rem;
+      }
+
+      .order-item-actions a, .order-item-actions button {
+        flex-shrink: 0;
+        padding: 0.4rem 0.7rem;
+        background: transparent;
+        color: #00ffcc;
+        border: 2px solid #00ffcc;
+        border-radius: 0;
+        font-weight: bold;
+        font-size: 0.55rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        text-decoration: none;
+        cursor: pointer;
+        font-family: inherit;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+
+      .order-item-actions a:hover, .order-item-actions button:hover {
+        background: #00ffcc;
+        color: #000;
+      }
+
       /* EDIT MODAL */
       #edit-modal, #free-download-modal, #shipping-checkout-modal {
         display: none;
@@ -1224,6 +1315,10 @@
           <div class="dashboard-panel dashboard-panel-secondary">
             <p class="panel-title">Inventory</p>
             <div id="admin-inventory-list"></div>
+          </div>
+          <div class="dashboard-panel dashboard-panel-secondary">
+            <p class="panel-title">Orders</p>
+            <div id="admin-orders-list"></div>
           </div>
         </div>
       </div>

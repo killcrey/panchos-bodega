@@ -55,6 +55,98 @@ async function loadAdminInventory() {
   })
 }
 
+async function loadAdminOrders() {
+  const listEl = document.getElementById('admin-orders-list')
+  if (!listEl) return
+
+  const { data: orders, error } = await supabase
+    .from('orders')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load orders.</p>'
+    return
+  }
+
+  if (!orders || orders.length === 0) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No orders yet.</p>'
+    return
+  }
+
+  listEl.innerHTML = ''
+
+  orders.forEach(order => {
+    const item = document.createElement('div')
+    item.className = 'order-item'
+
+    const amount = order.amount_total_cents != null ? `$${(order.amount_total_cents / 100).toFixed(2)}` : '—'
+    const orderDate = order.created_at ? new Date(order.created_at).toLocaleDateString() : ''
+    const addressLines = [
+      order.shipping_name,
+      [order.shipping_street1, order.shipping_street2].filter(Boolean).join(' '),
+      [order.shipping_city, order.shipping_state, order.shipping_zip].filter(Boolean).join(', '),
+      order.shipping_country
+    ].filter(Boolean).join('<br>')
+
+    const statusLabel = order.label_status === 'purchased' ? 'Label Ready' : order.label_status === 'failed' ? 'Label Failed' : 'Label Pending'
+
+    item.innerHTML = `
+      <div class="order-item-title">${order.product_title}${order.size ? ` — Size ${order.size}` : ''}</div>
+      <div class="order-item-meta">
+        ${amount} — ${orderDate}${order.customer_email ? `<br><strong>Email:</strong> ${order.customer_email}` : ''}
+        <br><strong>Ship to:</strong> ${addressLines || 'No address on file'}
+        ${order.shipping_service ? `<br><strong>Service:</strong> ${order.shipping_service}` : ''}
+        ${order.tracking_number ? `<br><strong>Tracking:</strong> ${order.tracking_number}` : ''}
+        ${order.label_status === 'failed' && order.label_error ? `<br><strong>Error:</strong> ${order.label_error}` : ''}
+      </div>
+      <span class="order-status-badge status-${order.label_status}">${statusLabel}</span>
+      ${order.fulfilled_at ? '<span class="order-status-badge status-shipped">Shipped</span>' : ''}
+      <div class="order-item-actions">
+        ${order.label_status === 'purchased'
+          ? `<a href="${order.label_url}" target="_blank" rel="noopener noreferrer">Print Label</a>`
+          : `<button type="button" class="buy-label-btn">${order.label_status === 'failed' ? 'Retry Label' : 'Buy Label'}</button>`
+        }
+        ${order.tracking_url ? `<a href="${order.tracking_url}" target="_blank" rel="noopener noreferrer">Track</a>` : ''}
+        <button type="button" class="mark-shipped-btn">${order.fulfilled_at ? 'Unmark Shipped' : 'Mark Shipped'}</button>
+      </div>
+    `
+
+    const buyLabelBtn = item.querySelector('.buy-label-btn')
+    if (buyLabelBtn) {
+      buyLabelBtn.addEventListener('click', async () => {
+        buyLabelBtn.disabled = true
+        buyLabelBtn.textContent = 'Buying...'
+        try {
+          const { error: fnError } = await supabase.functions.invoke('purchase-shipping-label', {
+            body: { orderId: order.id }
+          })
+          if (fnError) throw fnError
+          loadAdminOrders()
+        } catch (err) {
+          alert(await describeFunctionError(err))
+          buyLabelBtn.disabled = false
+          buyLabelBtn.textContent = order.label_status === 'failed' ? 'Retry Label' : 'Buy Label'
+        }
+      })
+    }
+
+    item.querySelector('.mark-shipped-btn').addEventListener('click', async () => {
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ fulfilled_at: order.fulfilled_at ? null : new Date().toISOString() })
+        .eq('id', order.id)
+      if (updateError) {
+        alert(updateError.message)
+        return
+      }
+      loadAdminOrders()
+    })
+
+    listEl.appendChild(item)
+  })
+}
+
 // Matches the maxlength on #upload-description / #edit-description in index.html.
 // Enforced again here at render time so descriptions saved before this limit
 // existed can't blow out the product card either.
@@ -620,6 +712,7 @@ function initAdminPortal() {
       dashboardView.style.display = 'flex'
       logoutBtn.style.display = 'inline-block'
       loadAdminInventory()
+      loadAdminOrders()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
