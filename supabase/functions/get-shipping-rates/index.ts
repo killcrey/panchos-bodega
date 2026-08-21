@@ -20,8 +20,10 @@ const ADDRESS_FROM = {
 }
 
 // Admins only enter a package weight per product — every apparel item ships
-// in the same box size. Good enough for accurate rates without asking for
-// per-product dimensions.
+// in the same box size. A cart with several apparel items is quoted as one
+// combined parcel (summed weight) in this same box rather than one rate per
+// item — good enough for accurate rates without asking for per-product
+// dimensions or multi-box packing logic.
 const DEFAULT_PARCEL_DIMENSIONS = {
   length: '10',
   width: '8',
@@ -35,10 +37,10 @@ serve(async (req) => {
   }
 
   try {
-    const { productId, toAddress } = await req.json()
+    const { items, toAddress } = await req.json()
 
-    if (!productId) {
-      throw new Error('Missing product.')
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('Missing cart items.')
     }
 
     const required = ['name', 'street1', 'city', 'state', 'zip', 'country']
@@ -53,23 +55,29 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { data: product, error: productError } = await supabase
+    const productIds = [...new Set(items.map((i: any) => i.productId))]
+    const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('title, category, weight_oz, published')
-      .eq('id', productId)
-      .single()
+      .select('id, title, category, weight_oz, published')
+      .in('id', productIds)
 
-    if (productError || !product) {
-      throw new Error('Product not found.')
-    }
-    if (!product.published) {
-      throw new Error('This product is not available.')
-    }
-    if (product.category !== 'apparel') {
-      throw new Error('This product does not ship — no shipping rates needed.')
-    }
-    if (!product.weight_oz || product.weight_oz <= 0) {
-      throw new Error('This product is missing a package weight. Add one in the admin panel before it can be purchased.')
+    if (productsError) throw productsError
+
+    const productsById = new Map((products || []).map(p => [p.id, p]))
+
+    let totalWeightOz = 0
+    for (const item of items) {
+      const product = productsById.get(item.productId)
+      const quantity = Math.max(1, parseInt(item.quantity, 10) || 1)
+
+      if (!product) throw new Error('One of the items in your cart no longer exists.')
+      if (!product.published) throw new Error(`"${product.title}" is not available.`)
+      if (product.category !== 'apparel') throw new Error(`"${product.title}" does not ship — remove it from the shipping quote.`)
+      if (!product.weight_oz || product.weight_oz <= 0) {
+        throw new Error(`"${product.title}" is missing a package weight. Add one in the admin panel before it can be purchased.`)
+      }
+
+      totalWeightOz += product.weight_oz * quantity
     }
 
     const shippoKey = Deno.env.get('SHIPPO_API_KEY')
@@ -96,7 +104,7 @@ serve(async (req) => {
         },
         parcels: [{
           ...DEFAULT_PARCEL_DIMENSIONS,
-          weight: String(product.weight_oz),
+          weight: String(totalWeightOz),
           mass_unit: 'oz',
         }],
         async: false,
@@ -131,7 +139,7 @@ serve(async (req) => {
       .slice(0, 6)
 
     return new Response(
-      JSON.stringify({ rates: simplifiedRates }),
+      JSON.stringify({ rates: simplifiedRates, totalWeightOz }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )
 

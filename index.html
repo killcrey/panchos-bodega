@@ -129,7 +129,6 @@
         justify-content: center;
         align-items: center;
         gap: 0.6rem;
-        overflow-x: auto;
         position: fixed;
         top: 0;
         left: 0;
@@ -142,11 +141,65 @@
         backdrop-filter: blur(6px);
         -webkit-backdrop-filter: blur(6px);
         border-bottom: 1px solid rgba(232, 185, 35, 0.25);
+      }
+
+      /* Only the category buttons scroll — the logo and cart button stay
+         put on either end so the cart is always reachable without scrolling. */
+      .filter-scroll {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        overflow-x: auto;
+        flex: 1;
+        min-width: 0;
         -webkit-overflow-scrolling: touch;
       }
-      .filter-bar::-webkit-scrollbar { height: 4px; }
-      .filter-bar::-webkit-scrollbar-track { background: transparent; }
-      .filter-bar::-webkit-scrollbar-thumb { background: rgba(184, 41, 31, 0.5); border-radius: 4px; }
+      .filter-scroll::-webkit-scrollbar { height: 4px; }
+      .filter-scroll::-webkit-scrollbar-track { background: transparent; }
+      .filter-scroll::-webkit-scrollbar-thumb { background: rgba(184, 41, 31, 0.5); border-radius: 4px; }
+
+      .cart-btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(184, 41, 31, 0.6);
+        color: #e8b923;
+        padding: 0.5rem 0.7rem;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        flex-shrink: 0;
+        font-family: inherit;
+        transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .cart-btn:hover {
+        border-color: #e8b923;
+        color: #f5d67c;
+        background: rgba(139, 90, 43, 0.25);
+      }
+
+      .cart-count {
+        position: absolute;
+        top: -0.4rem;
+        right: -0.4rem;
+        min-width: 1.1rem;
+        height: 1.1rem;
+        padding: 0 0.25rem;
+        border-radius: 999px;
+        background: #00ffcc;
+        color: #111;
+        font-size: 0.55rem;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 1;
+      }
+
+      .cart-count[data-empty="true"] { display: none; }
 
       .filter-btn {
         display: inline-flex;
@@ -843,6 +896,114 @@
         line-height: 1.4;
       }
 
+      /* CART MODAL */
+      #cart-items-list {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+      }
+
+      .cart-item-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .cart-item-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .cart-item-title {
+        font-size: 0.7rem;
+        color: #fff;
+      }
+
+      .cart-item-price {
+        font-size: 0.6rem;
+        color: #888;
+        margin-top: 0.2rem;
+      }
+
+      .cart-item-qty {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        flex-shrink: 0;
+      }
+
+      .cart-qty-btn {
+        width: 1.4rem;
+        height: 1.4rem;
+        background: transparent;
+        border: 1px solid #666;
+        color: #fff;
+        border-radius: 0;
+        font-size: 0.7rem;
+        cursor: pointer;
+        font-family: inherit;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .cart-qty-btn:hover {
+        border-color: #00ffcc;
+        color: #00ffcc;
+      }
+
+      .cart-qty-value {
+        font-size: 0.65rem;
+        min-width: 1rem;
+        text-align: center;
+      }
+
+      .cart-item-line-total {
+        font-size: 0.65rem;
+        color: #00ffcc;
+        font-weight: bold;
+        flex-shrink: 0;
+        min-width: 3.2rem;
+        text-align: right;
+      }
+
+      .cart-remove-btn {
+        flex-shrink: 0;
+        background: transparent;
+        border: none;
+        color: #888;
+        font-size: 1rem;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0.2rem;
+      }
+
+      .cart-remove-btn:hover {
+        color: #ff4d4d;
+      }
+
+      .cart-subtotal-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 0.75rem;
+        font-weight: bold;
+        color: #fff;
+        padding: 0.75rem 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.25);
+        flex-shrink: 0;
+      }
+
+      #cart-subtotal-amount { color: #00ffcc; }
+
+      .card-size-select {
+        margin-bottom: 0.4rem !important;
+        padding: 0.5rem !important;
+        font-size: 0.6rem !important;
+      }
+
       /* ADMIN INVENTORY LIST */
       #admin-inventory-list {
         flex: 1 1 auto;
@@ -1048,7 +1209,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal, #free-download-modal, #shipping-checkout-modal {
+      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -1158,12 +1319,17 @@
       <a href="https://theinvisiblepanchos.com/" class="logo-btn">
         <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="bodega-logo">
       </a>
-      <button class="filter-btn" data-filter="all">ALL</button>
-      <button class="filter-btn" data-filter="apparel">APPAREL</button>
-      <button class="filter-btn" data-filter="art">ART</button>
-      <button class="filter-btn active" data-filter="music">MUSIC</button>
-      <button class="filter-btn" data-filter="services">SERVICES</button>
-      <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
+      <div class="filter-scroll">
+        <button class="filter-btn" data-filter="all">ALL</button>
+        <button class="filter-btn" data-filter="apparel">APPAREL</button>
+        <button class="filter-btn" data-filter="art">ART</button>
+        <button class="filter-btn active" data-filter="music">MUSIC</button>
+        <button class="filter-btn" data-filter="services">SERVICES</button>
+        <button class="filter-btn" data-filter="pancho picks">PANCHO PICKS</button>
+      </div>
+      <button type="button" id="cart-btn" class="cart-btn" aria-label="View cart">
+        🛒<span id="cart-count" class="cart-count" data-empty="true">0</span>
+      </button>
     </div>
 
     <div id="store-grid">Loading the Bodega...</div>
@@ -1215,15 +1381,10 @@
 
     <div id="shipping-checkout-modal">
       <div class="edit-modal-content">
-        <p class="admin-title">Shipping Checkout</p>
+        <p class="admin-title">Shipping Address</p>
 
         <div id="shipping-form-view">
-          <p style="font-size: 0.7rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Enter your shipping address for a live rate.</p>
-          <div id="shipping-size-group" style="display: none;">
-            <select id="shipping-size" class="admin-input">
-              <option value="" disabled selected>Select Size</option>
-            </select>
-          </div>
+          <p style="font-size: 0.7rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Your order includes apparel — enter a shipping address for a live rate.</p>
           <input type="text" id="shipping-name" class="admin-input" placeholder="Full Name">
           <input type="text" id="shipping-street1" class="admin-input" placeholder="Street Address">
           <input type="text" id="shipping-street2" class="admin-input" placeholder="Apt / Suite (optional)">
@@ -1246,6 +1407,28 @@
         </div>
 
         <button type="button" id="shipping-checkout-close-btn" class="admin-btn admin-btn-danger">Close</button>
+      </div>
+    </div>
+
+    <div id="cart-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Your Cart</p>
+
+        <div id="cart-empty-view" style="display: none;">
+          <p style="font-size: 0.75rem; color: #aaa; text-align: center; margin: 1.5rem 0;">Your cart is empty.</p>
+        </div>
+
+        <div id="cart-items-view">
+          <div id="cart-items-list"></div>
+          <div id="cart-subtotal-row" class="cart-subtotal-row">
+            <span>Subtotal</span>
+            <span id="cart-subtotal-amount">$0.00</span>
+          </div>
+          <div id="cart-status" class="field-status"></div>
+          <button type="button" id="cart-checkout-btn" class="admin-btn">Checkout</button>
+        </div>
+
+        <button type="button" id="cart-close-btn" class="admin-btn admin-btn-danger">Close</button>
       </div>
     </div>
 

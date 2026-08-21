@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasApparel } from './cart.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -61,7 +62,7 @@ async function loadAdminOrders() {
 
   const { data: orders, error } = await supabase
     .from('orders')
-    .select('*')
+    .select('*, order_items(*)')
     .order('created_at', { ascending: false })
 
   if (error) {
@@ -89,26 +90,32 @@ async function loadAdminOrders() {
       order.shipping_country
     ].filter(Boolean).join('<br>')
 
+    const hasShipping = !!order.shipping_street1
+    const items = Array.isArray(order.order_items) ? order.order_items : []
+    const itemsSummary = items.length > 0
+      ? items.map(oi => `${oi.quantity > 1 ? `${oi.quantity} × ` : ''}${oi.product_title}${oi.size ? ` — Size ${oi.size}` : ''}`).join(', ')
+      : (order.product_title || 'Order')
+
     const statusLabel = order.label_status === 'purchased' ? 'Label Ready' : order.label_status === 'failed' ? 'Label Failed' : 'Label Pending'
 
     item.innerHTML = `
-      <div class="order-item-title">${order.product_title}${order.size ? ` — Size ${order.size}` : ''}</div>
+      <div class="order-item-title">${itemsSummary}</div>
       <div class="order-item-meta">
         ${amount} — ${orderDate}${order.customer_email ? `<br><strong>Email:</strong> ${order.customer_email}` : ''}
-        <br><strong>Ship to:</strong> ${addressLines || 'No address on file'}
+        ${hasShipping ? `<br><strong>Ship to:</strong> ${addressLines || 'No address on file'}` : '<br><strong>Digital order</strong> — no shipping required'}
         ${order.shipping_service ? `<br><strong>Service:</strong> ${order.shipping_service}` : ''}
         ${order.tracking_number ? `<br><strong>Tracking:</strong> ${order.tracking_number}` : ''}
-        ${order.label_status === 'failed' && order.label_error ? `<br><strong>Error:</strong> ${order.label_error}` : ''}
+        ${hasShipping && order.label_status === 'failed' && order.label_error ? `<br><strong>Error:</strong> ${order.label_error}` : ''}
       </div>
-      <span class="order-status-badge status-${order.label_status}">${statusLabel}</span>
+      ${hasShipping ? `<span class="order-status-badge status-${order.label_status}">${statusLabel}</span>` : ''}
       ${order.fulfilled_at ? '<span class="order-status-badge status-shipped">Shipped</span>' : ''}
       <div class="order-item-actions">
-        ${order.label_status === 'purchased'
+        ${hasShipping ? (order.label_status === 'purchased'
           ? `<a href="${order.label_url}" target="_blank" rel="noopener noreferrer">Print Label</a>`
           : `<button type="button" class="buy-label-btn">${order.label_status === 'failed' ? 'Retry Label' : 'Buy Label'}</button>`
-        }
+        ) : ''}
         ${order.tracking_url ? `<a href="${order.tracking_url}" target="_blank" rel="noopener noreferrer">Track</a>` : ''}
-        <button type="button" class="mark-shipped-btn">${order.fulfilled_at ? 'Unmark Shipped' : 'Mark Shipped'}</button>
+        ${hasShipping ? `<button type="button" class="mark-shipped-btn">${order.fulfilled_at ? 'Unmark Shipped' : 'Mark Shipped'}</button>` : ''}
       </div>
     `
 
@@ -131,7 +138,8 @@ async function loadAdminOrders() {
       })
     }
 
-    item.querySelector('.mark-shipped-btn').addEventListener('click', async () => {
+    const markShippedBtn = item.querySelector('.mark-shipped-btn')
+    if (markShippedBtn) markShippedBtn.addEventListener('click', async () => {
       const { error: updateError } = await supabase
         .from('orders')
         .update({ fulfilled_at: order.fulfilled_at ? null : new Date().toISOString() })
@@ -450,28 +458,133 @@ function initFreeDownloadModal() {
   })
 }
 
+// CART
+// The cart itself (add/remove/qty) lives in cart.js. This wires it up to
+// the storefront UI: the badge in the filter bar, the cart modal, and
+// checkout — which either goes straight to create-checkout-session (a
+// digital-only cart) or first collects one shipping address + a combined
+// live Shippo rate for every apparel item in the cart (see below).
+function updateCartBadge() {
+  const badge = document.getElementById('cart-count')
+  if (!badge) return
+  const count = cartCount()
+  badge.textContent = count
+  badge.setAttribute('data-empty', count === 0 ? 'true' : 'false')
+}
+
+function formatCents(cents) {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+function renderCartItems() {
+  const cart = getCart()
+  const emptyView = document.getElementById('cart-empty-view')
+  const itemsView = document.getElementById('cart-items-view')
+  const list = document.getElementById('cart-items-list')
+
+  if (cart.length === 0) {
+    emptyView.style.display = 'block'
+    itemsView.style.display = 'none'
+    return
+  }
+
+  emptyView.style.display = 'none'
+  itemsView.style.display = 'block'
+
+  list.innerHTML = cart.map(item => `
+    <div class="cart-item-row" data-key="${item.key}">
+      <div class="cart-item-info">
+        <div class="cart-item-title">${item.title}${item.size ? ` — ${item.size}` : ''}</div>
+        <div class="cart-item-price">${formatCents(item.priceCents)} each</div>
+      </div>
+      <div class="cart-item-qty">
+        <button type="button" class="cart-qty-btn cart-qty-minus" aria-label="Decrease quantity">−</button>
+        <span class="cart-qty-value">${item.quantity}</span>
+        <button type="button" class="cart-qty-btn cart-qty-plus" aria-label="Increase quantity">+</button>
+      </div>
+      <div class="cart-item-line-total">${formatCents(item.priceCents * item.quantity)}</div>
+      <button type="button" class="cart-remove-btn" aria-label="Remove item">&times;</button>
+    </div>
+  `).join('')
+
+  document.getElementById('cart-subtotal-amount').textContent = formatCents(cartSubtotalCents(cart))
+}
+
+function openCartModal() {
+  document.getElementById('cart-status').textContent = ''
+  renderCartItems()
+  document.getElementById('cart-modal').style.display = 'flex'
+}
+
+function closeCartModal() {
+  document.getElementById('cart-modal').style.display = 'none'
+}
+
+function initCartModal() {
+  document.getElementById('cart-btn').addEventListener('click', openCartModal)
+  document.getElementById('cart-close-btn').addEventListener('click', closeCartModal)
+
+  document.getElementById('cart-items-list').addEventListener('click', (e) => {
+    const row = e.target.closest('.cart-item-row')
+    if (!row) return
+    const key = row.getAttribute('data-key')
+    const cart = getCart()
+    const current = cart.find(i => i.key === key)
+    if (!current) return
+
+    if (e.target.classList.contains('cart-qty-plus')) {
+      setCartQuantity(key, current.quantity + 1)
+    } else if (e.target.classList.contains('cart-qty-minus')) {
+      setCartQuantity(key, current.quantity - 1)
+    } else if (e.target.classList.contains('cart-remove-btn')) {
+      removeFromCart(key)
+    } else {
+      return
+    }
+    renderCartItems()
+    updateCartBadge()
+  })
+
+  document.getElementById('cart-checkout-btn').addEventListener('click', async () => {
+    const cart = getCart()
+    if (cart.length === 0) return
+
+    const statusEl = document.getElementById('cart-status')
+
+    if (cartHasApparel(cart)) {
+      closeCartModal()
+      openShippingCheckoutModal()
+      return
+    }
+
+    const checkoutBtn = document.getElementById('cart-checkout-btn')
+    checkoutBtn.disabled = true
+    statusEl.textContent = 'Redirecting to payment...'
+    statusEl.style.color = '#e8b923'
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+        body: { items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, size: i.size })) }
+      })
+      if (error) throw error
+      window.location.href = data.url
+    } catch (err) {
+      statusEl.textContent = await describeFunctionError(err)
+      statusEl.style.color = '#ff4d4d'
+      checkoutBtn.disabled = false
+    }
+  })
+}
+
 // APPAREL SHIPPING CHECKOUT
-// Collects the buyer's address, gets live Shippo rates for it, then hands
-// the chosen rate off to create-checkout-session to build a real Stripe
-// Checkout Session (rather than the admin's static Payment Link, which can
-// only offer flat pre-set shipping costs).
-let shippingCheckoutProduct = null
+// Collects one shipping address for the whole cart, gets a live combined
+// Shippo rate for every apparel item in it, then hands the chosen rate off
+// to create-checkout-session to build a single Stripe Checkout Session
+// covering the entire cart — apparel and digital items alike.
 let selectedShippingRateId = null
 
-function openShippingCheckoutModal(product) {
-  shippingCheckoutProduct = product
+function openShippingCheckoutModal() {
   selectedShippingRateId = null
-
-  const sizeGroup = document.getElementById('shipping-size-group')
-  const sizeSelect = document.getElementById('shipping-size')
-  if (product.sizes) {
-    sizeSelect.innerHTML = '<option value="" disabled selected>Select Size</option>' +
-      product.sizes.split(',').map(s => s.trim()).filter(Boolean)
-        .map(s => `<option value="${s}">${s}</option>`).join('')
-    sizeGroup.style.display = 'block'
-  } else {
-    sizeGroup.style.display = 'none'
-  }
 
   document.getElementById('shipping-name').value = ''
   document.getElementById('shipping-street1').value = ''
@@ -488,7 +601,6 @@ function openShippingCheckoutModal(product) {
 }
 
 function closeShippingCheckoutModal() {
-  shippingCheckoutProduct = null
   selectedShippingRateId = null
   document.getElementById('shipping-checkout-modal').style.display = 'none'
 }
@@ -501,9 +613,15 @@ function initShippingCheckoutModal() {
   const formStatus = document.getElementById('shipping-form-status')
   const ratesStatus = document.getElementById('shipping-rates-status')
   const ratesList = document.getElementById('shipping-rates-list')
-  const sizeSelect = document.getElementById('shipping-size')
 
-  closeBtn.addEventListener('click', closeShippingCheckoutModal)
+  let lastToAddress = null
+
+  closeBtn.addEventListener('click', () => {
+    closeShippingCheckoutModal()
+    // Cart state hasn't changed — just hand the buyer back to the cart
+    // instead of dropping them with no way back in.
+    openCartModal()
+  })
 
   backBtn.addEventListener('click', () => {
     document.getElementById('shipping-rates-view').style.display = 'none'
@@ -511,13 +629,9 @@ function initShippingCheckoutModal() {
   })
 
   getRatesBtn.addEventListener('click', async () => {
-    if (!shippingCheckoutProduct) return
-
-    if (shippingCheckoutProduct.sizes && !sizeSelect.value) {
-      formStatus.textContent = 'Select a size.'
-      formStatus.style.color = '#ff4d4d'
-      return
-    }
+    const cart = getCart()
+    const apparelItems = cart.filter(i => i.category === 'apparel')
+    if (apparelItems.length === 0) return
 
     const toAddress = {
       name: document.getElementById('shipping-name').value.trim(),
@@ -542,12 +656,11 @@ function initShippingCheckoutModal() {
 
     try {
       const { data, error } = await supabase.functions.invoke('get-shipping-rates', {
-        body: { productId: shippingCheckoutProduct.id, toAddress }
+        body: { items: apparelItems.map(i => ({ productId: i.productId, quantity: i.quantity })), toAddress }
       })
       if (error) throw error
 
-      shippingCheckoutProduct._toAddress = toAddress
-      shippingCheckoutProduct._size = sizeSelect.value || null
+      lastToAddress = toAddress
 
       ratesList.innerHTML = data.rates.map((rate, i) => `
         <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem; border: 1px solid #333; border-radius: 4px; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.7rem;">
@@ -579,7 +692,8 @@ function initShippingCheckoutModal() {
   })
 
   continueBtn.addEventListener('click', async () => {
-    if (!shippingCheckoutProduct || !selectedShippingRateId) return
+    const cart = getCart()
+    if (cart.length === 0 || !selectedShippingRateId || !lastToAddress) return
 
     continueBtn.disabled = true
     ratesStatus.textContent = 'Redirecting to payment...'
@@ -588,10 +702,9 @@ function initShippingCheckoutModal() {
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout-session', {
         body: {
-          productId: shippingCheckoutProduct.id,
+          items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, size: i.size })),
           rateId: selectedShippingRateId,
-          size: shippingCheckoutProduct._size,
-          toAddress: shippingCheckoutProduct._toAddress
+          toAddress: lastToAddress
         }
       })
       if (error) throw error
@@ -1159,6 +1272,14 @@ async function loadBodega() {
       `
     }
 
+    const needsSize = !isFree && !isSoldOut && product.category === 'apparel' && product.sizes
+    const sizeSelectHTML = needsSize
+      ? `<select class="card-size-select admin-input">
+          <option value="" disabled selected>Select Size</option>
+          ${product.sizes.split(',').map(s => s.trim()).filter(Boolean).map(s => `<option value="${s}">${s}</option>`).join('')}
+        </select>`
+      : ''
+
     card.innerHTML = `
       ${galleryHTML}
       <h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>
@@ -1168,11 +1289,12 @@ async function loadBodega() {
       ${sizesHTML}
       <div style="margin-top: auto;"></div>
       ${audioHTML}
+      ${sizeSelectHTML}
       <button class="buy-btn" ${isSoldOut ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isSoldOut ? '#444' : '#00ffcc'}; color: ${isSoldOut ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
-        ${isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Buy Now')}
+        ${isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart')}
       </button>
     `
-    
+
     // Wire up Lightbox Clicks
     const images = card.querySelectorAll('.lightbox-trigger')
     images.forEach(img => {
@@ -1192,18 +1314,29 @@ async function loadBodega() {
 
     // Wire up purchase / free download
     const buyButton = card.querySelector('.buy-btn')
+    const sizeSelect = card.querySelector('.card-size-select')
     buyButton.addEventListener('click', () => {
       if (isSoldOut) {
         return
       } else if (isFree) {
         openFreeDownloadModal(product)
-      } else if (product.category === 'apparel') {
-        openShippingCheckoutModal(product)
-      } else if (product.stripe_url) {
-        window.open(product.stripe_url, '_blank')
-      } else {
-        alert('Checkout link is currently being generated. Check back soon!')
+        return
       }
+
+      let size = null
+      if (sizeSelect) {
+        size = sizeSelect.value
+        if (!size) {
+          sizeSelect.style.borderColor = '#ff4d4d'
+          return
+        }
+      }
+
+      addToCart(product, { size })
+      updateCartBadge()
+      const originalLabel = buyButton.textContent
+      buyButton.textContent = 'Added ✓'
+      setTimeout(() => { buyButton.textContent = originalLabel }, 1200)
     })
 
     storeGrid.appendChild(card)
@@ -1263,6 +1396,8 @@ function initEnterOverlay() {
 
 initFreeDownloadModal()
 initShippingCheckoutModal()
+initCartModal()
+updateCartBadge()
 
 const isAdminMode = initAdminPortal()
 if (!isAdminMode) {
