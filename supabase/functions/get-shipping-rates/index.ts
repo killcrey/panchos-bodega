@@ -20,7 +20,7 @@ const ADDRESS_FROM = {
 }
 
 // Admins only enter a package weight per product — every shippable item
-// (apparel, or a physical art/pancho picks item) ships in the same box size.
+// (apparel, or a physical art/music/pancho picks item) ships in the same box size.
 // A cart with several such items is quoted as one combined parcel (summed
 // weight) in this same box rather than one rate per item — good enough for
 // accurate rates without asking for per-product dimensions or multi-box
@@ -74,7 +74,7 @@ serve(async (req) => {
       if (!product) throw new Error('One of the items in your cart no longer exists.')
       if (!product.published) throw new Error(`"${product.title}" is not available.`)
       // A product ships if it has a package weight set, regardless of
-      // category — apparel, art, and pancho picks can each be physical or
+      // category — apparel, art, music, and pancho picks can each be physical or
       // digital depending on the individual item.
       if (!product.weight_oz || product.weight_oz <= 0) {
         throw new Error(`"${product.title}" does not ship — remove it from the shipping quote.`)

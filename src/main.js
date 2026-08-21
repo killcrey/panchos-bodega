@@ -306,10 +306,10 @@ async function deleteProduct(product) {
 }
 
 // Sizes only make sense for apparel. Weight/shipping applies to apparel too,
-// but also art and pancho picks — either of those can be a physical item
-// (ships, needs a weight) or a pure digital download depending on the
-// individual product.
-const SHIPPABLE_CATEGORIES = ['apparel', 'art', 'pancho picks']
+// but also art, music (CDs/vinyl), and pancho picks — any of those can be a
+// physical item (ships, needs a weight) or a pure digital download
+// depending on the individual product.
+const SHIPPABLE_CATEGORIES = ['apparel', 'art', 'music', 'pancho picks']
 
 function updateSizesVisibility(categoryValue, groupId) {
   document.getElementById(groupId).style.display = categoryValue === 'apparel' ? 'block' : 'none'

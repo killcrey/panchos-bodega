@@ -80,7 +80,7 @@ serve(async (req) => {
       }
 
       // A product ships if it has a package weight set, regardless of
-      // category — apparel, art, and pancho picks can each be physical or
+      // category — apparel, art, music, and pancho picks can each be physical or
       // digital depending on the individual item.
       const shipsThisItem = product.weight_oz != null && product.weight_oz > 0
       if (shipsThisItem) {

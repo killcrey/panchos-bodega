@@ -88,7 +88,7 @@ export function cartSubtotalCents(cart = getCart()) {
 }
 
 // A cart item ships if it has a package weight set, regardless of category —
-// apparel, art, and pancho picks can each be physical or digital depending
+// apparel, art, music, and pancho picks can each be physical or digital depending
 // on the individual item.
 export function cartHasPhysicalItems(cart = getCart()) {
   return cart.some(item => item.weightOz != null && item.weightOz > 0)
