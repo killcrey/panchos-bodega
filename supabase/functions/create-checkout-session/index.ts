@@ -35,6 +35,25 @@ serve(async (req) => {
     if (productsError) throw productsError
     const productsById = new Map((products || []).map(p => [p.id, p]))
 
+    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
+      apiVersion: '2022-11-15',
+      httpClient: Stripe.createFetchHttpClient(),
+    })
+
+    // California (and most states) don't tax digital goods delivered purely
+    // electronically, only tangible property — but Stripe Tax treats every
+    // product as general tangible goods (txcd_99999999) unless it's told
+    // otherwise. A product ships (and stays taxed as tangible goods) if it
+    // has a package weight set; otherwise it's a pure digital download and
+    // gets tagged with the closest matching digital-goods tax code so Stripe
+    // Tax stops charging sales tax on it. Verified against the live Stripe
+    // Tax Codes API.
+    const DIGITAL_TAX_CODE_BY_CATEGORY: Record<string, string> = {
+      music: 'txcd_10401100', // Digital Audio Works — downloaded, permanent rights
+      art: 'txcd_10505001',   // Digital Finished Artwork — downloaded, permanent rights
+    }
+    const DEFAULT_DIGITAL_TAX_CODE = 'txcd_10503000' // Digital other news/documents — downloaded, permanent rights
+
     // Re-validate every line against the database instead of trusting
     // whatever price/availability the client sent back — the client only
     // ever picks a product id, size, and quantity.
@@ -43,7 +62,7 @@ serve(async (req) => {
       id: string; title: string; category: string | null; size: string | null
       quantity: number; unitAmountCents: number; weightOz: number | null
     }> = []
-    let hasApparel = false
+    let needsShipping = false
 
     for (const item of items) {
       const product = productsById.get(item.productId)
@@ -60,7 +79,22 @@ serve(async (req) => {
         throw new Error(`Select a size for "${product.title}".`)
       }
 
-      if (product.category === 'apparel') hasApparel = true
+      // A product ships if it has a package weight set, regardless of
+      // category — apparel, art, and pancho picks can each be physical or
+      // digital depending on the individual item.
+      const shipsThisItem = product.weight_oz != null && product.weight_oz > 0
+      if (shipsThisItem) {
+        needsShipping = true
+      } else {
+        try {
+          const taxCode = DIGITAL_TAX_CODE_BY_CATEGORY[product.category] || DEFAULT_DIGITAL_TAX_CODE
+          await stripe.products.update(product.stripe_product_id, { tax_code: taxCode })
+        } catch (err) {
+          // Never block a sale over a tax classification hiccup — worst
+          // case this item is taxed as general tangible goods this once.
+          console.error(`Failed to set digital tax code for ${product.stripe_product_id}:`, err)
+        }
+      }
 
       lineItems.push({
         price_data: {
@@ -82,11 +116,6 @@ serve(async (req) => {
       })
     }
 
-    const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
-      apiVersion: '2022-11-15',
-      httpClient: Stripe.createFetchHttpClient(),
-    })
-
     // Stripe metadata caps each value at 500 chars — pack each cart line into
     // its own JSON-string key instead of many small keys, so a cart with a
     // reasonable number of items comfortably fits the ~50-key limit.
@@ -102,9 +131,9 @@ serve(async (req) => {
       cancel_url: `${SITE_URL}/`,
     }
 
-    if (hasApparel) {
+    if (needsShipping) {
       if (!rateId || !toAddress) {
-        throw new Error('Missing shipping rate or address for an apparel item in your cart.')
+        throw new Error('Missing shipping rate or address for a physical item in your cart.')
       }
 
       const shippoKey = Deno.env.get('SHIPPO_API_KEY')

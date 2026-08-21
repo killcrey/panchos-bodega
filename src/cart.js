@@ -87,6 +87,9 @@ export function cartSubtotalCents(cart = getCart()) {
   return cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
 }
 
-export function cartHasApparel(cart = getCart()) {
-  return cart.some(item => item.category === 'apparel')
+// A cart item ships if it has a package weight set, regardless of category —
+// apparel, art, and pancho picks can each be physical or digital depending
+// on the individual item.
+export function cartHasPhysicalItems(cart = getCart()) {
+  return cart.some(item => item.weightOz != null && item.weightOz > 0)
 }

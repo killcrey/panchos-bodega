@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasApparel } from './cart.js'
+import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasPhysicalItems } from './cart.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -305,8 +305,18 @@ async function deleteProduct(product) {
   loadBodega()
 }
 
+// Sizes only make sense for apparel. Weight/shipping applies to apparel too,
+// but also art and pancho picks — either of those can be a physical item
+// (ships, needs a weight) or a pure digital download depending on the
+// individual product.
+const SHIPPABLE_CATEGORIES = ['apparel', 'art', 'pancho picks']
+
 function updateSizesVisibility(categoryValue, groupId) {
   document.getElementById(groupId).style.display = categoryValue === 'apparel' ? 'block' : 'none'
+}
+
+function updateWeightVisibility(categoryValue, groupId) {
+  document.getElementById(groupId).style.display = SHIPPABLE_CATEGORIES.includes(categoryValue) ? 'block' : 'none'
 }
 
 function openEditModal(product) {
@@ -321,7 +331,7 @@ function openEditModal(product) {
   document.getElementById('edit-sizes').value = product.sizes || ''
   document.getElementById('edit-weight').value = product.weight_oz != null ? product.weight_oz : ''
   updateSizesVisibility(product.category, 'edit-sizes-group')
-  updateSizesVisibility(product.category, 'edit-weight-group')
+  updateWeightVisibility(product.category, 'edit-weight-group')
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
 
@@ -463,7 +473,7 @@ function initFreeDownloadModal() {
 // the storefront UI: the badge in the filter bar, the cart modal, and
 // checkout — which either goes straight to create-checkout-session (a
 // digital-only cart) or first collects one shipping address + a combined
-// live Shippo rate for every apparel item in the cart (see below).
+// live Shippo rate for every physical item in the cart (see below).
 function updateCartBadge() {
   const badge = document.getElementById('cart-count')
   if (!badge) return
@@ -551,7 +561,7 @@ function initCartModal() {
 
     const statusEl = document.getElementById('cart-status')
 
-    if (cartHasApparel(cart)) {
+    if (cartHasPhysicalItems(cart)) {
       closeCartModal()
       openShippingCheckoutModal()
       return
@@ -576,11 +586,12 @@ function initCartModal() {
   })
 }
 
-// APPAREL SHIPPING CHECKOUT
+// SHIPPING CHECKOUT (physical items)
 // Collects one shipping address for the whole cart, gets a live combined
-// Shippo rate for every apparel item in it, then hands the chosen rate off
-// to create-checkout-session to build a single Stripe Checkout Session
-// covering the entire cart — apparel and digital items alike.
+// Shippo rate for every physical item in it (apparel, or any art/pancho
+// picks item with a weight set), then hands the chosen rate off to
+// create-checkout-session to build a single Stripe Checkout Session
+// covering the entire cart — physical and digital items alike.
 let selectedShippingRateId = null
 
 function openShippingCheckoutModal() {
@@ -630,8 +641,8 @@ function initShippingCheckoutModal() {
 
   getRatesBtn.addEventListener('click', async () => {
     const cart = getCart()
-    const apparelItems = cart.filter(i => i.category === 'apparel')
-    if (apparelItems.length === 0) return
+    const physicalItems = cart.filter(i => i.weightOz != null && i.weightOz > 0)
+    if (physicalItems.length === 0) return
 
     const toAddress = {
       name: document.getElementById('shipping-name').value.trim(),
@@ -656,7 +667,7 @@ function initShippingCheckoutModal() {
 
     try {
       const { data, error } = await supabase.functions.invoke('get-shipping-rates', {
-        body: { items: apparelItems.map(i => ({ productId: i.productId, quantity: i.quantity })), toAddress }
+        body: { items: physicalItems.map(i => ({ productId: i.productId, quantity: i.quantity })), toAddress }
       })
       if (error) throw error
 
@@ -852,7 +863,7 @@ function initAdminPortal() {
 
   document.getElementById('upload-category').addEventListener('change', (e) => {
     updateSizesVisibility(e.target.value, 'upload-sizes-group')
-    updateSizesVisibility(e.target.value, 'upload-weight-group')
+    updateWeightVisibility(e.target.value, 'upload-weight-group')
   })
 
   const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
@@ -874,7 +885,7 @@ function initAdminPortal() {
       const description = document.getElementById('upload-description').value
       const category = document.getElementById('upload-category').value
       const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
-      const weightRaw = category === 'apparel' ? document.getElementById('upload-weight').value.trim() : ''
+      const weightRaw = SHIPPABLE_CATEGORIES.includes(category) ? document.getElementById('upload-weight').value.trim() : ''
       const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
       const inventoryRaw = document.getElementById('upload-inventory').value.trim()
       const inventoryCount = inventoryRaw === '' ? null : parseInt(inventoryRaw, 10)
@@ -926,7 +937,7 @@ function initAdminPortal() {
 
   document.getElementById('edit-category').addEventListener('change', (e) => {
     updateSizesVisibility(e.target.value, 'edit-sizes-group')
-    updateSizesVisibility(e.target.value, 'edit-weight-group')
+    updateWeightVisibility(e.target.value, 'edit-weight-group')
   })
 
   const editGenerateStripeBtn = document.getElementById('edit-generate-stripe-btn')
@@ -953,7 +964,7 @@ function initAdminPortal() {
       const description = document.getElementById('edit-description').value
       const category = document.getElementById('edit-category').value
       const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
-      const weightRaw = category === 'apparel' ? document.getElementById('edit-weight').value.trim() : ''
+      const weightRaw = SHIPPABLE_CATEGORIES.includes(category) ? document.getElementById('edit-weight').value.trim() : ''
       const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
       const inventoryRaw = document.getElementById('edit-inventory').value.trim()
       const inventoryCount = inventoryRaw === '' ? null : parseInt(inventoryRaw, 10)

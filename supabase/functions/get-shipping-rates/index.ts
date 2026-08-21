@@ -19,11 +19,12 @@ const ADDRESS_FROM = {
   phone: '619-777-8451',
 }
 
-// Admins only enter a package weight per product — every apparel item ships
-// in the same box size. A cart with several apparel items is quoted as one
-// combined parcel (summed weight) in this same box rather than one rate per
-// item — good enough for accurate rates without asking for per-product
-// dimensions or multi-box packing logic.
+// Admins only enter a package weight per product — every shippable item
+// (apparel, or a physical art/pancho picks item) ships in the same box size.
+// A cart with several such items is quoted as one combined parcel (summed
+// weight) in this same box rather than one rate per item — good enough for
+// accurate rates without asking for per-product dimensions or multi-box
+// packing logic.
 const DEFAULT_PARCEL_DIMENSIONS = {
   length: '10',
   width: '8',
@@ -58,7 +59,7 @@ serve(async (req) => {
     const productIds = [...new Set(items.map((i: any) => i.productId))]
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, title, category, weight_oz, published')
+      .select('id, title, weight_oz, published')
       .in('id', productIds)
 
     if (productsError) throw productsError
@@ -72,9 +73,11 @@ serve(async (req) => {
 
       if (!product) throw new Error('One of the items in your cart no longer exists.')
       if (!product.published) throw new Error(`"${product.title}" is not available.`)
-      if (product.category !== 'apparel') throw new Error(`"${product.title}" does not ship — remove it from the shipping quote.`)
+      // A product ships if it has a package weight set, regardless of
+      // category — apparel, art, and pancho picks can each be physical or
+      // digital depending on the individual item.
       if (!product.weight_oz || product.weight_oz <= 0) {
-        throw new Error(`"${product.title}" is missing a package weight. Add one in the admin panel before it can be purchased.`)
+        throw new Error(`"${product.title}" does not ship — remove it from the shipping quote.`)
       }
 
       totalWeightOz += product.weight_oz * quantity
