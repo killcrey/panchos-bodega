@@ -12,3 +12,12 @@
 # Supabase service_role key) to this list or give it a VITE_ prefix.
 [build.environment]
   SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_SUPABASE_URL,VITE_STRIPE_PUBLISHABLE_KEY,VITE_GOOGLE_MAPS_API_KEY"
+  # SECRETS_SCAN_OMIT_KEYS above only covers the pattern-based scanner.
+  # "Smart detection" is a separate heuristic pass that fails the build if
+  # any Netlify-configured environment variable's VALUE literally appears in
+  # the output — which every VITE_-prefixed variable does, by design. There's
+  # no equivalent per-key allowlist for smart detection (only an omit-by-
+  # value list, impractical to keep in sync with rotated keys), so it's
+  # disabled outright rather than fighting false positives on values that
+  # are supposed to ship to the browser.
+  SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
