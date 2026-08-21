@@ -1198,12 +1198,9 @@
                   <input type="text" id="upload-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                   <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
                 </div>
-                <div id="upload-shipping-group" style="display: none;">
+                <div id="upload-weight-group" style="display: none;">
                   <input type="number" id="upload-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
                   <p class="field-hint">Required to sell this item — buyers get a live shipping rate from Shippo at checkout based on this weight.</p>
-                  <input type="number" id="upload-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional, legacy)" step="0.01" min="0">
-                  <input type="number" id="upload-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional, legacy)" step="0.01" min="0">
-                  <p class="field-hint">These two only apply to the old manual Stripe link below, not the live checkout — leave them blank unless you need that fallback.</p>
                 </div>
                 <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple required>
@@ -1260,12 +1257,9 @@
                 <input type="text" id="edit-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                 <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
               </div>
-              <div id="edit-shipping-group" style="display: none;">
+              <div id="edit-weight-group" style="display: none;">
                 <input type="number" id="edit-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
                 <p class="field-hint">Required to sell this item — buyers get a live shipping rate from Shippo at checkout based on this weight.</p>
-                <input type="number" id="edit-domestic-shipping" class="admin-input" placeholder="Domestic Shipping, USD (optional, legacy)" step="0.01" min="0">
-                <input type="number" id="edit-international-shipping" class="admin-input" placeholder="International Shipping, USD (optional, legacy)" step="0.01" min="0">
-                <p class="field-hint">These two only apply to the old manual Stripe link below, not the live checkout — leave them blank unless you need that fallback.</p>
               </div>
               <label class="admin-file-label" for="edit-image">New Product Photos (optional — select multiple to replace all photos, first is the main photo)</label>
               <span id="edit-image-current-info" class="field-status"></span>

@@ -89,8 +89,25 @@ serve(async (req) => {
     }
     if (size) metadata.size = size
 
+    // Stripe Tax needs the buyer's location to calculate tax, and since this
+    // flow doesn't ask Stripe to (re-)collect an address, attach the one
+    // already collected for the shipping quote to a Customer instead, so tax
+    // still calculates correctly without asking the buyer twice.
+    const customer = await stripe.customers.create({
+      name: toAddress?.name || undefined,
+      address: {
+        line1: toAddress?.street1 || undefined,
+        line2: toAddress?.street2 || undefined,
+        city: toAddress?.city || undefined,
+        state: toAddress?.state || undefined,
+        postal_code: toAddress?.zip || undefined,
+        country: toAddress?.country || undefined,
+      },
+    })
+
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
+      customer: customer.id,
       line_items: [{
         price_data: {
           currency: 'usd',
@@ -106,6 +123,7 @@ serve(async (req) => {
           display_name: shippingLabel,
         },
       }],
+      automatic_tax: { enabled: true },
       metadata,
       success_url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${SITE_URL}/`,
