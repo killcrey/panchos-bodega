@@ -344,9 +344,13 @@
         background: rgba(5, 5, 5, 0.96);
         backdrop-filter: blur(4px);
         -webkit-backdrop-filter: blur(4px);
-        align-items: center;
+        /* Center the card when it fits the viewport; when it's taller than
+           the viewport, start-align instead so both ends stay reachable by
+           scrolling rather than being centered off-screen at both edges. */
+        align-items: flex-start;
+        align-items: safe center;
         justify-content: center;
-        padding: 2rem;
+        padding: 3rem 2rem;
         box-sizing: border-box;
         overflow-y: auto;
       }
