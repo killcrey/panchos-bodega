@@ -1,0 +1,14 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# All VITE_-prefixed variables are intentionally inlined into the client
+# bundle by Vite — that's the point of the prefix. Netlify's secrets scanner
+# otherwise fails the build treating them as leaked secrets. Every key here
+# is designed to be public and is protected by its own mechanism instead of
+# secrecy: the Supabase anon key by Row Level Security, the Stripe key by
+# being the publishable (not secret) key, and the Google Maps key by its
+# HTTP referrer restriction. Never add a genuinely secret key (e.g. a
+# Supabase service_role key) to this list or give it a VITE_ prefix.
+[build.environment]
+  SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_ANON_KEY,VITE_SUPABASE_URL,VITE_STRIPE_PUBLISHABLE_KEY,VITE_GOOGLE_MAPS_API_KEY"
