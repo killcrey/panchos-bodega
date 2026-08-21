@@ -5,6 +5,7 @@ import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSub
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
+const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
@@ -680,6 +681,12 @@ function getAddressElement() {
       const addressElement = elements.create('address', {
         mode: 'shipping',
         allowedCountries: ['US'],
+        // Stripe's own free autocomplete only activates when a Payment
+        // Element shares the same Elements group or during an active Link
+        // session — neither applies here (payment happens on Stripe's own
+        // hosted Checkout page afterward), so it needs our own Google Maps
+        // API key to actually show suggestions as the buyer types.
+        autocomplete: { mode: 'google_maps_api', apiKey: googleMapsApiKey },
       })
       addressElement.mount('#address-element')
       return addressElement
