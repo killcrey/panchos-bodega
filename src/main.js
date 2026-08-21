@@ -254,11 +254,14 @@ async function processDigitalFiles(fileInputId) {
   return { fileUrl, filePaths, downloadFiles, tracklistSnippets }
 }
 
-// Uploads every image currently selected in the given file input to
-// bodega-images. The first becomes the product's main/cover photo; the rest
-// become the scrollable gallery.
-async function processImageFiles(fileInputId) {
-  const files = Array.from(document.getElementById(fileInputId).files)
+// Uploads a set of image Files to bodega-images. The first becomes the
+// product's main/cover photo; the rest become the scrollable gallery. Takes
+// an explicit File[] (from an accumulator, see uploadNewImageFiles /
+// editNewImageFiles below) rather than reading a file input directly — a
+// native <input type="file" multiple> replaces its whole selection every
+// time the picker reopens, so reading it directly would silently drop
+// anything picked in an earlier batch.
+async function processImageFiles(files) {
   if (files.length === 0) {
     return { coverUrl: null, galleryImages: null }
   }
@@ -332,20 +335,29 @@ function updateWeightVisibility(categoryValue, groupId) {
   document.getElementById(groupId).style.display = SHIPPABLE_CATEGORIES.includes(categoryValue) ? 'block' : 'none'
 }
 
-// Shows small thumbnails of whichever files are currently selected in a
-// photo file input, so the admin can see what they're about to upload
-// before submitting.
-function previewSelectedImages(fileInput, previewEl) {
-  const files = Array.from(fileInput.files)
-  previewEl.innerHTML = files
-    .map(file => `<img src="${URL.createObjectURL(file)}" alt="${file.name}">`)
-    .join('')
+// Newly picked-but-not-yet-uploaded photos for each form, kept as our own
+// accumulator instead of trusting the file input directly — a native
+// <input type="file" multiple> replaces its entire FileList every time the
+// picker reopens, so picking photos in two separate batches would silently
+// drop the first batch if we read straight from the input at submit time.
+let uploadNewImageFiles = []
+let editNewImageFiles = []
+
+// Renders thumbnails for an accumulator array of newly-picked Files, each
+// with a remove button so a bad pick can be dropped before upload.
+function renderPickedImagesPreview(files, previewEl) {
+  previewEl.innerHTML = files.map((file, idx) => `
+    <div class="admin-image-thumb">
+      <img src="${URL.createObjectURL(file)}" alt="${file.name}">
+      <button type="button" class="admin-image-remove-btn" data-idx="${idx}" aria-label="Remove photo">&times;</button>
+    </div>
+  `).join('')
 }
 
 // The edit form's existing-photo thumbnails, each with a remove button —
-// separate from previewSelectedImages's newly-picked-file preview so newly
-// added photos never clobber this list. Saving combines whatever's left
-// here with any newly selected files, so editing photos is additive
+// separate from renderPickedImagesPreview's newly-picked-file preview so
+// newly added photos never clobber this list. Saving combines whatever's
+// left here with any newly selected files, so editing photos is additive
 // (add more, remove individual ones) instead of replace-the-whole-set.
 let editKeptImages = []
 
@@ -377,6 +389,7 @@ function openEditModal(product) {
   updateWeightVisibility(product.category, 'edit-weight-group')
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
+  editNewImageFiles = []
   document.getElementById('edit-image-new-preview').innerHTML = ''
 
   editKeptImages = [product.cover_art_url, product.image_2_url, product.image_3_url]
@@ -405,6 +418,7 @@ function openEditModal(product) {
 function closeEditModal() {
   editingProduct = null
   editKeptImages = []
+  editNewImageFiles = []
   document.getElementById('edit-modal').style.display = 'none'
 }
 
@@ -942,11 +956,29 @@ function initAdminPortal() {
   })
 
   document.getElementById('upload-image').addEventListener('change', (e) => {
-    previewSelectedImages(e.target, document.getElementById('upload-image-preview'))
+    uploadNewImageFiles = uploadNewImageFiles.concat(Array.from(e.target.files))
+    e.target.value = '' // reset so reopening the picker starts a fresh native selection instead of showing a stale filename
+    renderPickedImagesPreview(uploadNewImageFiles, document.getElementById('upload-image-preview'))
+  })
+
+  document.getElementById('upload-image-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-image-remove-btn')
+    if (!removeBtn) return
+    uploadNewImageFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderPickedImagesPreview(uploadNewImageFiles, document.getElementById('upload-image-preview'))
   })
 
   document.getElementById('edit-image').addEventListener('change', (e) => {
-    previewSelectedImages(e.target, document.getElementById('edit-image-new-preview'))
+    editNewImageFiles = editNewImageFiles.concat(Array.from(e.target.files))
+    e.target.value = ''
+    renderPickedImagesPreview(editNewImageFiles, document.getElementById('edit-image-new-preview'))
+  })
+
+  document.getElementById('edit-image-new-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-image-remove-btn')
+    if (!removeBtn) return
+    editNewImageFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderPickedImagesPreview(editNewImageFiles, document.getElementById('edit-image-new-preview'))
   })
 
   document.getElementById('edit-image-preview').addEventListener('click', (e) => {
@@ -965,6 +997,16 @@ function initAdminPortal() {
 
   uploadForm.addEventListener('submit', async (e) => {
     e.preventDefault()
+
+    // The file input's own required-ness can't be trusted here — its value
+    // gets cleared after every pick so multi-batch selection accumulates in
+    // uploadNewImageFiles instead of being wiped by the next picker open.
+    if (uploadNewImageFiles.length === 0) {
+      uploadStatus.textContent = 'Add at least one product photo.'
+      uploadStatus.style.color = '#ff4d4d'
+      return
+    }
+
     uploadSubmitBtn.disabled = true
     uploadStatus.textContent = 'Deploying...'
     uploadStatus.style.color = '#e8b923'
@@ -983,7 +1025,7 @@ function initAdminPortal() {
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
 
-      const { coverUrl, galleryImages } = await processImageFiles('upload-image')
+      const { coverUrl, galleryImages } = await processImageFiles(uploadNewImageFiles)
 
       const { fileUrl, downloadFiles, tracklistSnippets } = await processDigitalFiles('upload-file')
 
@@ -1011,6 +1053,7 @@ function initAdminPortal() {
         : 'Product Deployed Successfully'
       uploadStatus.style.color = '#00ffcc'
       uploadForm.reset()
+      uploadNewImageFiles = []
       document.getElementById('upload-image-preview').innerHTML = ''
       loadAdminInventory()
     } catch (err) {
@@ -1068,7 +1111,7 @@ function initAdminPortal() {
       // thumbnail, but simply adding more never drops the old ones). This
       // also folds the legacy image_2_url/image_3_url columns into
       // gallery_images going forward, since they're always recomputed here.
-      const newPhotos = await processImageFiles('edit-image')
+      const newPhotos = await processImageFiles(editNewImageFiles)
       const newPhotoUrls = newPhotos.coverUrl ? [newPhotos.coverUrl, ...(newPhotos.galleryImages || [])] : []
       const allImages = [...editKeptImages, ...newPhotoUrls]
       const coverUrl = allImages[0] || null
