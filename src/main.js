@@ -215,7 +215,13 @@ async function uploadToVault(file) {
 //                       audio files are present, for the storefront's
 //                       multi-track preview player
 async function processDigitalFiles(fileInputId) {
+  // The browser's file picker can hand back a multi-select in click order
+  // rather than filename order, which would otherwise number tracks in
+  // whatever order they happened to be selected. Sort by filename first
+  // (numeric-aware, so "2 - Song.mp3" sorts before "10 - Song.mp3") so
+  // track numbering follows the filenames instead.
   const files = Array.from(document.getElementById(fileInputId).files)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
 
   if (files.length === 0) {
     return { fileUrl: null, filePaths: [], downloadFiles: null, tracklistSnippets: null }
@@ -1248,8 +1254,11 @@ async function loadBodega() {
     // from download_files directly (filtering to just the audio ones) — this
     // is what makes bundles saved before this fallback existed, or bundles
     // that mix audio with cover art/tracklist images, still get a player.
+    // Each track's own trackNumber is the source of truth for play order —
+    // the array itself isn't guaranteed to already be in that order (e.g.
+    // it reflects whatever order the files were selected in at upload time).
     const playableTracks = (product.tracklist_snippets && product.tracklist_snippets.length > 0)
-      ? product.tracklist_snippets
+      ? [...product.tracklist_snippets].sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0))
       : (Array.isArray(product.download_files)
           ? product.download_files
               .filter(f => isAudioUrl(f.url))
