@@ -829,6 +829,25 @@
         margin-bottom: 0.4rem;
       }
 
+      .admin-image-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-bottom: 0.6rem;
+      }
+
+      .admin-image-preview:empty {
+        display: none;
+      }
+
+      .admin-image-preview img {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 3px;
+        border: 1px solid #444;
+      }
+
       input[type="file"].admin-input {
         padding: 0.6rem 1rem;
         color: #ccc;
@@ -1481,6 +1500,7 @@
                 </div>
                 <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple required>
+                <div id="upload-image-preview" class="admin-image-preview"></div>
                 <label class="admin-file-label" for="upload-file">Digital File(s) — audio, PDF, or image (optional; select multiple to bundle as a .zip)</label>
                 <input type="file" id="upload-file" class="admin-input" accept="audio/*,application/pdf,image/*" multiple>
                 <div class="stripe-link-row">
@@ -1544,6 +1564,7 @@
               </div>
               <label class="admin-file-label" for="edit-image">New Product Photos (optional — select multiple to replace all photos, first is the main photo)</label>
               <span id="edit-image-current-info" class="field-status"></span>
+              <div id="edit-image-preview" class="admin-image-preview"></div>
               <input type="file" id="edit-image" class="admin-input" accept="image/*" multiple>
               <label class="admin-file-label" for="edit-file">New Digital File(s) — audio, PDF, or image (optional; select multiple to replace with a .zip bundle)</label>
               <span id="edit-file-current-info" class="field-status"></span>

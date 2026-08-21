@@ -330,6 +330,24 @@ function updateWeightVisibility(categoryValue, groupId) {
   document.getElementById(groupId).style.display = SHIPPABLE_CATEGORIES.includes(categoryValue) ? 'block' : 'none'
 }
 
+// Shows small thumbnails of whichever files are currently selected in a
+// photo file input, so the admin can see what they're about to upload
+// before submitting.
+function previewSelectedImages(fileInput, previewEl) {
+  const files = Array.from(fileInput.files)
+  previewEl.innerHTML = files
+    .map(file => `<img src="${URL.createObjectURL(file)}" alt="${file.name}">`)
+    .join('')
+}
+
+// Shows small thumbnails of a product's already-saved photos.
+function previewExistingImages(urls, previewEl) {
+  previewEl.innerHTML = urls
+    .filter(Boolean)
+    .map(url => `<img src="${url}" alt="">`)
+    .join('')
+}
+
 function openEditModal(product) {
   editingProduct = product
   document.getElementById('edit-id').value = product.id
@@ -346,11 +364,13 @@ function openEditModal(product) {
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
 
-  const imageCount = [product.cover_art_url, product.image_2_url, product.image_3_url]
-    .filter(Boolean).length + (Array.isArray(product.gallery_images) ? product.gallery_images.length : 0)
-  document.getElementById('edit-image-current-info').textContent = imageCount > 0
-    ? `Currently: ${imageCount} photo${imageCount === 1 ? '' : 's'}`
+  const existingImages = [product.cover_art_url, product.image_2_url, product.image_3_url]
+    .concat(Array.isArray(product.gallery_images) ? product.gallery_images : [])
+    .filter(Boolean)
+  document.getElementById('edit-image-current-info').textContent = existingImages.length > 0
+    ? `Currently: ${existingImages.length} photo${existingImages.length === 1 ? '' : 's'}`
     : 'Currently: no photos'
+  previewExistingImages(existingImages, document.getElementById('edit-image-preview'))
 
   const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
   const fileCount = Array.isArray(product.download_files) ? product.download_files.length : 0
@@ -877,6 +897,14 @@ function initAdminPortal() {
     updateWeightVisibility(e.target.value, 'upload-weight-group')
   })
 
+  document.getElementById('upload-image').addEventListener('change', (e) => {
+    previewSelectedImages(e.target, document.getElementById('upload-image-preview'))
+  })
+
+  document.getElementById('edit-image').addEventListener('change', (e) => {
+    previewSelectedImages(e.target, document.getElementById('edit-image-preview'))
+  })
+
   const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
@@ -932,6 +960,7 @@ function initAdminPortal() {
         : 'Product Deployed Successfully'
       uploadStatus.style.color = '#00ffcc'
       uploadForm.reset()
+      document.getElementById('upload-image-preview').innerHTML = ''
       loadAdminInventory()
     } catch (err) {
       uploadStatus.textContent = err.message || 'Something went wrong.'
