@@ -1176,6 +1176,12 @@
         border-color: #b19cd9;
       }
 
+      .inventory-status-badge.status-coming-soon {
+        margin-left: 0.4rem;
+        color: #e8b923;
+        border-color: #e8b923;
+      }
+
       .inventory-item-actions {
         display: flex;
         flex-direction: column;
@@ -1587,6 +1593,10 @@
                   <input type="checkbox" id="upload-published" checked>
                   Publish Immediately
                 </label>
+                <label class="admin-checkbox-row">
+                  <input type="checkbox" id="upload-coming-soon">
+                  Coming Soon (visible, but Buy button disabled)
+                </label>
                 <button type="submit" id="upload-submit-btn" class="admin-btn">Deploy to Bodega</button>
               </form>
               <div id="upload-status"></div>
@@ -1655,6 +1665,10 @@
               <label class="admin-checkbox-row">
                 <input type="checkbox" id="edit-published">
                 Published
+              </label>
+              <label class="admin-checkbox-row">
+                <input type="checkbox" id="edit-coming-soon">
+                Coming Soon (visible, but Buy button disabled)
               </label>
             </div>
             <div class="edit-modal-actions">

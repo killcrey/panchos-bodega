@@ -45,6 +45,7 @@ async function loadAdminInventory() {
         <div class="inventory-item-meta">${isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}${isTracked ? ` — ${product.inventory_count} IN STOCK` : ''}</div>
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
         ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
+        ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
         ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
         ${(!isFree && !hasStripeUrl) ? '<span class="inventory-status-badge status-warning">No Checkout Link</span>' : ''}
       </div>
@@ -411,6 +412,7 @@ function openEditModal(product) {
 
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
   document.getElementById('edit-published').checked = product.published !== false
+  document.getElementById('edit-coming-soon').checked = !!product.coming_soon
   document.getElementById('edit-status').textContent = ''
   document.getElementById('edit-stripe-status').textContent = ''
   document.getElementById('edit-modal').style.display = 'flex'
@@ -1031,6 +1033,7 @@ function initAdminPortal() {
       const stripeProductId = document.getElementById('upload-stripe-product-id').value.trim() || null
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
+      const comingSoon = document.getElementById('upload-coming-soon').checked
 
       const { coverUrl, galleryImages } = await processImageFiles(uploadNewImageFiles)
 
@@ -1051,7 +1054,8 @@ function initAdminPortal() {
         download_files: downloadFiles,
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
-        published
+        published,
+        coming_soon: comingSoon
       })
       if (insertError) throw insertError
 
@@ -1112,6 +1116,7 @@ function initAdminPortal() {
       const stripeProductId = document.getElementById('edit-stripe-product-id').value.trim() || null
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
+      const comingSoon = document.getElementById('edit-coming-soon').checked
 
       // New photos are appended to whatever's left in editKeptImages (the
       // admin can remove individual existing photos via the × on each
@@ -1153,7 +1158,8 @@ function initAdminPortal() {
         download_files: downloadFiles,
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
-        published
+        published,
+        coming_soon: comingSoon
       }).eq('id', id)
       if (updateError) throw updateError
 
@@ -1349,6 +1355,8 @@ async function loadBodega() {
     const isFree = (product.price_cents || 0) === 0
     const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
     const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
+    const isComingSoon = !!product.coming_soon
+    const isInert = isSoldOut || isComingSoon
 
     const card = document.createElement('div')
     card.className = 'product-card'
@@ -1438,7 +1446,7 @@ async function loadBodega() {
       `
     }
 
-    const needsSize = !isFree && !isSoldOut && product.category === 'apparel' && product.sizes
+    const needsSize = !isFree && !isInert && product.category === 'apparel' && product.sizes
     const sizeSelectHTML = needsSize
       ? `<select class="card-size-select admin-input">
           <option value="" disabled selected>Select Size</option>
@@ -1456,8 +1464,8 @@ async function loadBodega() {
       <div style="margin-top: auto;"></div>
       ${audioHTML}
       ${sizeSelectHTML}
-      <button class="buy-btn" ${isSoldOut ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isSoldOut ? '#444' : '#00ffcc'}; color: ${isSoldOut ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
-        ${isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart')}
+      <button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
+        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))}
       </button>
     `
 
@@ -1504,7 +1512,7 @@ async function loadBodega() {
     const buyButton = card.querySelector('.buy-btn')
     const sizeSelect = card.querySelector('.card-size-select')
     buyButton.addEventListener('click', () => {
-      if (isSoldOut) {
+      if (isInert) {
         return
       } else if (isFree) {
         openFreeDownloadModal(product)
