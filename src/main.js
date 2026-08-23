@@ -35,7 +35,7 @@ async function loadAdminInventory() {
     item.className = 'inventory-item'
     const isPublished = product.published !== false
     const isFree = (product.price_cents || 0) === 0
-    const hasStripeUrl = !!(product.stripe_url && product.stripe_url.trim())
+    const hasCheckoutId = !!product.stripe_product_id
     const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
     const isTracked = product.inventory_count != null
     const isSoldOut = isTracked && product.inventory_count <= 0
@@ -47,7 +47,7 @@ async function loadAdminInventory() {
         ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
         ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
         ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
-        ${(!isFree && !hasStripeUrl) ? '<span class="inventory-status-badge status-warning">No Checkout Link</span>' : ''}
+        ${(!isFree && !hasCheckoutId) ? '<span class="inventory-status-badge status-warning">No Checkout ID</span>' : ''}
       </div>
       <div class="inventory-item-actions">
         <button type="button" class="inventory-edit-btn">Edit</button>
@@ -856,7 +856,7 @@ function initShippingCheckoutModal() {
       ratesList.innerHTML = data.rates.map((rate, i) => `
         <label style="display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem; border: 1px solid #333; border-radius: 4px; margin-bottom: 0.5rem; cursor: pointer; font-size: 0.7rem;">
           <input type="radio" name="shipping-rate" value="${rate.id}" ${i === 0 ? 'checked' : ''}>
-          <span style="flex: 1;">${rate.provider} ${rate.service}${rate.estimatedDays ? ` — ${rate.estimatedDays}d` : ''}</span>
+          <span style="flex: 1;">${rate.provider ? `${rate.provider} ` : ''}${rate.service}${rate.estimatedDays ? ` — ${rate.estimatedDays}d` : ''}</span>
           <span style="color: #00ffcc; font-weight: bold;">$${parseFloat(rate.amount).toFixed(2)}</span>
         </label>
       `).join('')

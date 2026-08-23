@@ -216,7 +216,7 @@ serve(async (req) => {
           throw new Error('That shipping option is no longer available. Please pick a rate again.')
         }
         shippingAmountCents += Math.round(parseFloat(matchedRate.rate) * 100)
-        labelParts.push('Printful Shipping')
+        labelParts.push('Standard Shipping')
         metadata.printful_shipping_rate_id = printfulRateId
       }
 

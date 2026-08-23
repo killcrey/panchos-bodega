@@ -83,11 +83,11 @@ async function fetchPrintfulRates(toAddress: any, printfulItems: { variant_id: n
   if (!res.ok) throw new Error(body?.result || body?.error?.message || 'Printful rejected the shipping rate request.')
 
   const rates = Array.isArray(body.result) ? body.result : []
-  if (rates.length === 0) throw new Error('No Printful shipping rates available for that address.')
+  if (rates.length === 0) throw new Error('No shipping rates available for that address.')
 
   return rates.map((rate: any) => ({
     id: rate.id,
-    provider: 'Printful',
+    provider: '',
     service: (rate.name || rate.id || 'Shipping').replace(/\s*\(Estimated delivery:.*\)\s*/i, '').trim(),
     amount: parseFloat(rate.rate),
     estimatedDays: rate.maxDeliveryDays ?? rate.minDeliveryDays ?? null,
