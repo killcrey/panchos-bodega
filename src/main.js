@@ -98,12 +98,18 @@ async function loadAdminOrders() {
     ].filter(Boolean).join('<br>')
 
     const hasShipping = !!order.shipping_street1
+    // A shipping order can have a self-fulfilled (Shippo) component, a
+    // Printful component, or both — each gets its own status/actions since
+    // they're separate parcels handled by separate systems.
+    const hasShippoLabel = !!order.shipping_rate_id
+    const hasPrintful = !!order.printful_order_status
     const items = Array.isArray(order.order_items) ? order.order_items : []
     const itemsSummary = items.length > 0
       ? items.map(oi => `${oi.quantity > 1 ? `${oi.quantity} × ` : ''}${oi.product_title}${oi.size ? ` — Size ${oi.size}` : ''}`).join(', ')
       : (order.product_title || 'Order')
 
     const statusLabel = order.label_status === 'purchased' ? 'Label Ready' : order.label_status === 'failed' ? 'Label Failed' : 'Label Pending'
+    const printfulStatusLabel = order.printful_order_status === 'submitted' ? 'Printful Submitted' : order.printful_order_status === 'failed' ? 'Printful Failed' : 'Printful Pending'
 
     item.innerHTML = `
       <div class="order-item-title">${itemsSummary}</div>
@@ -112,11 +118,14 @@ async function loadAdminOrders() {
         ${hasShipping ? `<br><strong>Ship to:</strong> ${addressLines || 'No address on file'}` : '<br><strong>Digital order</strong> — no shipping required'}
         ${order.shipping_service ? `<br><strong>Service:</strong> ${order.shipping_service}` : ''}
         ${order.tracking_number ? `<br><strong>Tracking:</strong> ${order.tracking_number}` : ''}
-        ${hasShipping && order.label_status === 'failed' && order.label_error ? `<br><strong>Error:</strong> ${order.label_error}` : ''}
+        ${hasShippoLabel && order.label_status === 'failed' && order.label_error ? `<br><strong>Label Error:</strong> ${order.label_error}` : ''}
+        ${hasPrintful && order.printful_order_status === 'failed' && order.printful_order_error ? `<br><strong>Printful Error:</strong> ${order.printful_order_error}` : ''}
+        ${hasPrintful && order.printful_order_id ? `<br><strong>Printful Order:</strong> #${order.printful_order_id}` : ''}
       </div>
-      ${hasShipping ? `<span class="order-status-badge status-${order.label_status}">${statusLabel}</span>` : ''}
+      ${hasShippoLabel ? `<span class="order-status-badge status-${order.label_status}">${statusLabel}</span>` : ''}
+      ${hasPrintful ? `<span class="order-status-badge status-${order.printful_order_status}">${printfulStatusLabel}</span>` : ''}
       <div class="order-item-actions">
-        ${hasShipping ? (order.label_status === 'purchased'
+        ${hasShippoLabel ? (order.label_status === 'purchased'
           ? `<a href="${order.label_url}" target="_blank" rel="noopener noreferrer">Print Label</a>`
           : `<button type="button" class="buy-label-btn">${order.label_status === 'failed' ? 'Retry Label' : 'Buy Label'}</button>`
         ) : ''}
@@ -337,6 +346,55 @@ function updateWeightVisibility(categoryValue, groupId) {
   document.getElementById(groupId).style.display = SHIPPABLE_CATEGORIES.includes(categoryValue) ? 'block' : 'none'
 }
 
+// Parses the admin's "S:12345:67890, M:12346:67891" (or a bare
+// "variantId:syncVariantId" for a sizeless product) into the
+// {size: {variantId, syncVariantId}} shape saved on the product. Two ids per
+// size because Printful's shipping-rate API and order-submission API each
+// require a different one (confirmed against the live API) — variantId is
+// the catalog variant, syncVariantId is the store's synced product variant
+// tied to the actual uploaded artwork. Returns null for blank input so it's
+// easy to clear the mapping.
+function parsePrintfulVariantMap(input) {
+  const trimmed = (input || '').trim()
+  if (!trimmed) return null
+
+  function parsePair(str) {
+    const [variantIdRaw, syncVariantIdRaw] = str.split(':').map(s => (s || '').trim())
+    const variantId = parseInt(variantIdRaw, 10)
+    const syncVariantId = parseInt(syncVariantIdRaw, 10)
+    return (!isNaN(variantId) && !isNaN(syncVariantId)) ? { variantId, syncVariantId } : null
+  }
+
+  if (!trimmed.includes(',')) {
+    const parts = trimmed.split(':')
+    if (parts.length === 2) {
+      const pair = parsePair(trimmed)
+      return pair ? { default: pair } : null
+    }
+  }
+
+  const map = {}
+  trimmed.split(',').forEach(entry => {
+    const parts = entry.split(':').map(s => (s || '').trim())
+    if (parts.length !== 3) return
+    const [size, variantIdRaw, syncVariantIdRaw] = parts
+    const pair = parsePair(`${variantIdRaw}:${syncVariantIdRaw}`)
+    if (size && pair) map[size] = pair
+  })
+  return Object.keys(map).length > 0 ? map : null
+}
+
+// The inverse of parsePrintfulVariantMap, for populating the edit form.
+function formatPrintfulVariantMap(map) {
+  if (!map || typeof map !== 'object') return ''
+  const entries = Object.entries(map)
+  if (entries.length === 1 && entries[0][0] === 'default') {
+    const v = entries[0][1]
+    return `${v.variantId}:${v.syncVariantId}`
+  }
+  return entries.map(([size, v]) => `${size}:${v.variantId}:${v.syncVariantId}`).join(', ')
+}
+
 // Newly picked-but-not-yet-uploaded photos for each form, kept as our own
 // accumulator instead of trusting the file input directly — a native
 // <input type="file" multiple> replaces its entire FileList every time the
@@ -387,6 +445,7 @@ function openEditModal(product) {
   document.getElementById('edit-category').value = product.category || ''
   document.getElementById('edit-sizes').value = product.sizes || ''
   document.getElementById('edit-weight').value = product.weight_oz != null ? product.weight_oz : ''
+  document.getElementById('edit-printful-variants').value = formatPrintfulVariantMap(product.printful_variant_map)
   updateSizesVisibility(product.category, 'edit-sizes-group')
   updateWeightVisibility(product.category, 'edit-weight-group')
   document.getElementById('edit-image').value = ''
@@ -738,7 +797,7 @@ function initShippingCheckoutModal() {
 
   getRatesBtn.addEventListener('click', async () => {
     const cart = getCart()
-    const physicalItems = cart.filter(i => i.weightOz != null && i.weightOz > 0)
+    const physicalItems = cart.filter(i => (i.weightOz != null && i.weightOz > 0) || i.printfulVariantId != null)
     if (physicalItems.length === 0) return
 
     const addressElement = await getAddressElement()
@@ -765,7 +824,7 @@ function initShippingCheckoutModal() {
 
     try {
       const { data, error } = await supabase.functions.invoke('get-shipping-rates', {
-        body: { items: physicalItems.map(i => ({ productId: i.productId, quantity: i.quantity })), toAddress }
+        body: { items: physicalItems.map(i => ({ productId: i.productId, quantity: i.quantity, size: i.size })), toAddress }
       })
       if (error) throw error
 
@@ -1028,6 +1087,9 @@ function initAdminPortal() {
       const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
       const weightRaw = SHIPPABLE_CATEGORIES.includes(category) ? document.getElementById('upload-weight').value.trim() : ''
       const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
+      const printfulVariantMap = SHIPPABLE_CATEGORIES.includes(category)
+        ? parsePrintfulVariantMap(document.getElementById('upload-printful-variants').value)
+        : null
       const inventoryRaw = document.getElementById('upload-inventory').value.trim()
       const inventoryCount = inventoryRaw === '' ? null : parseInt(inventoryRaw, 10)
       const stripeProductId = document.getElementById('upload-stripe-product-id').value.trim() || null
@@ -1046,6 +1108,7 @@ function initAdminPortal() {
         category,
         sizes,
         weight_oz: weightOz,
+        printful_variant_map: printfulVariantMap,
         inventory_count: inventoryCount,
         stripe_product_id: stripeProductId,
         cover_art_url: coverUrl,
@@ -1111,6 +1174,9 @@ function initAdminPortal() {
       const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
       const weightRaw = SHIPPABLE_CATEGORIES.includes(category) ? document.getElementById('edit-weight').value.trim() : ''
       const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
+      const printfulVariantMap = SHIPPABLE_CATEGORIES.includes(category)
+        ? parsePrintfulVariantMap(document.getElementById('edit-printful-variants').value)
+        : null
       const inventoryRaw = document.getElementById('edit-inventory').value.trim()
       const inventoryCount = inventoryRaw === '' ? null : parseInt(inventoryRaw, 10)
       const stripeProductId = document.getElementById('edit-stripe-product-id').value.trim() || null
@@ -1148,6 +1214,7 @@ function initAdminPortal() {
         category,
         sizes,
         weight_oz: weightOz,
+        printful_variant_map: printfulVariantMap,
         inventory_count: inventoryCount,
         stripe_product_id: stripeProductId,
         cover_art_url: coverUrl,

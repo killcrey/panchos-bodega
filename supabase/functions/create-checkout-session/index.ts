@@ -29,7 +29,7 @@ serve(async (req) => {
     const productIds = [...new Set(items.map((i: any) => i.productId))]
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, title, price_cents, category, stripe_product_id, published, inventory_count, weight_oz, sizes')
+      .select('id, title, price_cents, category, stripe_product_id, published, inventory_count, weight_oz, sizes, printful_variant_map')
       .in('id', productIds)
 
     if (productsError) throw productsError
@@ -61,7 +61,12 @@ serve(async (req) => {
     const orderItems: Array<{
       id: string; title: string; category: string | null; size: string | null
       quantity: number; unitAmountCents: number; weightOz: number | null
+      printfulSyncVariantId: number | null
     }> = []
+    // Transient — only needed to re-quote Printful's shipping rate below,
+    // never persisted (order_items stores the sync variant id instead, the
+    // one that actually matters after checkout).
+    const printfulShippingItems: { variant_id: number; quantity: number }[] = []
     let needsShipping = false
 
     for (const item of items) {
@@ -79,11 +84,21 @@ serve(async (req) => {
         throw new Error(`Select a size for "${product.title}".`)
       }
 
-      // A product ships if it has a package weight set, regardless of
-      // category — apparel, art, music, and pancho picks can each be physical or
-      // digital depending on the individual item.
-      const shipsThisItem = product.weight_oz != null && product.weight_oz > 0
-      if (shipsThisItem) {
+      // Two shipping paths: self-fulfilled (weight_oz set, shipped by us via
+      // Shippo) or Printful (printful_variant_map set, printed and shipped
+      // by Printful). Neither depends on category — apparel, art, music, and
+      // pancho picks can each be physical or digital per individual item.
+      let printfulSyncVariantId: number | null = null
+      if (product.printful_variant_map) {
+        const key = item.size || 'default'
+        const variant = product.printful_variant_map[key]
+        if (!variant?.variantId || !variant?.syncVariantId) {
+          throw new Error(`"${product.title}" has no Printful variant configured for ${key === 'default' ? 'it' : `size ${key}`}.`)
+        }
+        printfulSyncVariantId = variant.syncVariantId
+        printfulShippingItems.push({ variant_id: variant.variantId, quantity })
+        needsShipping = true
+      } else if (product.weight_oz != null && product.weight_oz > 0) {
         needsShipping = true
       } else {
         try {
@@ -113,6 +128,7 @@ serve(async (req) => {
         quantity,
         unitAmountCents: product.price_cents,
         weightOz: product.weight_oz != null ? product.weight_oz : null,
+        printfulSyncVariantId,
       })
     }
 
@@ -136,25 +152,76 @@ serve(async (req) => {
         throw new Error('Missing shipping rate or address for a physical item in your cart.')
       }
 
-      const shippoKey = Deno.env.get('SHIPPO_API_KEY')
-      if (!shippoKey) {
-        throw new Error('Shipping is not configured yet.')
+      // rateId encodes up to two components joined by "::" — a Shippo rate
+      // object id (re-fetchable) and/or a Printful rate id like "STANDARD"
+      // (not independently re-fetchable, so it's re-validated by re-quoting
+      // Printful below instead). Format comes from get-shipping-rates:
+      // plain id = Shippo only, "printful::X" = Printful only, "X::Y" = both.
+      let shippoRateId: string | null = null
+      let printfulRateId: string | null = null
+      if (rateId.startsWith('printful::')) {
+        printfulRateId = rateId.slice('printful::'.length)
+      } else if (rateId.includes('::')) {
+        const parts = rateId.split('::')
+        shippoRateId = parts[0]
+        printfulRateId = parts[1]
+      } else {
+        shippoRateId = rateId
       }
 
-      // Re-fetch the rate server-side instead of trusting whatever amount the
-      // client sends back — the client only ever picks a rate ID, never a price.
-      const rateRes = await fetch(`https://api.goshippo.com/rates/${rateId}`, {
-        headers: { 'Authorization': `ShippoToken ${shippoKey}` },
-      })
-      const rate = await rateRes.json()
-      if (!rateRes.ok || !rate?.amount) {
-        throw new Error('That shipping option is no longer available. Please pick a rate again.')
+      let shippingAmountCents = 0
+      const labelParts: string[] = []
+
+      if (shippoRateId) {
+        const shippoKey = Deno.env.get('SHIPPO_API_KEY')
+        if (!shippoKey) throw new Error('Shipping is not configured yet.')
+
+        // Re-fetch the rate server-side instead of trusting whatever amount
+        // the client sends back — the client only ever picks a rate ID.
+        const rateRes = await fetch(`https://api.goshippo.com/rates/${shippoRateId}`, {
+          headers: { 'Authorization': `ShippoToken ${shippoKey}` },
+        })
+        const rate = await rateRes.json()
+        if (!rateRes.ok || !rate?.amount) {
+          throw new Error('That shipping option is no longer available. Please pick a rate again.')
+        }
+        shippingAmountCents += Math.round(parseFloat(rate.amount) * 100)
+        labelParts.push(`${rate.provider} ${rate.servicelevel?.name || 'Shipping'}`.trim())
+        metadata.shipping_rate_id = shippoRateId
       }
 
-      const shippingAmountCents = Math.round(parseFloat(rate.amount) * 100)
-      const shippingLabel = `${rate.provider} ${rate.servicelevel?.name || 'Shipping'}`.trim()
+      if (printfulRateId) {
+        const printfulKey = Deno.env.get('PRINTFUL_API_KEY')
+        if (!printfulKey) throw new Error('Printful is not configured yet.')
 
-      metadata.shipping_rate_id = rateId
+        // Printful has no "fetch rate by id" endpoint — re-quote with the
+        // actual cart's Printful items (by catalog variant id — confirmed
+        // that's what this endpoint requires, not the sync variant id) and
+        // match by id, instead of trusting the client-sent amount.
+        const pfRateRes = await fetch('https://api.printful.com/shipping/rates', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${printfulKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            recipient: {
+              address1: toAddress?.street1, address2: toAddress?.street2 || '', city: toAddress?.city,
+              state_code: toAddress?.state, country_code: toAddress?.country, zip: toAddress?.zip,
+            },
+            items: printfulShippingItems,
+          }),
+        })
+        const pfBody = await pfRateRes.json()
+        const pfRates = Array.isArray(pfBody?.result) ? pfBody.result : []
+        const matchedRate = pfRates.find((r: any) => r.id === printfulRateId)
+        if (!pfRateRes.ok || !matchedRate) {
+          throw new Error('That shipping option is no longer available. Please pick a rate again.')
+        }
+        shippingAmountCents += Math.round(parseFloat(matchedRate.rate) * 100)
+        labelParts.push('Printful Shipping')
+        metadata.printful_shipping_rate_id = printfulRateId
+      }
+
+      const shippingLabel = labelParts.join(' + ')
+
       metadata.shipping_name = toAddress?.name || ''
       metadata.shipping_street1 = toAddress?.street1 || ''
       metadata.shipping_street2 = toAddress?.street2 || ''

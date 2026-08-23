@@ -1280,6 +1280,11 @@
         border-color: #b8291f;
       }
 
+      .order-status-badge.status-submitted {
+        color: #00ffcc;
+        border-color: #00ffcc;
+      }
+
       .order-status-badge.status-shipped {
         margin-left: 0.4rem;
         color: #b19cd9;
@@ -1575,7 +1580,9 @@
                 </div>
                 <div id="upload-weight-group" style="display: none;">
                   <input type="number" id="upload-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
-                  <p class="field-hint">Leave blank for a pure digital download. Set a weight to sell this as a physical item — buyers get a live shipping rate from Shippo at checkout based on it.</p>
+                  <p class="field-hint">Leave blank for a pure digital download or a Printful item (below). Set a weight to self-ship this as a physical item — buyers get a live shipping rate from Shippo at checkout based on it.</p>
+                  <input type="text" id="upload-printful-variants" class="admin-input" placeholder="Printful IDs, e.g. S:12345:67890, M:12346:67891">
+                  <p class="field-hint">Fulfilled by Printful instead of self-shipped — leave Package Weight blank if you use this. Each entry needs two Printful ids: the catalog variant id (from the Printful product catalog) and the sync variant id (from your synced product in the Printful dashboard). One size: "variantId:syncVariantId". Multiple sizes: "size:variantId:syncVariantId" pairs separated by commas, matching the Sizes field above.</p>
                 </div>
                 <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
                 <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple>
@@ -1644,7 +1651,9 @@
               </div>
               <div id="edit-weight-group" style="display: none;">
                 <input type="number" id="edit-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
-                <p class="field-hint">Leave blank for a pure digital download. Set a weight to sell this as a physical item — buyers get a live shipping rate from Shippo at checkout based on it.</p>
+                <p class="field-hint">Leave blank for a pure digital download or a Printful item (below). Set a weight to self-ship this as a physical item — buyers get a live shipping rate from Shippo at checkout based on it.</p>
+                <input type="text" id="edit-printful-variants" class="admin-input" placeholder="Printful IDs, e.g. S:12345:67890, M:12346:67891">
+                <p class="field-hint">Fulfilled by Printful instead of self-shipped — leave Package Weight blank if you use this. Each entry needs two Printful ids: the catalog variant id (from the Printful product catalog) and the sync variant id (from your synced product in the Printful dashboard). One size: "variantId:syncVariantId". Multiple sizes: "size:variantId:syncVariantId" pairs separated by commas, matching the Sizes field above.</p>
               </div>
               <label class="admin-file-label">Current Photos (click × to remove one)</label>
               <span id="edit-image-current-info" class="field-status"></span>

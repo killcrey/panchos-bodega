@@ -64,6 +64,67 @@ async function purchaseLabelForOrder(
   }
 }
 
+// Submits the Printful items in an order to Printful's own Orders API so
+// they get printed and shipped automatically — no admin action needed,
+// unlike the Shippo label above. A failure here never fails the webhook;
+// the payment already succeeded, so the order stays recorded with
+// printful_order_status 'failed' and the admin can see it needs a manual
+// resubmission instead of the order silently never reaching Printful.
+async function submitPrintfulOrder(
+  supabase: ReturnType<typeof createClient>,
+  orderId: string,
+  recipient: { name: string; street1: string; street2: string; city: string; state: string; zip: string; country: string },
+  items: { sync_variant_id: number; quantity: number }[],
+  printfulKey: string | undefined
+) {
+  if (!printfulKey || items.length === 0) {
+    await supabase.from('orders').update({
+      printful_order_status: 'failed',
+      printful_order_error: !printfulKey ? 'Printful is not configured yet.' : 'No Printful items on this order.'
+    }).eq('id', orderId)
+    return
+  }
+
+  try {
+    const res = await fetch('https://api.printful.com/orders', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${printfulKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: {
+          name: recipient.name,
+          address1: recipient.street1,
+          address2: recipient.street2 || undefined,
+          city: recipient.city,
+          state_code: recipient.state,
+          country_code: recipient.country,
+          zip: recipient.zip,
+        },
+        items,
+        // Sent straight to production — this order is already paid for.
+        confirm: true,
+      })
+    })
+    const body = await res.json()
+
+    if (!res.ok) {
+      const message = body?.result || body?.error?.message || 'Printful order submission failed.'
+      await supabase.from('orders').update({ printful_order_status: 'failed', printful_order_error: message }).eq('id', orderId)
+      return
+    }
+
+    await supabase.from('orders').update({
+      printful_order_status: 'submitted',
+      printful_order_error: null,
+      printful_order_id: body?.result?.id ?? null,
+    }).eq('id', orderId)
+  } catch (err) {
+    await supabase.from('orders').update({
+      printful_order_status: 'failed',
+      printful_order_error: err instanceof Error ? err.message : String(err)
+    }).eq('id', orderId)
+  }
+}
+
 // Reads whichever digital files are attached to a Stripe Product's metadata
 // (the same file_count/file_N / file scheme create-stripe-link writes) and
 // signs a link for each so the confirmation email can hand the buyer their
@@ -314,18 +375,47 @@ serve(async (req) => {
                 size: it.size || null,
                 quantity: it.quantity || 1,
                 unit_amount_cents: it.unitAmountCents ?? null,
-                weight_oz: it.weightOz ?? null
+                weight_oz: it.weightOz ?? null,
+                printful_sync_variant_id: it.printfulSyncVariantId ?? null
               }))
             )
             if (itemsError) console.error('Failed to insert order items for session', session.id, itemsError)
           }
 
-          if (hasShipping) {
+          // Self-fulfilled (Shippo) and Printful items ship as separate
+          // parcels even within the same order, so each gets its own
+          // fulfillment call — a self-fulfilled label purchase never blocks
+          // on, or is blocked by, Printful order submission.
+          const shippingRecipient = {
+            name: metadata.shipping_name || '',
+            street1: metadata.shipping_street1 || '',
+            street2: metadata.shipping_street2 || '',
+            city: metadata.shipping_city || '',
+            state: metadata.shipping_state || '',
+            zip: metadata.shipping_zip || '',
+            country: metadata.shipping_country || ''
+          }
+
+          if (hasShipping && metadata.shipping_rate_id) {
             await purchaseLabelForOrder(
               supabase,
               order.id,
-              metadata.shipping_rate_id || null,
+              metadata.shipping_rate_id,
               Deno.env.get('SHIPPO_API_KEY')
+            )
+          }
+
+          const printfulItems = cartItems
+            .filter((it: any) => it.printfulSyncVariantId != null)
+            .map((it: any) => ({ sync_variant_id: it.printfulSyncVariantId, quantity: it.quantity || 1 }))
+
+          if (printfulItems.length > 0) {
+            await submitPrintfulOrder(
+              supabase,
+              order.id,
+              shippingRecipient,
+              printfulItems,
+              Deno.env.get('PRINTFUL_API_KEY')
             )
           }
         }

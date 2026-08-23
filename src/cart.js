@@ -34,6 +34,13 @@ export function addToCart(product, { size = null, quantity = 1 } = {}) {
   if (existing) {
     existing.quantity = Math.min(existing.quantity + quantity, cap)
   } else {
+    // Only used client-side as a "does this ship" hint (cartHasPhysicalItems)
+    // — checkout always re-resolves both Printful ids fresh from the
+    // product row server-side, never trusts this snapshot.
+    const printfulVariantId = product.printful_variant_map
+      ? (product.printful_variant_map[size || 'default']?.syncVariantId || null)
+      : null
+
     cart.push({
       key,
       productId: product.id,
@@ -43,6 +50,7 @@ export function addToCart(product, { size = null, quantity = 1 } = {}) {
       size,
       quantity: Math.min(quantity, cap),
       weightOz: product.weight_oz != null ? product.weight_oz : null,
+      printfulVariantId,
       inventoryCount: product.inventory_count != null ? product.inventory_count : null,
       imageUrl: product.cover_art_url || null,
     })
@@ -87,9 +95,10 @@ export function cartSubtotalCents(cart = getCart()) {
   return cart.reduce((sum, item) => sum + item.priceCents * item.quantity, 0)
 }
 
-// A cart item ships if it has a package weight set, regardless of category —
-// apparel, art, music, and pancho picks can each be physical or digital depending
-// on the individual item.
+// A cart item ships if it has a package weight set (self-fulfilled via
+// Shippo) or a Printful variant (fulfilled by Printful) — regardless of
+// category. Apparel, art, music, and pancho picks can each be physical or
+// digital depending on the individual item.
 export function cartHasPhysicalItems(cart = getCart()) {
-  return cart.some(item => item.weightOz != null && item.weightOz > 0)
+  return cart.some(item => (item.weightOz != null && item.weightOz > 0) || item.printfulVariantId != null)
 }
