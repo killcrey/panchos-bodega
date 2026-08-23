@@ -900,11 +900,15 @@ async function describeFunctionError(err) {
   return err.message || 'Something went wrong.'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, stripeProductIdInputId, existingFileUrl, existingTracklistSnippets, existingDownloadFiles, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, stripeProductIdInputId, printfulInputId, existingFileUrl, existingTracklistSnippets, existingDownloadFiles, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
   const category = document.getElementById(categoryInputId).value
   const sizes = category === 'apparel' ? document.getElementById(sizesInputId).value.trim() : ''
+  // Printful items never get a Payment Link — it collects a shipping
+  // address but never attaches a shipping charge, so if it were ever
+  // used the shipping cost would land on us instead of the buyer.
+  const isPrintful = SHIPPABLE_CATEGORIES.includes(category) && !!document.getElementById(printfulInputId).value.trim()
 
   if (!title) {
     statusEl.textContent = 'Enter a title before generating a link.'
@@ -947,15 +951,17 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
     }
 
     const { data, error } = await supabase.functions.invoke('create-stripe-link', {
-      body: { title, priceCents: Math.round(price * 100), filePaths, category, sizes }
+      body: { title, priceCents: Math.round(price * 100), filePaths, category, sizes, skipPaymentLink: isPrintful }
     })
     if (error) throw error
 
-    document.getElementById(urlInputId).value = data.url
+    document.getElementById(urlInputId).value = data.url || ''
     document.getElementById(stripeProductIdInputId).value = data.productId || ''
-    statusEl.textContent = filePaths.length > 0
-      ? 'Stripe link generated with download attached.'
-      : 'Stripe link generated (no digital file attached).'
+    statusEl.textContent = isPrintful
+      ? 'Stripe product created — no payment link needed for a Printful item.'
+      : (filePaths.length > 0
+        ? 'Stripe link generated with download attached.'
+        : 'Stripe link generated (no digital file attached).')
     statusEl.style.color = '#00ffcc'
   } catch (err) {
     statusEl.textContent = await describeFunctionError(err)
@@ -1060,7 +1066,7 @@ function initAdminPortal() {
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-stripe-product-id', null, null, null, uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-stripe-product-id', 'upload-printful-variants', null, null, null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -1152,7 +1158,7 @@ function initAdminPortal() {
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-stripe-product-id', editingProduct ? editingProduct.audio_preview_url : null, editingProduct ? editingProduct.tracklist_snippets : null, editingProduct ? editingProduct.download_files : null, editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-stripe-product-id', 'edit-printful-variants', editingProduct ? editingProduct.audio_preview_url : null, editingProduct ? editingProduct.tracklist_snippets : null, editingProduct ? editingProduct.download_files : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {

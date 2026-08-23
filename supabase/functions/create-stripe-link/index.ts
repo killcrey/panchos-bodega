@@ -40,7 +40,14 @@ serve(async (req) => {
     //    further down — apparel's actual shipping cost is calculated live via
     //    Shippo at checkout time (see get-shipping-rates / create-checkout-session),
     //    not through this static link.
-    const { title, priceCents, filePaths, category, sizes } = await req.json()
+    // skipPaymentLink: Printful (and any other) physical items never need
+    // this link — it collects a shipping address but never attaches a
+    // shipping charge, so if it were ever accidentally shared/used, the
+    // shipping cost would land on us instead of the buyer. When set, this
+    // sends nothing to Stripe beyond the bare Product (still required —
+    // checkout needs stripe_product_id) and never creates a Price or
+    // Payment Link at all.
+    const { title, priceCents, filePaths, category, sizes, skipPaymentLink } = await req.json()
     if (!title || !priceCents || priceCents <= 0) {
       throw new Error('A product title and a positive price are required.')
     }
@@ -70,6 +77,13 @@ serve(async (req) => {
       name: title,
       ...(hasFiles ? { metadata: fileMetadata } : {})
     })
+
+    if (skipPaymentLink) {
+      return new Response(
+        JSON.stringify({ url: null, productId: product.id }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+      )
+    }
 
     const price = await stripe.prices.create({
       product: product.id,
