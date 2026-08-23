@@ -227,13 +227,17 @@ async function uploadToVault(file) {
 //                       are bundled alongside them; populated only when 2+
 //                       audio files are present, for the storefront's
 //                       multi-track preview player
-async function processDigitalFiles(fileInputId) {
+async function processDigitalFiles(inputFiles) {
   // The browser's file picker can hand back a multi-select in click order
   // rather than filename order, which would otherwise number tracks in
   // whatever order they happened to be selected. Sort by filename first
   // (numeric-aware, so "2 - Song.mp3" sorts before "10 - Song.mp3") so
-  // track numbering follows the filenames instead.
-  const files = Array.from(document.getElementById(fileInputId).files)
+  // track numbering follows the filenames instead. Takes an explicit
+  // File[] (from an accumulator, see uploadNewDigitalFiles /
+  // editNewDigitalFiles below) rather than reading a file input directly —
+  // same reasoning as processImageFiles: the input's FileList gets replaced,
+  // not appended to, every time the picker reopens.
+  const files = [...inputFiles]
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
 
   if (files.length === 0) {
@@ -414,6 +418,22 @@ function renderPickedImagesPreview(files, previewEl) {
   `).join('')
 }
 
+// Same accumulator pattern as uploadNewImageFiles, for the digital-file
+// input — so a wrong file (e.g. accidentally attaching a digital download
+// to what should be a physical/Printful product) can be spotted and
+// removed before deploying, not just discovered after.
+let uploadNewDigitalFiles = []
+let editNewDigitalFiles = []
+
+function renderPickedFilesPreview(files, previewEl) {
+  previewEl.innerHTML = files.map((file, idx) => `
+    <div class="admin-file-chip">
+      <span class="admin-file-chip-name">${file.name}</span>
+      <button type="button" class="admin-file-remove-btn" data-idx="${idx}" aria-label="Remove file">&times;</button>
+    </div>
+  `).join('')
+}
+
 // The edit form's existing-photo thumbnails, each with a remove button —
 // separate from renderPickedImagesPreview's newly-picked-file preview so
 // newly added photos never clobber this list. Saving combines whatever's
@@ -452,6 +472,8 @@ function openEditModal(product) {
   document.getElementById('edit-file').value = ''
   editNewImageFiles = []
   document.getElementById('edit-image-new-preview').innerHTML = ''
+  editNewDigitalFiles = []
+  document.getElementById('edit-file-preview').innerHTML = ''
 
   editKeptImages = [product.cover_art_url, product.image_2_url, product.image_3_url]
     .concat(Array.isArray(product.gallery_images) ? product.gallery_images : [])
@@ -481,6 +503,7 @@ function closeEditModal() {
   editingProduct = null
   editKeptImages = []
   editNewImageFiles = []
+  editNewDigitalFiles = []
   document.getElementById('edit-modal').style.display = 'none'
 }
 
@@ -900,7 +923,7 @@ async function describeFunctionError(err) {
   return err.message || 'Something went wrong.'
 }
 
-async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileInputId, categoryInputId, sizesInputId, stripeProductIdInputId, printfulInputId, existingFileUrl, existingTracklistSnippets, existingDownloadFiles, statusEl, button) {
+async function generateStripeLink(titleInputId, priceInputId, urlInputId, newDigitalFiles, categoryInputId, sizesInputId, stripeProductIdInputId, printfulInputId, existingFileUrl, existingTracklistSnippets, existingDownloadFiles, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
   const price = parseFloat(document.getElementById(priceInputId).value)
   const category = document.getElementById(categoryInputId).value
@@ -937,7 +960,7 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, fileIn
     // selected single file/album/bundle, or whatever's already on the
     // product — so the buyer gets a real download after checkout instead of
     // a dead end.
-    const { filePaths: newFilePaths } = await processDigitalFiles(fileInputId)
+    const { filePaths: newFilePaths } = await processDigitalFiles(newDigitalFiles)
 
     let filePaths = newFilePaths
     if (filePaths.length === 0) {
@@ -1062,11 +1085,37 @@ function initAdminPortal() {
     renderEditImagePreview()
   })
 
+  document.getElementById('upload-file').addEventListener('change', (e) => {
+    uploadNewDigitalFiles = uploadNewDigitalFiles.concat(Array.from(e.target.files))
+    e.target.value = ''
+    renderPickedFilesPreview(uploadNewDigitalFiles, document.getElementById('upload-file-preview'))
+  })
+
+  document.getElementById('upload-file-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-file-remove-btn')
+    if (!removeBtn) return
+    uploadNewDigitalFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderPickedFilesPreview(uploadNewDigitalFiles, document.getElementById('upload-file-preview'))
+  })
+
+  document.getElementById('edit-file').addEventListener('change', (e) => {
+    editNewDigitalFiles = editNewDigitalFiles.concat(Array.from(e.target.files))
+    e.target.value = ''
+    renderPickedFilesPreview(editNewDigitalFiles, document.getElementById('edit-file-preview'))
+  })
+
+  document.getElementById('edit-file-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-file-remove-btn')
+    if (!removeBtn) return
+    editNewDigitalFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderPickedFilesPreview(editNewDigitalFiles, document.getElementById('edit-file-preview'))
+  })
+
   const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
   uploadGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', 'upload-file', 'upload-category', 'upload-sizes', 'upload-stripe-product-id', 'upload-printful-variants', null, null, null, uploadStripeStatus, uploadGenerateStripeBtn)
+    generateStripeLink('upload-title', 'upload-price', 'upload-stripe-url', uploadNewDigitalFiles, 'upload-category', 'upload-sizes', 'upload-stripe-product-id', 'upload-printful-variants', null, null, null, uploadStripeStatus, uploadGenerateStripeBtn)
   })
 
   uploadForm.addEventListener('submit', async (e) => {
@@ -1105,7 +1154,7 @@ function initAdminPortal() {
 
       const { coverUrl, galleryImages } = await processImageFiles(uploadNewImageFiles)
 
-      const { fileUrl, downloadFiles, tracklistSnippets } = await processDigitalFiles('upload-file')
+      const { fileUrl, downloadFiles, tracklistSnippets } = await processDigitalFiles(uploadNewDigitalFiles)
 
       const { error: insertError } = await supabase.from('products').insert({
         title,
@@ -1135,6 +1184,8 @@ function initAdminPortal() {
       uploadForm.reset()
       uploadNewImageFiles = []
       document.getElementById('upload-image-preview').innerHTML = ''
+      uploadNewDigitalFiles = []
+      document.getElementById('upload-file-preview').innerHTML = ''
       loadAdminInventory()
     } catch (err) {
       uploadStatus.textContent = err.message || 'Something went wrong.'
@@ -1158,7 +1209,7 @@ function initAdminPortal() {
   const editStripeStatus = document.getElementById('edit-stripe-status')
 
   editGenerateStripeBtn.addEventListener('click', () => {
-    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', 'edit-file', 'edit-category', 'edit-sizes', 'edit-stripe-product-id', 'edit-printful-variants', editingProduct ? editingProduct.audio_preview_url : null, editingProduct ? editingProduct.tracklist_snippets : null, editingProduct ? editingProduct.download_files : null, editStripeStatus, editGenerateStripeBtn)
+    generateStripeLink('edit-title', 'edit-price', 'edit-stripe-url', editNewDigitalFiles, 'edit-category', 'edit-sizes', 'edit-stripe-product-id', 'edit-printful-variants', editingProduct ? editingProduct.audio_preview_url : null, editingProduct ? editingProduct.tracklist_snippets : null, editingProduct ? editingProduct.download_files : null, editStripeStatus, editGenerateStripeBtn)
   })
 
   editCancelBtn.addEventListener('click', () => {
@@ -1206,8 +1257,8 @@ function initAdminPortal() {
       let fileUrl = editingProduct ? editingProduct.audio_preview_url : null
       let downloadFiles = editingProduct ? editingProduct.download_files : null
       let tracklistSnippets = editingProduct ? editingProduct.tracklist_snippets : null
-      if (document.getElementById('edit-file').files.length > 0) {
-        const result = await processDigitalFiles('edit-file')
+      if (editNewDigitalFiles.length > 0) {
+        const result = await processDigitalFiles(editNewDigitalFiles)
         fileUrl = result.fileUrl
         downloadFiles = result.downloadFiles
         tracklistSnippets = result.tracklistSnippets
