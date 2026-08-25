@@ -1983,7 +1983,7 @@ function renderLandingPage(products) {
     featuredLabel.style.display = 'none'
     document.getElementById('landing-detail').style.display = 'none'
   } else {
-    featuredLabel.style.display = 'block'
+    featuredLabel.style.display = 'inline-block'
     track.innerHTML = landingFeatured.map(p => {
       const image = productImages(p)[0]
       return `<div class="landing-carousel-slide">${image
