@@ -47,7 +47,9 @@ async function loadAdminInventory() {
         ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
         ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
         ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
-        ${(!isFree && !hasCheckoutId) ? '<span class="inventory-status-badge status-warning">No Checkout ID</span>' : ''}
+        ${!isFree ? (hasCheckoutId
+          ? '<span class="inventory-status-badge status-checkout-set">Checkout ID Set</span>'
+          : '<span class="inventory-status-badge status-warning">No Checkout ID</span>') : ''}
       </div>
       <div class="inventory-item-actions">
         <button type="button" class="inventory-edit-btn">Edit</button>
