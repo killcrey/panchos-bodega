@@ -2115,6 +2115,9 @@ function initTipModal() {
   const statusEl = document.getElementById('tip-status')
 
   openBtn.addEventListener('click', openTipModal)
+  // The footer jar is a second door into the same modal.
+  const jarBtn = document.getElementById('tip-jar-btn')
+  if (jarBtn) jarBtn.addEventListener('click', openTipModal)
   document.getElementById('tip-cancel-btn').addEventListener('click', closeTipModal)
   modal.addEventListener('click', (e) => { if (e.target === modal) closeTipModal() })
 

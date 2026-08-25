@@ -77,6 +77,34 @@
 
       .footer-side-right {
         order: 3;
+        display: flex;
+        align-items: center;
+        gap: 0.9rem;
+      }
+
+      .tip-jar-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        margin: 0;
+        cursor: pointer;
+        line-height: 0;
+        flex-shrink: 0;
+      }
+
+      /* The jar is a tall portrait cut-out, so it's height-matched to the
+         game poster beside it rather than width-matched — equal widths would
+         make it tower over the poster. */
+      .tip-jar-img {
+        max-height: 108px;
+        width: auto;
+        filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.8));
+        transition: transform 0.2s ease, filter 0.2s ease;
+      }
+
+      .tip-jar-btn:hover .tip-jar-img {
+        transform: scale(1.06);
+        filter: drop-shadow(0 0 14px rgba(232, 185, 35, 0.7));
       }
 
       .home-link-img {
@@ -817,6 +845,9 @@
         }
         .home-link-img, .game-poster-img {
           max-width: 60px; /* Keep them flanking the footer without crowding it */
+        }
+        .tip-jar-img {
+          max-height: 66px;
         }
         .footer-bodega-logo {
           max-width: 110px;
@@ -1932,9 +1963,14 @@
           <p>&copy; 2026 The Invisible Panchos. All Rights Reserved. Stay Invisible.</p>
         </div>
 
-        <a href="https://game.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer" class="footer-side-link footer-side-right">
-          <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gameposter.jpeg" alt="Play The Invisible Panchos Game" class="game-poster-img">
-        </a>
+        <div class="footer-side-link footer-side-right">
+          <a href="https://game.theinvisiblepanchos.com/" target="_blank" rel="noopener noreferrer">
+            <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gameposter.jpeg" alt="Play The Invisible Panchos Game" class="game-poster-img">
+          </a>
+          <button type="button" id="tip-jar-btn" class="tip-jar-btn" aria-label="Tip the Panchos">
+            <img src="/tipjar1.png" alt="Tips for the Bodega Crew" class="tip-jar-img">
+          </button>
+        </div>
       </div>
     </footer>
 
