@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { loadStripe } from '@stripe/stripe-js'
-import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasPhysicalItems } from './cart.js'
+import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasPhysicalItems, isUpchargeSize, SIZE_UPCHARGE_CENTS } from './cart.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -1571,11 +1571,15 @@ async function loadBodega() {
     }
 
     const needsSize = !isFree && !isInert && product.category === 'apparel' && product.sizes
+    const sizeOptions = needsSize ? product.sizes.split(',').map(s => s.trim()).filter(Boolean) : []
     const sizeSelectHTML = needsSize
       ? `<select class="card-size-select admin-input">
           <option value="" disabled selected>Select Size</option>
-          ${product.sizes.split(',').map(s => s.trim()).filter(Boolean).map(s => `<option value="${s}">${s}</option>`).join('')}
+          ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
         </select>`
+      : ''
+    const sizeUpchargeHintHTML = sizeOptions.some(isUpchargeSize)
+      ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for 2XL/3XL</p>`
       : ''
 
     card.innerHTML = `
@@ -1588,6 +1592,7 @@ async function loadBodega() {
       <div style="margin-top: auto;"></div>
       ${audioHTML}
       ${sizeSelectHTML}
+      ${sizeUpchargeHintHTML}
       <button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
         ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))}
       </button>

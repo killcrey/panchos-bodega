@@ -54,6 +54,15 @@ serve(async (req) => {
     }
     const DEFAULT_DIGITAL_TAX_CODE = 'txcd_10503000' // Digital other news/documents — downloaded, permanent rights
 
+// Oversized apparel (2XL and up) costs more to print/stock — flat surcharge
+// added to price_cents. Mirrors src/cart.js's isUpchargeSize; never trusts
+// whatever price the client sent for the item.
+const SIZE_UPCHARGE_CENTS = 400
+const UPCHARGE_SIZES = new Set(['2XL', 'XXL', '3XL', 'XXXL'])
+function isUpchargeSize(size: string | null | undefined): boolean {
+  return !!size && UPCHARGE_SIZES.has(size.trim().toUpperCase())
+}
+
     // Re-validate every line against the database instead of trusting
     // whatever price/availability the client sent back — the client only
     // ever picks a product id, size, and quantity.
@@ -111,11 +120,13 @@ serve(async (req) => {
         }
       }
 
+      const unitAmountCents = product.price_cents + (isUpchargeSize(item.size) ? SIZE_UPCHARGE_CENTS : 0)
+
       lineItems.push({
         price_data: {
           currency: 'usd',
           product: product.stripe_product_id,
-          unit_amount: Math.round(product.price_cents),
+          unit_amount: Math.round(unitAmountCents),
         },
         quantity,
       })
@@ -126,7 +137,7 @@ serve(async (req) => {
         category: product.category || null,
         size: item.size || null,
         quantity,
-        unitAmountCents: product.price_cents,
+        unitAmountCents,
         weightOz: product.weight_oz != null ? product.weight_oz : null,
         printfulSyncVariantId,
       })
