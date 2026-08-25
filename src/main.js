@@ -1735,6 +1735,16 @@ async function loadBodega() {
 // visitor straight into a specific category.
 let applyFilter = () => {}
 
+// Mobile (<=768px) swaps the horizontally-scrolling category bar for a
+// pop-out dropdown — a scrollbar-thin strip of buttons was easy to mistake
+// for the entire menu. Desktop is untouched.
+function closeMobileNav() {
+  const scroll = document.getElementById('filter-scroll')
+  const toggle = document.getElementById('mobile-nav-toggle')
+  if (scroll) scroll.classList.remove('mobile-open')
+  if (toggle) toggle.setAttribute('aria-expanded', 'false')
+}
+
 function setupCategoryFilters() {
   const filterButtons = document.querySelectorAll('.filter-btn[data-filter]')
 
@@ -1748,15 +1758,36 @@ function setupCategoryFilters() {
     })
   }
 
-  // Picking a category from the bar always means "take me to the shelves",
-  // whether the visitor is on the landing page or already browsing.
+  // Picking a category means "take me to the shelves"; HOME is the one
+  // button that goes to the landing page instead.
   filterButtons.forEach(btn => {
-    btn.addEventListener('click', () => showStore(btn.getAttribute('data-filter')))
+    btn.addEventListener('click', () => {
+      const filter = btn.getAttribute('data-filter')
+      if (filter === 'home') {
+        showLanding()
+      } else {
+        showStore(filter)
+      }
+    })
   })
 
   const footerLogoBtn = document.getElementById('footer-logo-filter')
   if (footerLogoBtn) {
     footerLogoBtn.addEventListener('click', () => showLanding())
+  }
+
+  const mobileNavToggle = document.getElementById('mobile-nav-toggle')
+  const filterScroll = document.getElementById('filter-scroll')
+  if (mobileNavToggle && filterScroll) {
+    mobileNavToggle.addEventListener('click', () => {
+      const isOpen = filterScroll.classList.toggle('mobile-open')
+      mobileNavToggle.setAttribute('aria-expanded', String(isOpen))
+    })
+    document.addEventListener('click', (e) => {
+      if (!filterScroll.classList.contains('mobile-open')) return
+      if (filterScroll.contains(e.target) || mobileNavToggle.contains(e.target)) return
+      closeMobileNav()
+    })
   }
 
   applyFilter('all')
@@ -1795,8 +1826,9 @@ function showLanding() {
 
   landing.style.display = 'flex'
   storeGrid.style.display = 'none'
-  document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.toggle('active', b.getAttribute('data-filter') === 'home'))
   startLandingRotation()
+  closeMobileNav()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -1809,6 +1841,7 @@ function showStore(filter = 'all') {
   stopLandingRotation()
   storeGrid.style.display = 'grid'
   applyFilter(filter)
+  closeMobileNav()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
@@ -1943,11 +1976,14 @@ function renderLandingPage(products) {
   const track = document.getElementById('landing-carousel-track')
   const dots = document.getElementById('landing-carousel-dots')
   const carousel = document.getElementById('landing-carousel')
+  const featuredLabel = document.getElementById('landing-featured-label')
 
   if (landingFeatured.length === 0) {
     carousel.style.display = 'none'
+    featuredLabel.style.display = 'none'
     document.getElementById('landing-detail').style.display = 'none'
   } else {
+    featuredLabel.style.display = 'block'
     track.innerHTML = landingFeatured.map(p => {
       const image = productImages(p)[0]
       return `<div class="landing-carousel-slide">${image

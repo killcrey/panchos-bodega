@@ -159,6 +159,21 @@
       .filter-scroll::-webkit-scrollbar-track { background: transparent; }
       .filter-scroll::-webkit-scrollbar-thumb { background: rgba(184, 41, 31, 0.5); border-radius: 4px; }
 
+      /* Hamburger toggle for the mobile dropdown menu — hidden on desktop,
+         where the filter bar scrolls horizontally instead. */
+      .filter-menu-toggle {
+        display: none;
+        flex-shrink: 0;
+        background: rgba(0, 0, 0, 0.35);
+        color: #e8b923;
+        border: 1px solid rgba(184, 41, 31, 0.6);
+        border-radius: 4px;
+        padding: 0.5rem 0.7rem;
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+
       .cart-btn {
         position: relative;
         display: inline-flex;
@@ -239,7 +254,6 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 1.5rem;
-        flex: 1;
       }
 
       /* LANDING PAGE (shown after the Enter gate, before the store grid).
@@ -249,7 +263,6 @@
         display: none;
         flex-direction: column;
         gap: 1.5rem;
-        flex: 1;
       }
 
       .landing-grid {
@@ -272,10 +285,26 @@
         box-sizing: border-box;
       }
 
+      .landing-carousel-column {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+
+      .landing-section-label {
+        margin: 0;
+        font-size: 0.65rem;
+        font-weight: bold;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: #e8b923;
+      }
+
       .landing-carousel {
         position: relative;
         overflow: hidden;
         min-height: 340px;
+        flex: 1;
       }
 
       .landing-carousel-track {
@@ -331,7 +360,7 @@
          not the shelf background — it's the reading surface. */
       .landing-detail {
         background-image: none;
-        background-color: #000;
+        background-color: #b8291f;
         display: flex;
         flex-direction: column;
         padding: 1.25rem;
@@ -741,8 +770,8 @@
 
       /* FOOTER STYLING */
       .bodega-footer {
-        margin-top: 4rem;
-        padding-top: 2rem;
+        margin-top: 0.75rem;
+        padding-top: 1rem;
         border-top: 1px solid rgba(255, 255, 255, 0.1);
         text-align: center;
         color: #888;
@@ -796,16 +825,42 @@
           gap: 1rem;
         }
         .filter-bar {
-          /* Left-align so the ALL button is visible immediately instead of being
-             centered off-screen when the buttons overflow on narrow widths */
           justify-content: flex-start;
-          gap: 0.4rem;
+          gap: 0.5rem;
           padding: 0.5rem 0.75rem;
         }
+        /* Below 768px the category list becomes a pop-out dropdown instead
+           of a horizontal scroll strip — a scrollbar-free menu on mobile
+           was hard to tell apart from "that's the whole list". */
+        .filter-menu-toggle {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .filter-scroll {
+          display: none;
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          flex-direction: column;
+          align-items: stretch;
+          overflow-x: visible;
+          max-height: 70vh;
+          overflow-y: auto;
+          background: rgba(5, 5, 5, 0.97);
+          border-bottom: 1px solid rgba(232, 185, 35, 0.25);
+          padding: 0.6rem 0.75rem 1rem;
+          gap: 0.4rem;
+        }
+        .filter-scroll.mobile-open {
+          display: flex;
+        }
         .filter-btn {
-          /* Shrink the buttons so more of the menu fits before it needs to scroll */
-          padding: 0.4rem 0.6rem;
-          font-size: 0.6rem;
+          width: 100%;
+          justify-content: center;
+          padding: 0.6rem;
+          font-size: 0.65rem;
           letter-spacing: 0.5px;
         }
         #global-audio-player {
@@ -1714,7 +1769,9 @@
       <a href="https://theinvisiblepanchos.com/" class="logo-btn">
         <img src="https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gohome.png" alt="Return to Mothership" class="bodega-logo">
       </a>
-      <div class="filter-scroll">
+      <button type="button" id="mobile-nav-toggle" class="filter-menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
+      <div class="filter-scroll" id="filter-scroll">
+        <button class="filter-btn" data-filter="home">HOME</button>
         <button class="filter-btn" data-filter="all">ALL</button>
         <button class="filter-btn" data-filter="apparel">APPAREL</button>
         <button class="filter-btn" data-filter="art">ART</button>
@@ -1729,9 +1786,12 @@
 
     <div id="landing-view">
       <div class="landing-grid">
-        <div class="landing-carousel" id="landing-carousel">
-          <div class="landing-carousel-track" id="landing-carousel-track"></div>
-          <div class="landing-carousel-dots" id="landing-carousel-dots"></div>
+        <div class="landing-carousel-column">
+          <p class="landing-section-label" id="landing-featured-label" style="display: none;">Featured</p>
+          <div class="landing-carousel" id="landing-carousel">
+            <div class="landing-carousel-track" id="landing-carousel-track"></div>
+            <div class="landing-carousel-dots" id="landing-carousel-dots"></div>
+          </div>
         </div>
         <div class="landing-detail" id="landing-detail"></div>
         <div class="landing-side">
