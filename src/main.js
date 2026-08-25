@@ -39,6 +39,11 @@ async function loadAdminInventory() {
     const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
     const isTracked = product.inventory_count != null
     const isSoldOut = isTracked && product.inventory_count <= 0
+    const landingSlotLabel = {
+      featured: 'Featured',
+      latest_release: 'Latest Release',
+      pancho_pick: 'Panchos Pick',
+    }[product.landing_slot] || ''
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
@@ -50,6 +55,7 @@ async function loadAdminInventory() {
         ${!isFree ? (hasCheckoutId
           ? '<span class="inventory-status-badge status-checkout-set">Checkout ID Set</span>'
           : '<span class="inventory-status-badge status-warning">No Checkout ID</span>') : ''}
+        ${landingSlotLabel ? `<span class="inventory-status-badge status-landing-slot">${landingSlotLabel}</span>` : ''}
       </div>
       <div class="inventory-item-actions">
         <button type="button" class="inventory-edit-btn">Edit</button>
@@ -401,6 +407,43 @@ function formatPrintfulVariantMap(map) {
   return entries.map(([size, v]) => `${size}:${v.variantId}:${v.syncVariantId}`).join(', ')
 }
 
+// Validates the landing-page slot picked in an admin form against what's
+// already slotted. 'featured' holds up to three products, so it's capped
+// here (the DB can't express "at most 3"); the two single-occupancy slots
+// are enforced by a unique index, so the previous holder is demoted first
+// rather than letting the insert fail on a constraint the admin can't see.
+// productId is null when creating a new product.
+async function resolveLandingSlot(selectId, productId) {
+  const slot = document.getElementById(selectId).value || null
+  if (!slot) return null
+
+  const { data: slotted, error } = await supabase
+    .from('products')
+    .select('id, title, landing_slot')
+    .eq('landing_slot', slot)
+  if (error) throw error
+
+  const others = (slotted || []).filter(p => p.id !== productId)
+
+  if (slot === 'featured') {
+    if (others.length >= 3) {
+      throw new Error(`Already 3 featured products (${others.map(p => p.title).join(', ')}). Clear one first.`)
+    }
+    return slot
+  }
+
+  // Latest Release / Panchos Pick: only one product may hold each.
+  if (others.length > 0) {
+    const { error: clearError } = await supabase
+      .from('products')
+      .update({ landing_slot: null })
+      .in('id', others.map(p => p.id))
+    if (clearError) throw clearError
+  }
+
+  return slot
+}
+
 // Newly picked-but-not-yet-uploaded photos for each form, kept as our own
 // accumulator instead of trusting the file input directly — a native
 // <input type="file" multiple> replaces its entire FileList every time the
@@ -496,6 +539,8 @@ function openEditModal(product) {
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
   document.getElementById('edit-published').checked = product.published !== false
   document.getElementById('edit-coming-soon').checked = !!product.coming_soon
+  document.getElementById('edit-landing-slot').value = product.landing_slot || ''
+  document.getElementById('edit-landing-slot-status').textContent = ''
   document.getElementById('edit-status').textContent = ''
   document.getElementById('edit-stripe-status').textContent = ''
   document.getElementById('edit-modal').style.display = 'flex'
@@ -1013,6 +1058,8 @@ function initAdminPortal() {
   if (isAdminMode) {
     filterBar.style.display = 'none'
     storeGrid.style.display = 'none'
+    const landingView = document.getElementById('landing-view')
+    if (landingView) landingView.style.display = 'none'
     document.querySelector('.bodega-footer').style.display = 'none'
     document.body.style.overflow = 'hidden'
     adminPortal.style.display = 'flex'
@@ -1153,6 +1200,7 @@ function initAdminPortal() {
       const stripeUrl = document.getElementById('upload-stripe-url').value.trim() || null
       const published = document.getElementById('upload-published').checked
       const comingSoon = document.getElementById('upload-coming-soon').checked
+      const landingSlot = await resolveLandingSlot('upload-landing-slot', null)
 
       const { coverUrl, galleryImages } = await processImageFiles(uploadNewImageFiles)
 
@@ -1175,7 +1223,8 @@ function initAdminPortal() {
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
         published,
-        coming_soon: comingSoon
+        coming_soon: comingSoon,
+        landing_slot: landingSlot
       })
       if (insertError) throw insertError
 
@@ -1242,6 +1291,7 @@ function initAdminPortal() {
       const stripeUrl = document.getElementById('edit-stripe-url').value.trim() || null
       const published = document.getElementById('edit-published').checked
       const comingSoon = document.getElementById('edit-coming-soon').checked
+      const landingSlot = await resolveLandingSlot('edit-landing-slot', id)
 
       // New photos are appended to whatever's left in editKeptImages (the
       // admin can remove individual existing photos via the × on each
@@ -1285,7 +1335,8 @@ function initAdminPortal() {
         tracklist_snippets: tracklistSnippets,
         stripe_url: stripeUrl,
         published,
-        coming_soon: comingSoon
+        coming_soon: comingSoon,
+        landing_slot: landingSlot
       }).eq('id', id)
       if (updateError) throw updateError
 
@@ -1487,6 +1538,7 @@ async function loadBodega() {
     const card = document.createElement('div')
     card.className = 'product-card'
     card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
+    card.setAttribute('data-product-id', product.id)
 
     // Consolidate images into an array for the lightbox
     const availableImages = []
@@ -1674,13 +1726,19 @@ async function loadBodega() {
   })
 
   setupCategoryFilters()
+  renderLandingPage(products)
+  showLanding()
 }
 
 // INJECT 3: Category Filter Bar Logic (local DOM filtering, no re-fetch)
+// applyFilter is hoisted to module scope so the landing page can hand the
+// visitor straight into a specific category.
+let applyFilter = () => {}
+
 function setupCategoryFilters() {
   const filterButtons = document.querySelectorAll('.filter-btn[data-filter]')
 
-  function applyFilter(filter) {
+  applyFilter = (filter) => {
     filterButtons.forEach(b => b.classList.toggle('active', b.getAttribute('data-filter') === filter))
 
     const cards = document.querySelectorAll('.product-card')
@@ -1690,17 +1748,243 @@ function setupCategoryFilters() {
     })
   }
 
+  // Picking a category from the bar always means "take me to the shelves",
+  // whether the visitor is on the landing page or already browsing.
   filterButtons.forEach(btn => {
-    btn.addEventListener('click', () => applyFilter(btn.getAttribute('data-filter')))
+    btn.addEventListener('click', () => showStore(btn.getAttribute('data-filter')))
   })
 
   const footerLogoBtn = document.getElementById('footer-logo-filter')
   if (footerLogoBtn) {
-    footerLogoBtn.addEventListener('click', () => applyFilter('all'))
+    footerLogoBtn.addEventListener('click', () => showLanding())
   }
 
-  // Land on the MUSIC filter by default
-  applyFilter('music')
+  applyFilter('all')
+}
+
+// LANDING PAGE — the first thing a visitor sees after the Enter gate.
+// Everything it shows is driven by each product's `landing_slot`.
+let landingFeatured = []
+let landingIndex = 0
+let landingTimer = null
+const LANDING_ROTATE_MS = 5000
+
+function productImages(product) {
+  const images = []
+  if (product.cover_art_url) images.push(product.cover_art_url)
+  if (product.image_2_url) images.push(product.image_2_url)
+  if (product.image_3_url) images.push(product.image_3_url)
+  if (Array.isArray(product.gallery_images)) images.push(...product.gallery_images)
+  return images
+}
+
+function showLanding() {
+  // The admin panel owns the whole viewport — never surface the storefront
+  // landing page underneath it.
+  if (new URLSearchParams(window.location.search).get('mode') === 'admin') return
+
+  const landing = document.getElementById('landing-view')
+  const storeGrid = document.getElementById('store-grid')
+  if (!landing || !storeGrid) return
+
+  // Nothing slotted yet — don't strand the visitor on an empty page.
+  if (landing.getAttribute('data-empty') === 'true') {
+    showStore('all')
+    return
+  }
+
+  landing.style.display = 'flex'
+  storeGrid.style.display = 'none'
+  document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'))
+  startLandingRotation()
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function showStore(filter = 'all') {
+  const landing = document.getElementById('landing-view')
+  const storeGrid = document.getElementById('store-grid')
+  if (!storeGrid) return
+
+  if (landing) landing.style.display = 'none'
+  stopLandingRotation()
+  storeGrid.style.display = 'grid'
+  applyFilter(filter)
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// Sends the visitor from a landing box to that product's card on the shelf.
+function goToProductCard(product) {
+  const category = (product.category || '').toString().trim().toLowerCase()
+  showStore(category || 'all')
+
+  const card = document.querySelector(`.product-card[data-product-id="${product.id}"]`)
+  if (!card) return
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  card.classList.add('landing-target')
+  setTimeout(() => card.classList.remove('landing-target'), 2000)
+}
+
+function startLandingRotation() {
+  stopLandingRotation()
+  if (landingFeatured.length < 2) return
+  landingTimer = setInterval(() => {
+    setLandingSlide((landingIndex + 1) % landingFeatured.length)
+  }, LANDING_ROTATE_MS)
+}
+
+function stopLandingRotation() {
+  if (landingTimer) clearInterval(landingTimer)
+  landingTimer = null
+}
+
+function setLandingSlide(index) {
+  landingIndex = index
+  const track = document.getElementById('landing-carousel-track')
+  if (track) track.style.transform = `translateX(-${index * 100}%)`
+  document.querySelectorAll('.landing-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i === index)
+  })
+  renderLandingDetail(landingFeatured[index])
+}
+
+// The description panel beside the carousel. Mirrors the product card's
+// buy logic (size gate, free downloads, inert states) rather than assuming
+// every featured product is a plain paid item.
+function renderLandingDetail(product) {
+  const detail = document.getElementById('landing-detail')
+  if (!detail || !product) return
+
+  const isFree = (product.price_cents || 0) === 0
+  const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
+  const isComingSoon = !!product.coming_soon
+  const isInert = isSoldOut || isComingSoon
+  const formattedPrice = isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
+
+  const sizeOptions = (!isFree && !isInert && product.category === 'apparel' && product.sizes)
+    ? product.sizes.split(',').map(s => s.trim()).filter(Boolean)
+    : []
+  const upchargedSizes = sizeOptions.filter(isUpchargeSize)
+
+  const label = isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))
+
+  detail.innerHTML = `
+    <h3 class="landing-detail-title">${product.title}</h3>
+    <p class="landing-detail-price">${formattedPrice}</p>
+    <p class="landing-detail-category">${(product.category || 'uncategorized').toUpperCase()}</p>
+    ${product.description ? `<p class="landing-detail-description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>` : ''}
+    <div class="landing-detail-actions">
+      ${sizeOptions.length > 0 ? `
+        <select class="landing-size-select admin-input">
+          <option value="" disabled selected>Select Size</option>
+          ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
+        </select>
+        ${upchargedSizes.length > 0 ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>` : ''}
+      ` : ''}
+      <button type="button" class="landing-buy-btn" ${isInert ? 'disabled' : ''}>${label}</button>
+    </div>
+  `
+
+  const buyBtn = detail.querySelector('.landing-buy-btn')
+  const sizeSelect = detail.querySelector('.landing-size-select')
+  buyBtn.addEventListener('click', () => {
+    if (isInert) return
+    if (isFree) {
+      openFreeDownloadModal(product)
+      return
+    }
+
+    let size = null
+    if (sizeSelect) {
+      size = sizeSelect.value
+      if (!size) {
+        sizeSelect.style.borderColor = '#ff4d4d'
+        return
+      }
+    }
+
+    addToCart(product, { size })
+    updateCartBadge()
+    buyBtn.textContent = 'Added ✓'
+    setTimeout(() => { buyBtn.textContent = label }, 1200)
+  })
+}
+
+function renderLandingSideBox(el, product, label) {
+  if (!el) return
+
+  if (!product) {
+    el.style.display = 'none'
+    return
+  }
+
+  el.style.display = 'flex'
+  const image = productImages(product)[0]
+  el.innerHTML = `
+    <span class="landing-side-label">${label}</span>
+    ${image ? `<img src="${image}" alt="${product.title}">` : ''}
+    <span class="landing-side-title">${product.title}</span>
+    <span class="landing-side-cta">Buy Now</span>
+  `
+  el.onclick = () => goToProductCard(product)
+}
+
+function renderLandingPage(products) {
+  const landing = document.getElementById('landing-view')
+  if (!landing) return
+
+  landingFeatured = products.filter(p => p.landing_slot === 'featured').slice(0, 3)
+  const latestRelease = products.find(p => p.landing_slot === 'latest_release') || null
+  const panchoPick = products.find(p => p.landing_slot === 'pancho_pick') || null
+
+  const hasContent = landingFeatured.length > 0 || latestRelease || panchoPick
+  landing.setAttribute('data-empty', hasContent ? 'false' : 'true')
+  if (!hasContent) return
+
+  const track = document.getElementById('landing-carousel-track')
+  const dots = document.getElementById('landing-carousel-dots')
+  const carousel = document.getElementById('landing-carousel')
+
+  if (landingFeatured.length === 0) {
+    carousel.style.display = 'none'
+    document.getElementById('landing-detail').style.display = 'none'
+  } else {
+    track.innerHTML = landingFeatured.map(p => {
+      const image = productImages(p)[0]
+      return `<div class="landing-carousel-slide">${image
+        ? `<img src="${image}" alt="${p.title}" data-product-id="${p.id}">`
+        : '<div class="no-image">NO IMAGE</div>'}</div>`
+    }).join('')
+
+    dots.innerHTML = landingFeatured.length > 1
+      ? landingFeatured.map((_p, i) => `<button type="button" class="landing-dot" data-idx="${i}" aria-label="Featured item ${i + 1}"></button>`).join('')
+      : ''
+
+    dots.querySelectorAll('.landing-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        setLandingSlide(parseInt(dot.getAttribute('data-idx'), 10))
+        startLandingRotation()
+      })
+    })
+
+    // Clicking the photo itself goes to that product's card.
+    track.querySelectorAll('img[data-product-id]').forEach(img => {
+      img.addEventListener('click', () => {
+        const match = landingFeatured.find(p => p.id === img.getAttribute('data-product-id'))
+        if (match) goToProductCard(match)
+      })
+    })
+
+    carousel.addEventListener('mouseenter', stopLandingRotation)
+    carousel.addEventListener('mouseleave', startLandingRotation)
+
+    setLandingSlide(0)
+  }
+
+  renderLandingSideBox(document.getElementById('landing-latest-release'), latestRelease, 'Latest Release')
+  renderLandingSideBox(document.getElementById('landing-pancho-pick'), panchoPick, 'Panchos Pick')
+
+  const shopNowBtn = document.getElementById('landing-shop-now')
+  if (shopNowBtn) shopNowBtn.addEventListener('click', () => showStore('all'))
 }
 
 // INJECT 4: First-visit "Enter" gate. Shown once per browser session (sessionStorage),
