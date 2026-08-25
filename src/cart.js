@@ -7,7 +7,12 @@ const CART_STORAGE_KEY = 'bodegaCart'
 // to the customer as a flat surcharge on the product's base price. Mirrored
 // server-side in create-checkout-session, which never trusts this snapshot.
 export const SIZE_UPCHARGE_CENTS = 400
-const UPCHARGE_SIZES = new Set(['2XL', 'XXL', '3XL', 'XXXL'])
+const UPCHARGE_SIZES = new Set([
+  '2XL', 'XXL',
+  '3XL', 'XXXL',
+  '4XL', 'XXXXL',
+  '5XL', 'XXXXXL',
+])
 export function isUpchargeSize(size) {
   return !!size && UPCHARGE_SIZES.has(size.trim().toUpperCase())
 }

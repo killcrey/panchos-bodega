@@ -1578,8 +1578,9 @@ async function loadBodega() {
           ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
         </select>`
       : ''
-    const sizeUpchargeHintHTML = sizeOptions.some(isUpchargeSize)
-      ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for 2XL/3XL</p>`
+    const upchargedSizes = sizeOptions.filter(isUpchargeSize)
+    const sizeUpchargeHintHTML = upchargedSizes.length > 0
+      ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>`
       : ''
 
     card.innerHTML = `

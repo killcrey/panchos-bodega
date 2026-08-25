@@ -58,7 +58,12 @@ serve(async (req) => {
 // added to price_cents. Mirrors src/cart.js's isUpchargeSize; never trusts
 // whatever price the client sent for the item.
 const SIZE_UPCHARGE_CENTS = 400
-const UPCHARGE_SIZES = new Set(['2XL', 'XXL', '3XL', 'XXXL'])
+const UPCHARGE_SIZES = new Set([
+  '2XL', 'XXL',
+  '3XL', 'XXXL',
+  '4XL', 'XXXXL',
+  '5XL', 'XXXXXL',
+])
 function isUpchargeSize(size: string | null | undefined): boolean {
   return !!size && UPCHARGE_SIZES.has(size.trim().toUpperCase())
 }
