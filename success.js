@@ -16,6 +16,19 @@ async function secureTheBag() {
     return
   }
 
+  // Tips never have anything to unlock, so they skip the download bouncer
+  // entirely — sending one through it would only ever produce a "no digital
+  // file" error on a perfectly good payment.
+  if (urlParams.get('tip') === '1') {
+    statusArea.innerHTML = `
+      <h2 style="color: #00ffcc;">THANK YOU</h2>
+      <p>Your tip came through, and it means a lot. A receipt is on its way to your email.</p>
+      <p style="font-size: 0.8rem; color: #888; margin-top: 1rem;">Nothing to download here — this one was pure support. Back to the Bodega whenever you're ready.</p>
+      <a href="/" class="btn" style="margin-top: 1.5rem;">Back to the Bodega</a>
+    `
+    return
+  }
+
   try {
     // 2. Hand the receipt to our digital bouncer in the cloud
     const response = await fetch(`${supabaseUrl}/functions/v1/secure-download`, {

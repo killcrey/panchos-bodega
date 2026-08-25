@@ -255,6 +255,47 @@ async function sendOrderConfirmationEmail(
   }
 }
 
+async function sendTipThankYouEmail(email: string, amountCents: number, name: string | null) {
+  const resendKey = Deno.env.get('RESEND_API_KEY')
+  if (!resendKey) return
+
+  const html = `
+    <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #111; padding: 2rem; border: 1px solid #333;">
+      <h2 style="letter-spacing: 1px; color: #fff; margin: 0 0 0.25rem 0;">Thank You${name ? `, ${name}` : ''}</h2>
+      <p style="color: #888; font-size: 0.8rem; margin: 0 0 1.5rem 0;">Your support keeps the Bodega lit.</p>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 0.5rem 0 0 0; color: #fff; font-size: 0.95rem; font-weight: bold; border-top: 1px solid #444;">Your Tip</td>
+          <td style="padding: 0.5rem 0 0 0; color: #00ffcc; font-size: 0.95rem; font-weight: bold; text-align: right; border-top: 1px solid #444;">${money(amountCents)}</td>
+        </tr>
+      </table>
+      <p style="margin: 1.5rem 0 0 0; color: #ccc; font-size: 0.8rem; line-height: 1.6;">
+        No album to download and nothing shipping out on this one — just us, genuinely grateful.
+        Every dollar goes straight back into making the next thing.
+      </p>
+      <p style="margin-top: 2rem; color: #666; font-size: 0.75rem;">&mdash; The Invisible Panchos</p>
+    </div>
+  `
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
+        to: [email],
+        subject: 'Thanks for the tip',
+        html
+      })
+    })
+  } catch (err) {
+    console.error('Failed to send tip thank-you email:', err)
+  }
+}
+
 serve(async (req) => {
   const signature = req.headers.get('Stripe-Signature')
   const body = await req.text()
@@ -280,6 +321,41 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
+
+    // Tips short-circuit everything below: there's no product row behind the
+    // ad-hoc Stripe product, nothing to fulfill, ship, or decrement. Handled
+    // before the line-item loop specifically so decrement_inventory never
+    // runs against a tip's throwaway product id.
+    if (session.metadata?.tip === 'true') {
+      try {
+        const amountCents = session.amount_total ?? 0
+        const email = session.customer_details?.email || null
+        const tipperName = session.metadata.tip_name || session.customer_details?.name || null
+
+        // stripe_session_id is unique — a resent event just no-ops instead of
+        // double-recording the tip or sending a second thank-you.
+        const { error: insertError } = await supabase.from('tips').insert({
+          stripe_session_id: session.id,
+          amount_cents: amountCents,
+          email,
+          name: tipperName,
+          message: session.metadata.tip_message || null,
+        })
+
+        if (insertError) {
+          if (insertError.code === '23505') {
+            return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 })
+          }
+          throw insertError
+        }
+
+        if (email) await sendTipThankYouEmail(email, amountCents, tipperName)
+      } catch (err) {
+        console.error('Failed to record tip for session', session.id, err)
+      }
+
+      return new Response(JSON.stringify({ received: true }), { status: 200 })
+    }
 
     const lineRows: { title: string; quantity: number; amount: number }[] = []
     const downloadBlocks: { title: string; files: { name: string; url: string }[] }[] = []

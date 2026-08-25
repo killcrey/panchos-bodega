@@ -68,6 +68,48 @@ async function loadAdminInventory() {
   })
 }
 
+// Tips are a read-only ledger — nothing to fulfill, so unlike orders there's
+// no "clear it off the queue" action and the whole history stays listed.
+async function loadAdminTips() {
+  const listEl = document.getElementById('admin-tips-list')
+  if (!listEl) return
+
+  const { data: tips, error } = await supabase
+    .from('tips')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(50)
+
+  if (error) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load tips.</p>'
+    return
+  }
+
+  if (!tips || tips.length === 0) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No tips yet.</p>'
+    return
+  }
+
+  const totalCents = tips.reduce((sum, t) => sum + (t.amount_cents || 0), 0)
+
+  listEl.innerHTML = `
+    <p style="font-size: 0.6rem; color: #e8b923; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 0.5rem 0;">
+      ${tips.length} tip${tips.length === 1 ? '' : 's'} — $${(totalCents / 100).toFixed(2)} total
+    </p>
+    ${tips.map(tip => `
+      <div class="tip-row">
+        <div class="tip-row-meta">
+          <strong style="color: #ccc;">${tip.name || 'Anonymous'}</strong>
+          ${tip.email ? `<br>${tip.email}` : ''}
+          <br>${tip.created_at ? new Date(tip.created_at).toLocaleDateString() : ''}
+          ${tip.message ? `<br><span class="tip-row-message">"${tip.message}"</span>` : ''}
+        </div>
+        <div class="tip-row-amount">$${((tip.amount_cents || 0) / 100).toFixed(2)}</div>
+      </div>
+    `).join('')}
+  `
+}
+
 async function loadAdminOrders() {
   const listEl = document.getElementById('admin-orders-list')
   if (!listEl) return
@@ -1072,6 +1114,7 @@ function initAdminPortal() {
       logoutBtn.style.display = 'inline-block'
       loadAdminInventory()
       loadAdminOrders()
+      loadAdminTips()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
@@ -2042,9 +2085,95 @@ function initEnterOverlay() {
   })
 }
 
+// TIP MODAL — presets plus a custom amount, handed to create-tip-session,
+// which re-checks the bounds server-side (this is the one amount on the site
+// the customer picks, so the client value is a suggestion, never the source
+// of truth).
+const TIP_MIN = 1
+const TIP_MAX = 500
+
+function openTipModal() {
+  document.getElementById('tip-amount').value = ''
+  document.getElementById('tip-name').value = ''
+  document.getElementById('tip-message').value = ''
+  document.getElementById('tip-status').textContent = ''
+  document.querySelectorAll('.tip-preset-btn').forEach(b => b.classList.remove('selected'))
+  document.getElementById('tip-modal').style.display = 'flex'
+}
+
+function closeTipModal() {
+  document.getElementById('tip-modal').style.display = 'none'
+}
+
+function initTipModal() {
+  const openBtn = document.getElementById('tip-open-btn')
+  const modal = document.getElementById('tip-modal')
+  if (!openBtn || !modal) return
+
+  const amountInput = document.getElementById('tip-amount')
+  const submitBtn = document.getElementById('tip-submit-btn')
+  const statusEl = document.getElementById('tip-status')
+
+  openBtn.addEventListener('click', openTipModal)
+  document.getElementById('tip-cancel-btn').addEventListener('click', closeTipModal)
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeTipModal() })
+
+  // Presets and the custom field are two views of one value — picking either
+  // clears the other so there's never an ambiguous "which amount wins".
+  document.querySelectorAll('.tip-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tip-preset-btn').forEach(b => b.classList.toggle('selected', b === btn))
+      amountInput.value = btn.getAttribute('data-amount')
+      statusEl.textContent = ''
+    })
+  })
+
+  amountInput.addEventListener('input', () => {
+    document.querySelectorAll('.tip-preset-btn').forEach(b => {
+      b.classList.toggle('selected', b.getAttribute('data-amount') === amountInput.value)
+    })
+  })
+
+  submitBtn.addEventListener('click', async () => {
+    const dollars = parseFloat(amountInput.value)
+    if (!Number.isFinite(dollars) || dollars < TIP_MIN) {
+      statusEl.textContent = `Enter an amount of $${TIP_MIN} or more.`
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
+    if (dollars > TIP_MAX) {
+      statusEl.textContent = `$${TIP_MAX} is the max here — reach out directly for anything bigger.`
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
+
+    submitBtn.disabled = true
+    statusEl.textContent = 'Sending you to checkout...'
+    statusEl.style.color = '#e8b923'
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-tip-session', {
+        body: {
+          amountCents: Math.round(dollars * 100),
+          name: document.getElementById('tip-name').value.trim(),
+          message: document.getElementById('tip-message').value.trim(),
+        }
+      })
+      if (error) throw error
+      if (!data?.url) throw new Error('Could not start checkout. Try again in a moment.')
+      window.location.href = data.url
+    } catch (err) {
+      statusEl.textContent = await describeFunctionError(err)
+      statusEl.style.color = '#ff4d4d'
+      submitBtn.disabled = false
+    }
+  })
+}
+
 initFreeDownloadModal()
 initShippingCheckoutModal()
 initCartModal()
+initTipModal()
 updateCartBadge()
 
 const isAdminMode = initAdminPortal()

@@ -1567,8 +1567,38 @@
         color: #fff;
       }
 
+      /* ADMIN TIPS LIST */
+      .tip-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.6rem 0;
+        border-bottom: 1px solid #222;
+      }
+
+      .tip-row-amount {
+        color: #00ffcc;
+        font-weight: bold;
+        font-size: 0.75rem;
+        flex-shrink: 0;
+      }
+
+      .tip-row-meta {
+        font-size: 0.6rem;
+        color: #888;
+        line-height: 1.5;
+        min-width: 0;
+        word-break: break-word;
+      }
+
+      .tip-row-message {
+        color: #ccc;
+        font-style: italic;
+      }
+
       /* ADMIN ORDERS LIST */
-      #admin-orders-list {
+      #admin-orders-list, #admin-tips-list {
         flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
@@ -1664,7 +1694,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal {
+      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -1680,6 +1710,83 @@
         padding: 1.5rem;
         box-sizing: border-box;
       }
+
+      /* TIP FEATURE */
+      .tip-open-btn {
+        align-self: center;
+        background: transparent;
+        color: #e8b923;
+        border: 1px solid #b8291f;
+        border-radius: 4px;
+        padding: 0.5rem 1.4rem;
+        font-family: inherit;
+        font-size: 0.65rem;
+        font-weight: bold;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      }
+
+      .tip-open-btn:hover {
+        background: #b8291f;
+        border-color: #b8291f;
+        color: #fff;
+      }
+
+      .tip-preset-row {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 0.9rem;
+      }
+
+      .tip-preset-btn {
+        flex: 1;
+        padding: 0.7rem 0;
+        background: transparent;
+        color: #00ffcc;
+        border: 1px solid rgba(0, 255, 204, 0.5);
+        border-radius: 4px;
+        font-family: inherit;
+        font-size: 0.85rem;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+      }
+
+      .tip-preset-btn:hover { border-color: #00ffcc; }
+
+      .tip-preset-btn.selected {
+        background: #00ffcc;
+        color: #111;
+        border-color: #00ffcc;
+      }
+
+      .tip-amount-wrap {
+        position: relative;
+      }
+
+      .tip-currency {
+        position: absolute;
+        left: 0.6rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #888;
+        font-size: 0.8rem;
+        pointer-events: none;
+      }
+
+      .tip-amount-input {
+        padding-left: 1.5rem !important;
+      }
+
+      /* Hide the number spinners — they crowd the field at this width. */
+      .tip-amount-input::-webkit-outer-spin-button,
+      .tip-amount-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .tip-amount-input { -moz-appearance: textfield; }
 
       .edit-modal-content {
         width: 100%;
@@ -1816,6 +1923,7 @@
         </button>
 
         <div class="footer-center">
+          <button type="button" id="tip-open-btn" class="tip-open-btn">Tip the Panchos</button>
           <div class="footer-links">
             <a href="https://theinvisiblepanchos.com/" target="_blank">The Mothership</a>
             <a href="https://game.theinvisiblepanchos.com/" target="_blank">Our Video Game</a>
@@ -1835,6 +1943,39 @@
       <button type="button" id="gap-toggle" aria-label="Play or pause">▶</button>
       <input type="range" id="gap-seek" min="0" max="100" value="0" step="0.1">
       <button type="button" id="gap-close" aria-label="Close player">✖</button>
+    </div>
+
+    <div id="tip-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Tip the Panchos</p>
+
+        <div id="tip-form-view">
+          <p style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">
+            No product, no download — just support. Every dollar goes back into the next record.
+          </p>
+
+          <div class="tip-preset-row">
+            <button type="button" class="tip-preset-btn" data-amount="3">$3</button>
+            <button type="button" class="tip-preset-btn" data-amount="5">$5</button>
+            <button type="button" class="tip-preset-btn" data-amount="10">$10</button>
+          </div>
+
+          <label class="admin-file-label" for="tip-amount">Or enter your own</label>
+          <div class="tip-amount-wrap">
+            <span class="tip-currency">$</span>
+            <input type="number" id="tip-amount" class="admin-input tip-amount-input" min="1" max="500" step="1" placeholder="Amount">
+          </div>
+
+          <input type="text" id="tip-name" class="admin-input" placeholder="Your name (optional)" maxlength="100">
+          <textarea id="tip-message" class="admin-input" placeholder="Leave us a note (optional)" maxlength="280" rows="2"></textarea>
+
+          <div id="tip-status" class="field-status"></div>
+          <div class="edit-modal-actions">
+            <button type="button" id="tip-cancel-btn" class="admin-btn">Cancel</button>
+            <button type="button" id="tip-submit-btn" class="admin-btn">Send Tip</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div id="free-download-modal">
@@ -1986,6 +2127,10 @@
           <div class="dashboard-panel dashboard-panel-secondary">
             <p class="panel-title">Orders</p>
             <div id="admin-orders-list"></div>
+          </div>
+          <div class="dashboard-panel dashboard-panel-secondary">
+            <p class="panel-title">Tips</p>
+            <div id="admin-tips-list"></div>
           </div>
         </div>
       </div>
