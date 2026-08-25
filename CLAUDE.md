@@ -65,6 +65,7 @@ No test/lint command exists.
 ## Known Quirks & Critical Context
 - **Printful two-ID system**: every Printful variant needs both a catalog `variant_id` (`/shipping/rates`) and a `sync_variant_id` (`/orders`) — stored together in `products.printful_variant_map` as `{[size]: {variantId, syncVariantId}}`.
 - **Checkout ID vs. price**: `stripe_product_id` only identifies the Stripe Product. Price is always read live from `products.price_cents` via `price_data` — changing price never requires regenerating the Checkout ID.
+- **Oversized apparel surcharge**: sizes are free-text per product (no fixed dropdown) — admins can type any label including 2XL/3XL/XXXL. Selecting 2XL, XXL, 3XL, or XXXL adds a flat `SIZE_UPCHARGE_CENTS` ($4) to the base price, applied client-side in `cart.js`'s `addToCart` and re-derived independently server-side in `create-checkout-session` from `item.size` — never trusted from the client cart snapshot.
 - **Payment Links are opt-in, normally skipped**: `create-stripe-link` auto-sets `skipPaymentLink=true` when Printful IDs are filled. Static Payment Links never attach a shipping charge and are never handed to customers.
 - **No customer-facing "Printful" branding**: shipping labels are genericized ("Standard Shipping").
 - **Digital tax codes**: products with no `weight_oz` and no Printful mapping get a Stripe Tax digital-goods code (`txcd_...`); physical items default to tangible-goods tax.
