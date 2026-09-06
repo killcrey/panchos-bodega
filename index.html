@@ -1737,11 +1737,60 @@
       }
 
       /* ADMIN ORDERS LIST */
-      #admin-orders-list, #admin-tips-list {
+      #admin-orders-list, #admin-tips-list, #admin-email-captures-list {
         flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
         box-sizing: border-box;
+      }
+
+      /* ADMIN DASHBOARD TABS — Inventory/Orders/Tips/Email Captures used to
+         each get their own narrow always-visible column; with a 4th list
+         that was cramped on desktop and a long stack on mobile. One panel
+         full-width at a time, picked via tabs, instead. */
+      .dashboard-panel-tabs {
+        flex: 3 1 0; /* matches the combined width of the three columns it replaced */
+      }
+
+      .admin-tab-buttons {
+        display: flex;
+        gap: 0.5rem;
+        overflow-x: auto;
+        margin-bottom: 0.75rem;
+        flex-shrink: 0;
+      }
+
+      .admin-tab-btn {
+        flex-shrink: 0;
+        background: transparent;
+        color: #888;
+        border: none;
+        border-bottom: 2px solid transparent;
+        padding: 0.5rem 0.2rem;
+        font-family: inherit;
+        font-size: 0.65rem;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+
+      .admin-tab-btn.active {
+        color: #e8b923;
+        border-bottom-color: #e8b923;
+      }
+
+      .admin-tab-panel {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+      }
+
+      @media (max-width: 768px) {
+        .dashboard-panel-tabs {
+          flex: 1 1 0;
+        }
       }
 
       .order-item {
@@ -2271,17 +2320,25 @@
               <div id="upload-status"></div>
             </div>
           </div>
-          <div class="dashboard-panel dashboard-panel-secondary">
-            <p class="panel-title">Inventory</p>
-            <div id="admin-inventory-list"></div>
-          </div>
-          <div class="dashboard-panel dashboard-panel-secondary">
-            <p class="panel-title">Orders</p>
-            <div id="admin-orders-list"></div>
-          </div>
-          <div class="dashboard-panel dashboard-panel-secondary">
-            <p class="panel-title">Tips</p>
-            <div id="admin-tips-list"></div>
+          <div class="dashboard-panel dashboard-panel-tabs">
+            <div class="admin-tab-buttons">
+              <button type="button" class="admin-tab-btn active" data-tab="inventory">Inventory</button>
+              <button type="button" class="admin-tab-btn" data-tab="orders">Orders</button>
+              <button type="button" class="admin-tab-btn" data-tab="tips">Tips</button>
+              <button type="button" class="admin-tab-btn" data-tab="email-captures">Email Captures</button>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="inventory">
+              <div id="admin-inventory-list"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="orders" style="display: none;">
+              <div id="admin-orders-list"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="tips" style="display: none;">
+              <div id="admin-tips-list"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="email-captures" style="display: none;">
+              <div id="admin-email-captures-list"></div>
+            </div>
           </div>
         </div>
       </div>

@@ -110,6 +110,45 @@ async function loadAdminTips() {
   `
 }
 
+// Free-download claims — write-only until now (see products embed, which
+// relies on the products.id -> email_captures.product_id foreign key
+// already in place, confirmed live before building this).
+async function loadAdminEmailCaptures() {
+  const listEl = document.getElementById('admin-email-captures-list')
+  if (!listEl) return
+
+  const { data: captures, error } = await supabase
+    .from('email_captures')
+    .select('*, products(title)')
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  if (error) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load email captures.</p>'
+    return
+  }
+
+  if (!captures || captures.length === 0) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No free download claims yet.</p>'
+    return
+  }
+
+  listEl.innerHTML = `
+    <p style="font-size: 0.6rem; color: #e8b923; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 0.5rem 0;">
+      ${captures.length} capture${captures.length === 1 ? '' : 's'}
+    </p>
+    ${captures.map(capture => `
+      <div class="tip-row">
+        <div class="tip-row-meta">
+          <strong style="color: #ccc;">${capture.email}</strong>
+          <br>${capture.products?.title || 'Deleted product'}
+          <br>${capture.created_at ? new Date(capture.created_at).toLocaleDateString() : ''}
+        </div>
+      </div>
+    `).join('')}
+  `
+}
+
 async function loadAdminOrders() {
   const listEl = document.getElementById('admin-orders-list')
   if (!listEl) return
@@ -1363,6 +1402,7 @@ function initAdminPortal() {
       loadAdminInventory()
       loadAdminOrders()
       loadAdminTips()
+      loadAdminEmailCaptures()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
@@ -1381,6 +1421,20 @@ function initAdminPortal() {
 
   logoutBtn.addEventListener('click', async () => {
     await supabase.auth.signOut()
+  })
+
+  // Inventory/Orders/Tips/Email Captures used to each get their own narrow
+  // always-visible column — cramped on desktop with four, a long stack on
+  // mobile. One full-width panel at a time instead; all four still load
+  // eagerly up front, this only toggles which is shown.
+  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-tab')
+      document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.toggle('active', b === btn))
+      document.querySelectorAll('.admin-tab-panel').forEach(panel => {
+        panel.style.display = panel.getAttribute('data-tab-panel') === target ? 'flex' : 'none'
+      })
+    })
   })
 
   const uploadForm = document.getElementById('upload-form')
