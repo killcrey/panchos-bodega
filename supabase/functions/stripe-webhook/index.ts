@@ -11,6 +11,34 @@ const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
 // verification has to go through Stripe's async + Web Crypto path.
 const cryptoProvider = Stripe.createSubtleCryptoProvider()
 
+// Mirrors the same helper in free-download/index.ts and
+// sync-game-signups/index.ts — every real purchase (cart order or the older
+// static Payment Link) and every tip lands the buyer's email in the same
+// shared Resend Audience. RESEND_CONTACTS_API_KEY is a separate, more
+// broadly-scoped key from RESEND_API_KEY (confirmed live: the latter is
+// send-only and 401s on any Audiences/Contacts call).
+async function addContactToAudience(email: string) {
+  const resendKey = Deno.env.get('RESEND_CONTACTS_API_KEY')
+  const audienceId = Deno.env.get('RESEND_AUDIENCE_ID')
+  if (!resendKey || !audienceId) return
+
+  try {
+    const res = await fetch(`https://api.resend.com/audiences/${audienceId}/contacts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, unsubscribed: false }),
+    })
+    if (!res.ok) {
+      console.error(`Failed to add ${email} to Resend audience:`, await res.text())
+    }
+  } catch (err) {
+    console.error('Failed to add contact to Resend audience:', err)
+  }
+}
+
 // Buys the actual shipping label from Shippo using the exact rate the buyer
 // already paid for, and writes the result onto the order row. A failure here
 // never fails the webhook — the payment already succeeded, so the order
@@ -349,7 +377,10 @@ serve(async (req) => {
           throw insertError
         }
 
-        if (email) await sendTipThankYouEmail(email, amountCents, tipperName)
+        if (email) {
+          await sendTipThankYouEmail(email, amountCents, tipperName)
+          await addContactToAudience(email)
+        }
       } catch (err) {
         console.error('Failed to record tip for session', session.id, err)
       }
@@ -503,6 +534,7 @@ serve(async (req) => {
     if (!isDuplicateDelivery && session.customer_details?.email) {
       const metadata = session.metadata || {}
       const hasShipping = !!metadata.shipping_street1
+      await addContactToAudience(session.customer_details.email)
       await sendOrderConfirmationEmail(session.customer_details.email, {
         lineRows,
         downloadBlocks,
