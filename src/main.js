@@ -275,17 +275,21 @@ function computeProductFlags(product) {
 // (the card needs that; a product already ON that page linking to itself
 // doesn't), and `truncateDescription` is the card's small-tile-friendly cap
 // that the dedicated page has no reason to apply.
-function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true } = {}) {
+function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true, showDescription = true, showFullGallery = true } = {}) {
   const { isFree, isInert, isComingSoon, isSoldOut } = flags
   const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
   const availableImages = productImages(product)
 
+  // The card face only ever shows the first photo — flipping through the
+  // rest is what the lightbox (opened by clicking it, still passed every
+  // photo) is for. Only the dedicated product page gets the inline
+  // prev/next arrows and counter.
   let galleryHTML = ''
   if (availableImages.length > 0) {
     galleryHTML = `
       <div class="image-gallery">
         <img src="${availableImages[0]}" alt="${product.title}" class="lightbox-trigger gallery-current-img" data-idx="0">
-        ${availableImages.length > 1 ? `
+        ${(showFullGallery && availableImages.length > 1) ? `
           <button type="button" class="gallery-arrow gallery-prev" aria-label="Previous photo">&#10094;</button>
           <button type="button" class="gallery-arrow gallery-next" aria-label="Next photo">&#10095;</button>
           <div class="gallery-counter">1 / ${availableImages.length}</div>
@@ -296,7 +300,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     galleryHTML = `<div class="no-image">NO IMAGE</div>`
   }
 
-  const descriptionText = product.description
+  const descriptionText = (showDescription && product.description)
     ? (truncateDescription ? product.description.slice(0, MAX_DESCRIPTION_LENGTH) : product.description)
     : ''
   const descriptionHTML = descriptionText ? `<p class="description">${descriptionText}</p>` : ''
@@ -372,6 +376,13 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     ? `<a href="/products/${product.slug}/" class="product-title-link">${titleInner}</a>`
     : titleInner
 
+  // This spacer exists to push whatever comes after it (player, buy button)
+  // to the bottom of the card's flex column — with nothing to push, it's
+  // just dead reserved space, which is exactly the leftover padding a
+  // now-mostly-empty card (no description, no buy controls) doesn't need.
+  const hasTrailingContent = !!(audioHTML || sizeSelectHTML || sizeUpchargeHintHTML || buyButtonHTML)
+  const trailingSpacerHTML = hasTrailingContent ? `<div style="margin-top: auto;"></div>` : ''
+
   return `
     ${galleryHTML}
     ${titleHTML}
@@ -379,7 +390,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
     ${descriptionHTML}
     ${sizesHTML}
-    <div style="margin-top: auto;"></div>
+    ${trailingSpacerHTML}
     ${audioHTML}
     ${sizeSelectHTML}
     ${sizeUpchargeHintHTML}
@@ -1819,7 +1830,7 @@ async function loadBodega() {
     card.className = 'product-card'
     card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
     card.setAttribute('data-product-id', product.id)
-    card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true, showBuyControls: false })
+    card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true, showBuyControls: false, showDescription: false, showFullGallery: false })
 
     // A real <a href> so search engines can follow/index it and a bare
     // middle-click/ctrl-click/copy-link still gets the real URL — but a
@@ -1853,7 +1864,8 @@ async function loadBodega() {
   if (routedProduct) {
     goToProduct(routedProduct)
   } else {
-    showLanding()
+    // Initial page load, not a navigation — nothing to push onto history yet.
+    showLanding({ skipHistoryUpdate: true })
   }
 }
 
@@ -1940,7 +1952,9 @@ window.addEventListener('popstate', () => {
   if (match) {
     showProductPage(match)
   } else {
-    showLanding()
+    // The browser already moved history here — pushing '/' again would
+    // corrupt the stack we're in the middle of navigating.
+    showLanding({ skipHistoryUpdate: true })
   }
 })
 
@@ -2067,7 +2081,15 @@ function productImages(product) {
   return images
 }
 
-function showLanding() {
+// `skipHistoryUpdate` is true only when the browser itself already changed
+// the URL (a popstate) or on the very first page load — anywhere else this
+// runs from a click, so if the visitor was looking at a product page, that
+// needs its own history entry back to '/'. Without it, leaving a product via
+// this button/tab/link never touched history at all, so two products
+// visited in a row pushed straight onto each other with no grid entry
+// between them — Back from the second product landed on the first, not on
+// the grid you'd actually just been looking at.
+function showLanding({ skipHistoryUpdate = false } = {}) {
   // The admin panel owns the whole viewport — never surface the storefront
   // landing page underneath it.
   if (new URLSearchParams(window.location.search).get('mode') === 'admin') return
@@ -2076,9 +2098,13 @@ function showLanding() {
   const storeGrid = document.getElementById('store-grid')
   if (!landing || !storeGrid) return
 
+  if (!skipHistoryUpdate && matchProductFromPath(allProducts)) {
+    history.pushState(null, '', '/')
+  }
+
   // Nothing slotted yet — don't strand the visitor on an empty page.
   if (landing.getAttribute('data-empty') === 'true') {
-    showStore('all')
+    showStore('all', { skipHistoryUpdate: true })
     return
   }
 
@@ -2092,10 +2118,15 @@ function showLanding() {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function showStore(filter = 'all') {
+// See showLanding's comment for why skipHistoryUpdate exists.
+function showStore(filter = 'all', { skipHistoryUpdate = false } = {}) {
   const landing = document.getElementById('landing-view')
   const storeGrid = document.getElementById('store-grid')
   if (!storeGrid) return
+
+  if (!skipHistoryUpdate && matchProductFromPath(allProducts)) {
+    history.pushState(null, '', '/')
+  }
 
   hideProductPage()
   if (landing) landing.style.display = 'none'
@@ -2134,7 +2165,7 @@ function showProductPage(product) {
   closeMobileNav()
 
   const flags = computeProductFlags(product)
-  content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false, showBuyControls: true })
+  content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false, showBuyControls: true, showDescription: true, showFullGallery: true })
   wireProductInteractions(content, product, flags)
 
   const backBtn = document.getElementById('product-back-btn')
@@ -2180,63 +2211,22 @@ function setLandingSlide(index) {
 // The description panel beside the carousel. Mirrors the product card's
 // buy logic (size gate, free downloads, inert states) rather than assuming
 // every featured product is a plain paid item.
+// No buy controls here by design — the featured panel is informational
+// (title/price/category/description); purchasing happens on the product's
+// own dedicated page.
 function renderLandingDetail(product) {
   const detail = document.getElementById('landing-detail')
   if (!detail || !product) return
 
   const isFree = (product.price_cents || 0) === 0
-  const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
-  const isComingSoon = !!product.coming_soon
-  const isInert = isSoldOut || isComingSoon
   const formattedPrice = isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
-
-  const sizeOptions = (!isFree && !isInert && product.category === 'apparel' && product.sizes)
-    ? product.sizes.split(',').map(s => s.trim()).filter(Boolean)
-    : []
-  const upchargedSizes = sizeOptions.filter(isUpchargeSize)
-
-  const label = isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))
 
   detail.innerHTML = `
     <h3 class="landing-detail-title">${product.title}</h3>
     <p class="landing-detail-price">${formattedPrice}</p>
     <p class="landing-detail-category">${(product.category || 'uncategorized').toUpperCase()}</p>
     ${product.description ? `<p class="landing-detail-description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>` : ''}
-    <div class="landing-detail-actions">
-      ${sizeOptions.length > 0 ? `
-        <select class="landing-size-select admin-input">
-          <option value="" disabled selected>Select Size</option>
-          ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
-        </select>
-        ${upchargedSizes.length > 0 ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>` : ''}
-      ` : ''}
-      <button type="button" class="landing-buy-btn" ${isInert ? 'disabled' : ''}>${label}</button>
-    </div>
   `
-
-  const buyBtn = detail.querySelector('.landing-buy-btn')
-  const sizeSelect = detail.querySelector('.landing-size-select')
-  buyBtn.addEventListener('click', () => {
-    if (isInert) return
-    if (isFree) {
-      openFreeDownloadModal(product)
-      return
-    }
-
-    let size = null
-    if (sizeSelect) {
-      size = sizeSelect.value
-      if (!size) {
-        sizeSelect.style.borderColor = '#ff4d4d'
-        return
-      }
-    }
-
-    addToCart(product, { size })
-    updateCartBadge()
-    buyBtn.textContent = 'Added ✓'
-    setTimeout(() => { buyBtn.textContent = label }, 1200)
-  })
 }
 
 function renderLandingSideBox(el, product, label) {
@@ -2253,7 +2243,7 @@ function renderLandingSideBox(el, product, label) {
     <span class="landing-side-label">${label}</span>
     ${image ? `<img src="${image}" alt="${product.title}">` : ''}
     <span class="landing-side-title">${product.title}</span>
-    <span class="landing-side-cta">Buy Now</span>
+    <span class="landing-side-cta">View Product</span>
   `
   el.onclick = () => goToProduct(product)
 }
