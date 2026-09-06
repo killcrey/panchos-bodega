@@ -1,0 +1,30 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "panchos-bodega-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173,
+      "autoPort": true
+    },
+    {
+      "name": "tip-main-site-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\16193\\Desktop\\tip-main-site && npx --yes netlify-cli dev --port 8888"],
+      "port": 8888
+    },
+    {
+      "name": "pancho-blog-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\16193\\pancho-blog && npm run dev"],
+      "port": 3000
+    },
+    {
+      "name": "tip-game-dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\Users\\16193\\Desktop\\website-assets && python -m http.server 8935"],
+      "port": 8935
+    }
+  ]
+}
