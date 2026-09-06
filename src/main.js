@@ -275,7 +275,7 @@ function computeProductFlags(product) {
 // (the card needs that; a product already ON that page linking to itself
 // doesn't), and `truncateDescription` is the card's small-tile-friendly cap
 // that the dedicated page has no reason to apply.
-function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true } = {}) {
+function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true } = {}) {
   const { isFree, isInert, isComingSoon, isSoldOut } = flags
   const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
   const availableImages = productImages(product)
@@ -348,15 +348,23 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
 
   const needsSize = !isFree && !isInert && product.category === 'apparel' && product.sizes
   const sizeOptions = needsSize ? product.sizes.split(',').map(s => s.trim()).filter(Boolean) : []
-  const sizeSelectHTML = needsSize
+  // The card shows sizes as plain informational tags only (sizesHTML,
+  // above) — the interactive picker and its price-upcharge hint are part
+  // of the buy flow, so they only exist where showBuyControls is on.
+  const sizeSelectHTML = (needsSize && showBuyControls)
     ? `<select class="card-size-select admin-input">
         <option value="" disabled selected>Select Size</option>
         ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
       </select>`
     : ''
   const upchargedSizes = sizeOptions.filter(isUpchargeSize)
-  const sizeUpchargeHintHTML = upchargedSizes.length > 0
+  const sizeUpchargeHintHTML = (showBuyControls && upchargedSizes.length > 0)
     ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>`
+    : ''
+  const buyButtonHTML = showBuyControls
+    ? `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
+        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))}
+      </button>`
     : ''
 
   const titleInner = `<h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>`
@@ -375,9 +383,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     ${audioHTML}
     ${sizeSelectHTML}
     ${sizeUpchargeHintHTML}
-    <button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
-      ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))}
-    </button>
+    ${buyButtonHTML}
   `
 }
 
@@ -1813,7 +1819,7 @@ async function loadBodega() {
     card.className = 'product-card'
     card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
     card.setAttribute('data-product-id', product.id)
-    card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true })
+    card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true, showBuyControls: false })
 
     // A real <a href> so search engines can follow/index it and a bare
     // middle-click/ctrl-click/copy-link still gets the real URL — but a
@@ -2128,7 +2134,7 @@ function showProductPage(product) {
   closeMobileNav()
 
   const flags = computeProductFlags(product)
-  content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false })
+  content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false, showBuyControls: true })
   wireProductInteractions(content, product, flags)
 
   const backBtn = document.getElementById('product-back-btn')
