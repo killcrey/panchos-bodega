@@ -228,6 +228,32 @@ async function loadAdminOrders() {
 // existed can't blow out the product card either.
 const MAX_DESCRIPTION_LENGTH = 400
 
+// Mirrors the backfill regex in the products_slug migration, so an admin
+// typing a title sees the same slug the DB would have generated for it.
+function slugify(text) {
+  return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+}
+
+// Auto-fills a slug field from its title field until the admin edits the
+// slug directly — same "don't fight what the user just typed" pattern as
+// the printful-variant/size fields elsewhere in these forms.
+// Uses a dataset flag rather than closure state because the edit form is a
+// single persistent element reused across products (openEditModal resets
+// the flag per product it loads) — a closure captured once at page load
+// would never reflect "this particular product already has a slug".
+function wireSlugAutofill(titleInputId, slugInputId) {
+  const titleInput = document.getElementById(titleInputId)
+  const slugInput = document.getElementById(slugInputId)
+  slugInput.dataset.touched = slugInput.value.trim().length > 0 ? 'true' : 'false'
+
+  slugInput.addEventListener('input', () => {
+    slugInput.dataset.touched = slugInput.value.trim().length > 0 ? 'true' : 'false'
+  })
+  titleInput.addEventListener('input', () => {
+    if (slugInput.dataset.touched !== 'true') slugInput.value = slugify(titleInput.value)
+  })
+}
+
 const AUDIO_URL_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
 
 function isAudioUrl(url) {
@@ -545,6 +571,11 @@ function openEditModal(product) {
   editingProduct = product
   document.getElementById('edit-id').value = product.id
   document.getElementById('edit-title').value = product.title || ''
+  const editSlugInput = document.getElementById('edit-slug')
+  editSlugInput.value = product.slug || ''
+  // A product with no slug yet (pre-migration row) should still autofill as
+  // the admin types a title; one that already has a slug should not.
+  editSlugInput.dataset.touched = product.slug ? 'true' : 'false'
   document.getElementById('edit-price').value = product.price_cents != null ? (product.price_cents / 100).toFixed(2) : ''
   document.getElementById('edit-inventory').value = product.inventory_count != null ? product.inventory_count : ''
   document.getElementById('edit-stripe-product-id').value = product.stripe_product_id || ''
@@ -1144,6 +1175,9 @@ function initAdminPortal() {
     updateWeightVisibility(e.target.value, 'upload-weight-group')
   })
 
+  wireSlugAutofill('upload-title', 'upload-slug')
+  wireSlugAutofill('edit-title', 'edit-slug')
+
   document.getElementById('upload-image').addEventListener('change', (e) => {
     uploadNewImageFiles = uploadNewImageFiles.concat(Array.from(e.target.files))
     e.target.value = '' // reset so reopening the picker starts a fresh native selection instead of showing a stale filename
@@ -1228,6 +1262,7 @@ function initAdminPortal() {
 
     try {
       const title = document.getElementById('upload-title').value
+      const slug = document.getElementById('upload-slug').value.trim() || slugify(title)
       const price = parseFloat(document.getElementById('upload-price').value)
       const description = document.getElementById('upload-description').value
       const category = document.getElementById('upload-category').value
@@ -1251,6 +1286,7 @@ function initAdminPortal() {
 
       const { error: insertError } = await supabase.from('products').insert({
         title,
+        slug,
         price_cents: Math.round(price * 100),
         description,
         category,
@@ -1319,6 +1355,7 @@ function initAdminPortal() {
     try {
       const id = document.getElementById('edit-id').value
       const title = document.getElementById('edit-title').value
+      const slug = document.getElementById('edit-slug').value.trim() || slugify(title)
       const price = parseFloat(document.getElementById('edit-price').value)
       const description = document.getElementById('edit-description').value
       const category = document.getElementById('edit-category').value
@@ -1361,6 +1398,7 @@ function initAdminPortal() {
 
       const { error: updateError } = await supabase.from('products').update({
         title,
+        slug,
         price_cents: Math.round(price * 100),
         description,
         category,
@@ -1771,13 +1809,31 @@ async function loadBodega() {
   setupCategoryFilters()
   renderLandingPage(products)
   injectProductStructuredData(products)
-  showLanding()
+
+  // A prerendered /products/<slug>/ page boots the exact same SPA bundle as
+  // the homepage — this is what turns that static shell into the live,
+  // interactive product card for a human visitor arriving from a search
+  // result or shared link.
+  const routedProduct = matchProductFromPath(products)
+  if (routedProduct) {
+    goToProductCard(routedProduct)
+  } else {
+    showLanding()
+  }
 }
 
 // SEO: per-product Product/Offer JSON-LD so Google can pick up price,
 // availability, and image for shopping rich results. There are no
 // per-product URLs (single-page, no router), so offers.url points at
 // the store root — the best available target given that constraint.
+// Matches window.location.pathname against /products/<slug>/ — the path a
+// prerendered page (see scripts/prerender-products.js) was served at.
+function matchProductFromPath(products) {
+  const match = window.location.pathname.match(/^\/products\/([^/]+)\/?$/)
+  if (!match) return null
+  return products.find(p => p.slug === match[1]) || null
+}
+
 function injectProductStructuredData(products) {
   const items = products
     .filter(p => p.title)
@@ -1799,7 +1855,9 @@ function injectProductStructuredData(products) {
             : (p.inventory_count != null && p.inventory_count <= 0)
               ? 'https://schema.org/OutOfStock'
               : 'https://schema.org/InStock',
-          url: 'https://bodega.theinvisiblepanchos.com/'
+          url: p.slug
+            ? `https://bodega.theinvisiblepanchos.com/products/${p.slug}/`
+            : 'https://bodega.theinvisiblepanchos.com/'
         }
       }
     }))

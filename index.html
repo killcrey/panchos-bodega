@@ -2130,6 +2130,8 @@
             <div id="upload-form-container">
               <form id="upload-form">
                 <input type="text" id="upload-title" class="admin-input" placeholder="Title" required>
+                <input type="text" id="upload-slug" class="admin-input" placeholder="URL slug (auto-filled from title)">
+                <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Auto-fills from the title until you edit it directly.</p>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
                 <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
                 <input type="number" id="upload-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
@@ -2212,6 +2214,8 @@
             <input type="hidden" id="edit-id">
             <div class="edit-modal-fields">
               <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
+              <input type="text" id="edit-slug" class="admin-input" placeholder="URL slug">
+              <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Changing this breaks any link already shared with this old slug.</p>
               <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
               <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
               <input type="number" id="edit-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
