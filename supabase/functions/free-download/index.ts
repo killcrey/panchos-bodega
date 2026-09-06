@@ -7,6 +7,35 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Mirrors the same helper in sync-game-signups/index.ts — both this
+// function's free-download captures and the Game's email_signups feed the
+// one shared Resend Audience. RESEND_CONTACTS_API_KEY is deliberately a
+// separate secret from RESEND_API_KEY: the latter is a send-only restricted
+// key (confirmed live — it 401s on any Audiences/Contacts call), so contact
+// management needs its own key with that scope.
+async function addContactToAudience(email: string) {
+  const resendKey = Deno.env.get('RESEND_CONTACTS_API_KEY')
+  const audienceId = Deno.env.get('RESEND_AUDIENCE_ID')
+  if (!resendKey || !audienceId) return
+
+  try {
+    const res = await fetch(`https://api.resend.com/audiences/${audienceId}/contacts`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, unsubscribed: false }),
+    })
+    if (!res.ok) {
+      console.error(`Failed to add ${email} to Resend audience:`, await res.text())
+    }
+  } catch (err) {
+    // Never let a mailing-list hiccup block the buyer from getting their file.
+    console.error('Failed to add contact to Resend audience:', err)
+  }
+}
+
 function extractStoragePath(url: string, bucket: string): string | null {
   if (!url) return null
   const marker = `/storage/v1/object/public/${bucket}/`
@@ -159,6 +188,7 @@ serve(async (req) => {
     }
 
     await supabase.from('email_captures').insert({ product_id: productId, email })
+    await addContactToAudience(email)
 
     if (targetFilenames.length === 1) {
       const downloadFilename = targetFilenames[0].replace(/^\d+-/, '')

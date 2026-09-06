@@ -441,3 +441,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/stripe-webhook/deno.json"
 entrypoint = "./functions/stripe-webhook/index.ts"
+
+[functions.sync-game-signups]
+enabled = true
+verify_jwt = false
+import_map = "./functions/sync-game-signups/deno.json"
+entrypoint = "./functions/sync-game-signups/index.ts"
