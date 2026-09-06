@@ -1880,10 +1880,27 @@ async function loadBodega() {
   const routedProduct = matchProductFromPath(products)
   if (routedProduct) {
     goToProduct(routedProduct)
-  } else {
-    // Initial page load, not a navigation — nothing to push onto history yet.
-    showLanding({ skipHistoryUpdate: true })
+    return
   }
+
+  // A plain ?filter=<category> deep link — e.g. for the main website to
+  // link straight into "browse all music" — since category filters are
+  // otherwise pure in-app clicks with nothing reflected in the URL. Valid
+  // values are read from the filter bar itself so this never drifts out of
+  // sync with whatever categories actually exist.
+  const filterParam = (new URLSearchParams(window.location.search).get('filter') || '').toLowerCase()
+  const validFilters = Array.from(document.querySelectorAll('.filter-btn[data-filter]')).map(b => b.getAttribute('data-filter'))
+  if (filterParam && validFilters.includes(filterParam)) {
+    // Initial page load, not a navigation — nothing to push onto history yet.
+    if (filterParam === 'home') {
+      showLanding({ skipHistoryUpdate: true })
+    } else {
+      showStore(filterParam, { skipHistoryUpdate: true })
+    }
+    return
+  }
+
+  showLanding({ skipHistoryUpdate: true })
 }
 
 // Matches window.location.pathname against /products/<slug>/ — the path a
