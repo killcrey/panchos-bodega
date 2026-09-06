@@ -1605,6 +1605,11 @@ async function loadBodega() {
     return
   }
 
+  // Kept module-level so the popstate handler (fires on Back/Forward, long
+  // after this function's own `products` local has gone out of scope) can
+  // still resolve a URL back to a product.
+  allProducts = products
+
   storeGrid.innerHTML = ''
   
   // BUILD CARDS
@@ -1778,7 +1783,10 @@ async function loadBodega() {
       titleLink.addEventListener('click', (e) => {
         if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
         e.preventDefault()
-        history.pushState(null, '', titleLink.getAttribute('href'))
+        // Deliberately not goToProductCard here — that also re-applies the
+        // category filter, which would yank a visitor off "ALL" onto just
+        // this product's category for what looked like a plain title click.
+        updateProductUrlAndMeta(product)
       })
     }
 
@@ -1850,6 +1858,81 @@ function matchProductFromPath(products) {
   if (!match) return null
   return products.find(p => p.slug === match[1]) || null
 }
+
+// Every product this session has loaded — kept module-level so the popstate
+// handler (fires long after loadBodega's own `products` local is gone) can
+// still resolve the URL back to a product.
+let allProducts = []
+
+// Hardcoded rather than read from the live DOM at init: if the SPA happened
+// to boot from a prerendered /products/<slug>/ page, the DOM's "current"
+// values at that point would already be that product's tags, not the true
+// homepage default — reading them would bake in the wrong reset target.
+const SITE_URL = 'https://bodega.theinvisiblepanchos.com'
+const DEFAULT_META = {
+  title: 'Panchos Bodega | The Invisible Panchos',
+  description: 'Official apparel, unreleased tracks, and digital downloads from The Invisible Panchos. Barrio roots, cosmic reach.',
+  url: `${SITE_URL}/`,
+  image: `${SITE_URL}/opensign.jpg`,
+}
+
+function setMetaAttr(selector, attr, value) {
+  const el = document.querySelector(selector)
+  if (el) el.setAttribute(attr, value)
+}
+
+function applyMetaTags({ title, description, url, image }) {
+  document.title = title
+  setMetaAttr('meta[name="description"]', 'content', description)
+  setMetaAttr('link[rel="canonical"]', 'href', url)
+  setMetaAttr('meta[property="og:url"]', 'content', url)
+  setMetaAttr('meta[property="og:title"]', 'content', title)
+  setMetaAttr('meta[property="og:description"]', 'content', description)
+  setMetaAttr('meta[property="og:image"]', 'content', image)
+  setMetaAttr('meta[name="twitter:title"]', 'content', title)
+  setMetaAttr('meta[name="twitter:description"]', 'content', description)
+  setMetaAttr('meta[name="twitter:image"]', 'content', image)
+}
+
+function setProductMetaTags(product) {
+  applyMetaTags({
+    title: `${product.title} | Panchos Bodega`,
+    description: (product.description || '').slice(0, MAX_DESCRIPTION_LENGTH) || DEFAULT_META.description,
+    url: `${SITE_URL}/products/${product.slug}/`,
+    image: product.cover_art_url || DEFAULT_META.image,
+  })
+}
+
+function resetMetaTagsToHomepage() {
+  applyMetaTags(DEFAULT_META)
+}
+
+// Shared by every path that lands a visitor on a specific product (the
+// title-link click, the landing carousel/side boxes via goToProductCard,
+// and the initial-load match) so the URL and tab title/meta always agree
+// with whatever product is actually on screen.
+function updateProductUrlAndMeta(product) {
+  if (!product.slug) return
+  const path = `/products/${product.slug}/`
+  // Guards against a redundant history entry when this runs on the initial
+  // load of that exact prerendered page (matchProductFromPath's own caller).
+  if (window.location.pathname !== path) {
+    history.pushState(null, '', path)
+  }
+  setProductMetaTags(product)
+}
+
+// Back/Forward doesn't touch the visible filter/scroll state (a title-link
+// click never did either) — it only needs to keep the tab title/meta honest
+// about whatever URL the visitor has landed back on.
+window.addEventListener('popstate', () => {
+  const match = matchProductFromPath(allProducts)
+  if (match) {
+    setProductMetaTags(match)
+  } else {
+    resetMetaTagsToHomepage()
+  }
+})
 
 function injectProductStructuredData(products) {
   const items = products
@@ -1992,6 +2075,7 @@ function showLanding() {
   landing.style.display = 'flex'
   storeGrid.style.display = 'none'
   document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.toggle('active', b.getAttribute('data-filter') === 'home'))
+  resetMetaTagsToHomepage()
   startLandingRotation()
   closeMobileNav()
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -2006,6 +2090,7 @@ function showStore(filter = 'all') {
   stopLandingRotation()
   storeGrid.style.display = 'grid'
   applyFilter(filter)
+  resetMetaTagsToHomepage()
   closeMobileNav()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
@@ -2014,6 +2099,7 @@ function showStore(filter = 'all') {
 function goToProductCard(product) {
   const category = (product.category || '').toString().trim().toLowerCase()
   showStore(category || 'all')
+  updateProductUrlAndMeta(product)
 
   const card = document.querySelector(`.product-card[data-product-id="${product.id}"]`)
   if (!card) return
