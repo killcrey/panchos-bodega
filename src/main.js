@@ -275,7 +275,7 @@ function computeProductFlags(product) {
 // (the card needs that; a product already ON that page linking to itself
 // doesn't), and `truncateDescription` is the card's small-tile-friendly cap
 // that the dedicated page has no reason to apply.
-function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true, showDescription = true, showFullGallery = true } = {}) {
+function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true, showDescription = true, showFullGallery = true, showAudioPreview = true } = {}) {
   const { isFree, isInert, isComingSoon, isSoldOut } = flags
   const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
   const availableImages = productImages(product)
@@ -309,14 +309,17 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     ? `<div class="sizes-container">${product.sizes.split(',').map(s => `<span class="size-tag">${s.trim()}</span>`).join('')}</div>`
     : ''
 
+  // Card no longer plays audio at all — preview belongs on the product page.
   let audioHTML = ''
-  const playableTracks = (product.tracklist_snippets && product.tracklist_snippets.length > 0)
-    ? [...product.tracklist_snippets].sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0))
-    : (Array.isArray(product.download_files)
-        ? product.download_files
-            .filter(f => isAudioUrl(f.url))
-            .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
-        : [])
+  const playableTracks = !showAudioPreview ? [] : (
+    (product.tracklist_snippets && product.tracklist_snippets.length > 0)
+      ? [...product.tracklist_snippets].sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0))
+      : (Array.isArray(product.download_files)
+          ? product.download_files
+              .filter(f => isAudioUrl(f.url))
+              .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
+          : [])
+  )
 
   if (playableTracks.length > 1) {
     audioHTML = `
@@ -342,7 +345,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
         <span class="play-icon">▶</span> Play Preview
       </button>
     `
-  } else if (isAudioUrl(product.audio_preview_url)) {
+  } else if (showAudioPreview && isAudioUrl(product.audio_preview_url)) {
     audioHTML = `
       <button class="card-play-btn" data-url="${product.audio_preview_url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
         <span class="play-icon">▶</span> Play Preview
@@ -1835,7 +1838,7 @@ async function loadBodega() {
     card.className = 'product-card'
     card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
     card.setAttribute('data-product-id', product.id)
-    card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true, showBuyControls: false, showDescription: false, showFullGallery: false })
+    card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true, showBuyControls: false, showDescription: false, showFullGallery: false, showAudioPreview: false })
 
     // A real <a href> so search engines can follow/index it and a bare
     // middle-click/ctrl-click/copy-link still gets the real URL — but a
@@ -2179,7 +2182,7 @@ function showProductPage(product) {
   closeMobileNav()
 
   const flags = computeProductFlags(product)
-  content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false, showBuyControls: true, showDescription: true, showFullGallery: true })
+  content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false, showBuyControls: true, showDescription: true, showFullGallery: true, showAudioPreview: true })
   wireProductInteractions(content, product, flags, { enableLightbox: true })
 
   const backBtn = document.getElementById('product-back-btn')
