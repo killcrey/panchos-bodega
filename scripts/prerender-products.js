@@ -69,6 +69,7 @@ async function main() {
   const products = await res.json()
 
   let written = 0
+  const sitemapUrls = [SITE_URL + '/']
   for (const p of products) {
     if (!p.slug) continue
 
@@ -148,10 +149,19 @@ async function main() {
     const outDir = path.join(DIST, 'products', p.slug)
     mkdirSync(outDir, { recursive: true })
     writeFileSync(path.join(outDir, 'index.html'), html)
+    sitemapUrls.push(url)
     written++
   }
 
-  console.log(`prerender-products: wrote ${written} product page(s).`)
+  // robots.txt already points at /sitemap.xml (see public/robots.txt) —
+  // this is what makes that reference actually resolve to something.
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    sitemapUrls.map((u) => `  <url><loc>${u}</loc></url>`).join('\n') +
+    `\n</urlset>\n`
+  writeFileSync(path.join(DIST, 'sitemap.xml'), sitemap)
+
+  console.log(`prerender-products: wrote ${written} product page(s) and sitemap.xml.`)
 }
 
 main().catch((err) => {

@@ -1718,9 +1718,13 @@ async function loadBodega() {
       ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>`
       : ''
 
+    const titleHTML = product.slug
+      ? `<a href="/products/${product.slug}/" class="product-title-link"><h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3></a>`
+      : `<h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>`
+
     card.innerHTML = `
       ${galleryHTML}
-      <h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>
+      ${titleHTML}
       <p class="price" style="margin: 0 0 0.15rem 0; font-size: 0.65rem;">${formattedPrice}</p>
       <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
       ${descriptionHTML}
@@ -1762,6 +1766,19 @@ async function loadBodega() {
       galleryNextBtn.addEventListener('click', () => {
         const current = parseInt(galleryImg.getAttribute('data-idx'))
         showGalleryImage((current + 1) % availableImages.length)
+      })
+    }
+
+    // A real <a href> so search engines can follow/index it and a bare
+    // middle-click/ctrl-click/copy-link still gets the real URL — but a
+    // plain left-click just updates the address bar (the card the visitor
+    // is already looking at doesn't need a full reload to prove it's there).
+    const titleLink = card.querySelector('.product-title-link')
+    if (titleLink) {
+      titleLink.addEventListener('click', (e) => {
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
+        e.preventDefault()
+        history.pushState(null, '', titleLink.getAttribute('href'))
       })
     }
 
