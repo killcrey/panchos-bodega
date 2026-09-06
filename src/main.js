@@ -402,17 +402,22 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
 // gallery arrows, audio playback, buy/size-select) to whichever container
 // holds it — a grid card or the dedicated product page — since both are
 // built from the exact same renderProductMarkup output.
-function wireProductInteractions(container, product, flags) {
+function wireProductInteractions(container, product, flags, { enableLightbox = true } = {}) {
   const { isFree, isInert } = flags
   const availableImages = productImages(product)
 
-  const images = container.querySelectorAll('.lightbox-trigger')
-  images.forEach(img => {
-    img.addEventListener('click', (e) => {
-      const idx = parseInt(e.target.getAttribute('data-idx'))
-      window.openLightbox(availableImages, idx)
+  // The card disables this — clicking its (single, arrow-less) photo now
+  // navigates to the product page instead of zooming, since the page is
+  // where the full gallery/zoom actually lives.
+  if (enableLightbox) {
+    const images = container.querySelectorAll('.lightbox-trigger')
+    images.forEach(img => {
+      img.addEventListener('click', (e) => {
+        const idx = parseInt(e.target.getAttribute('data-idx'))
+        window.openLightbox(availableImages, idx)
+      })
     })
-  })
+  }
 
   const galleryImg = container.querySelector('.gallery-current-img')
   const galleryCounter = container.querySelector('.gallery-counter')
@@ -1845,7 +1850,16 @@ async function loadBodega() {
       })
     }
 
-    wireProductInteractions(card, product, flags)
+    // The rest of the card (photo, price/category text, size tags, or just
+    // empty space) is a plain click-to-navigate area — audio preview
+    // controls and the title link (handled above, with real link semantics)
+    // are the only things carved out so they keep their own behavior.
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.card-play-btn, .track-item, .product-title-link')) return
+      showProductPage(product)
+    })
+
+    wireProductInteractions(card, product, flags, { enableLightbox: false })
     storeGrid.appendChild(card)
    } catch (err) {
      console.error('Skipping product due to render error:', product, err)
@@ -2166,7 +2180,7 @@ function showProductPage(product) {
 
   const flags = computeProductFlags(product)
   content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false, showBuyControls: true, showDescription: true, showFullGallery: true })
-  wireProductInteractions(content, product, flags)
+  wireProductInteractions(content, product, flags, { enableLightbox: true })
 
   const backBtn = document.getElementById('product-back-btn')
   if (backBtn) {
