@@ -2241,6 +2241,9 @@ function renderLandingDetail(product) {
     <p class="landing-detail-category">${(product.category || 'uncategorized').toUpperCase()}</p>
     ${product.description ? `<p class="landing-detail-description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>` : ''}
   `
+  // Reassigned on every slide change so it always points at whichever
+  // product is currently showing, same as the side boxes.
+  detail.onclick = () => goToProduct(product)
 }
 
 function renderLandingSideBox(el, product, label) {
