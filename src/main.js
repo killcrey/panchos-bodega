@@ -1770,7 +1770,54 @@ async function loadBodega() {
 
   setupCategoryFilters()
   renderLandingPage(products)
+  injectProductStructuredData(products)
   showLanding()
+}
+
+// SEO: per-product Product/Offer JSON-LD so Google can pick up price,
+// availability, and image for shopping rich results. There are no
+// per-product URLs (single-page, no router), so offers.url points at
+// the store root — the best available target given that constraint.
+function injectProductStructuredData(products) {
+  const items = products
+    .filter(p => p.title)
+    .map((p, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      item: {
+        '@type': 'Product',
+        name: p.title,
+        description: (p.description || '').slice(0, MAX_DESCRIPTION_LENGTH),
+        image: p.cover_art_url || undefined,
+        sku: String(p.id),
+        offers: {
+          '@type': 'Offer',
+          price: ((p.price_cents || 0) / 100).toFixed(2),
+          priceCurrency: 'USD',
+          availability: p.coming_soon
+            ? 'https://schema.org/PreOrder'
+            : (p.inventory_count != null && p.inventory_count <= 0)
+              ? 'https://schema.org/OutOfStock'
+              : 'https://schema.org/InStock',
+          url: 'https://bodega.theinvisiblepanchos.com/'
+        }
+      }
+    }))
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    itemListElement: items
+  }
+
+  let script = document.getElementById('product-jsonld')
+  if (!script) {
+    script = document.createElement('script')
+    script.id = 'product-jsonld'
+    script.type = 'application/ld+json'
+    document.head.appendChild(script)
+  }
+  script.textContent = JSON.stringify(jsonLd)
 }
 
 // INJECT 3: Category Filter Bar Logic (local DOM filtering, no re-fetch)
