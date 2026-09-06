@@ -559,12 +559,6 @@
         padding: 2rem 1rem;
       }
 
-      /* Briefly ring a card the visitor was sent to from a landing box. */
-      .product-card.landing-target {
-        border-color: #00ffcc;
-        box-shadow: 0 0 0 2px rgba(0, 255, 204, 0.5), 0 8px 32px rgba(0, 0, 0, 0.6);
-      }
-
       @media (max-width: 900px) {
         .landing-grid { grid-template-columns: 1fr; }
         .landing-carousel, .landing-detail { min-height: 260px; }
@@ -588,7 +582,79 @@
         height: 100%;
         box-sizing: border-box;
       }
-      
+
+      /* DEDICATED PRODUCT PAGE (/products/<slug>/) — same visual language as
+         a grid card (background image, border, radius) at a much larger,
+         single-column, readable size instead of a small tile. */
+      #product-view {
+        display: none;
+      }
+
+      .product-back-btn {
+        display: inline-block;
+        margin-bottom: 1rem;
+        background: transparent;
+        color: #00ffcc;
+        border: 1px solid rgba(0, 255, 204, 0.5);
+        border-radius: 4px;
+        padding: 0.5rem 1rem;
+        font-family: inherit;
+        font-size: 0.7rem;
+        cursor: pointer;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+
+      .product-back-btn:hover {
+        border-color: #00ffcc;
+        background: rgba(0, 255, 204, 0.1);
+      }
+
+      .product-view-card {
+        background-image: linear-gradient(rgba(15, 15, 15, 0.7), rgba(15, 15, 15, 0.7)), url('https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/storebackground.png');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        border-radius: 8px;
+        padding: 2rem;
+        max-width: 640px;
+        margin: 0 auto;
+        box-sizing: border-box;
+      }
+
+      .product-view-card .image-gallery img,
+      .product-view-card .no-image {
+        height: 380px;
+      }
+
+      .product-view-card h3 {
+        font-size: 1.3rem !important;
+        line-height: 1.3 !important;
+      }
+
+      .product-view-card .price {
+        font-size: 1.1rem !important;
+      }
+
+      .product-view-card .description {
+        font-size: 0.9rem !important;
+        line-height: 1.6 !important;
+      }
+
+      .product-view-card .buy-btn {
+        font-size: 0.75rem !important;
+        padding: 0.8rem !important;
+      }
+
+      @media (max-width: 700px) {
+        .product-view-card { padding: 1.25rem; }
+        .product-view-card .image-gallery img,
+        .product-view-card .no-image {
+          height: 260px;
+        }
+      }
+
       .price { color: #00ffcc; font-weight: bold; }
 
       .product-title-link {
@@ -1984,6 +2050,11 @@
     </div>
 
     <div id="store-grid">Loading the Bodega...</div>
+
+    <div id="product-view">
+      <button type="button" id="product-back-btn" class="product-back-btn">&larr; Back to the Bodega</button>
+      <div class="product-view-card" id="product-view-content"></div>
+    </div>
 
     <footer class="bodega-footer">
       <div class="footer-content">

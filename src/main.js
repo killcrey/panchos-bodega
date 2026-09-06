@@ -262,6 +262,196 @@ function isAudioUrl(url) {
   return AUDIO_URL_EXTENSIONS.some(ext => clean.endsWith(ext))
 }
 
+function computeProductFlags(product) {
+  const isFree = (product.price_cents || 0) === 0
+  const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
+  const isComingSoon = !!product.coming_soon
+  return { isFree, isSoldOut, isComingSoon, isInert: isSoldOut || isComingSoon }
+}
+
+// Shared by both the grid card and the dedicated product page — they're the
+// same product content at two different sizes/contexts, not two different
+// templates. `linkTitle` wraps the title in a self-link to /products/<slug>/
+// (the card needs that; a product already ON that page linking to itself
+// doesn't), and `truncateDescription` is the card's small-tile-friendly cap
+// that the dedicated page has no reason to apply.
+function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true } = {}) {
+  const { isFree, isInert, isComingSoon, isSoldOut } = flags
+  const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
+  const availableImages = productImages(product)
+
+  let galleryHTML = ''
+  if (availableImages.length > 0) {
+    galleryHTML = `
+      <div class="image-gallery">
+        <img src="${availableImages[0]}" alt="${product.title}" class="lightbox-trigger gallery-current-img" data-idx="0">
+        ${availableImages.length > 1 ? `
+          <button type="button" class="gallery-arrow gallery-prev" aria-label="Previous photo">&#10094;</button>
+          <button type="button" class="gallery-arrow gallery-next" aria-label="Next photo">&#10095;</button>
+          <div class="gallery-counter">1 / ${availableImages.length}</div>
+        ` : ''}
+      </div>
+    `
+  } else {
+    galleryHTML = `<div class="no-image">NO IMAGE</div>`
+  }
+
+  const descriptionText = product.description
+    ? (truncateDescription ? product.description.slice(0, MAX_DESCRIPTION_LENGTH) : product.description)
+    : ''
+  const descriptionHTML = descriptionText ? `<p class="description">${descriptionText}</p>` : ''
+
+  const sizesHTML = product.sizes
+    ? `<div class="sizes-container">${product.sizes.split(',').map(s => `<span class="size-tag">${s.trim()}</span>`).join('')}</div>`
+    : ''
+
+  let audioHTML = ''
+  const playableTracks = (product.tracklist_snippets && product.tracklist_snippets.length > 0)
+    ? [...product.tracklist_snippets].sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0))
+    : (Array.isArray(product.download_files)
+        ? product.download_files
+            .filter(f => isAudioUrl(f.url))
+            .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
+        : [])
+
+  if (playableTracks.length > 1) {
+    audioHTML = `
+      <div class="album-player-container" style="background: #111; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.3rem; border: 1px solid #333;">
+        <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title} — ${playableTracks[0].title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+          <span class="play-icon">▶</span> Play Preview
+        </button>
+        <p style="font-size: 0.5rem; color: #888; margin: 0 0 0.4rem 0; text-transform: uppercase; letter-spacing: 1px;">Preview Tracklist</p>
+        <div class="tracklist-slider" style="max-height: 66px; overflow-y: auto; padding-right: 5px;">
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            ${playableTracks.map((track) => `
+              <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
+                <span class="play-icon" style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${track.title}
+              </li>
+            `).join('')}
+          </ul>
+        </div>
+      </div>
+    `
+  } else if (playableTracks.length === 1) {
+    audioHTML = `
+      <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+        <span class="play-icon">▶</span> Play Preview
+      </button>
+    `
+  } else if (isAudioUrl(product.audio_preview_url)) {
+    audioHTML = `
+      <button class="card-play-btn" data-url="${product.audio_preview_url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
+        <span class="play-icon">▶</span> Play Preview
+      </button>
+    `
+  }
+
+  const needsSize = !isFree && !isInert && product.category === 'apparel' && product.sizes
+  const sizeOptions = needsSize ? product.sizes.split(',').map(s => s.trim()).filter(Boolean) : []
+  const sizeSelectHTML = needsSize
+    ? `<select class="card-size-select admin-input">
+        <option value="" disabled selected>Select Size</option>
+        ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>`
+    : ''
+  const upchargedSizes = sizeOptions.filter(isUpchargeSize)
+  const sizeUpchargeHintHTML = upchargedSizes.length > 0
+    ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>`
+    : ''
+
+  const titleInner = `<h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>`
+  const titleHTML = (linkTitle && product.slug)
+    ? `<a href="/products/${product.slug}/" class="product-title-link">${titleInner}</a>`
+    : titleInner
+
+  return `
+    ${galleryHTML}
+    ${titleHTML}
+    <p class="price" style="margin: 0 0 0.15rem 0; font-size: 0.65rem;">${formattedPrice}</p>
+    <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
+    ${descriptionHTML}
+    ${sizesHTML}
+    <div style="margin-top: auto;"></div>
+    ${audioHTML}
+    ${sizeSelectHTML}
+    ${sizeUpchargeHintHTML}
+    <button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
+      ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))}
+    </button>
+  `
+}
+
+// Attaches every interaction a rendered product's markup needs (lightbox,
+// gallery arrows, audio playback, buy/size-select) to whichever container
+// holds it — a grid card or the dedicated product page — since both are
+// built from the exact same renderProductMarkup output.
+function wireProductInteractions(container, product, flags) {
+  const { isFree, isInert } = flags
+  const availableImages = productImages(product)
+
+  const images = container.querySelectorAll('.lightbox-trigger')
+  images.forEach(img => {
+    img.addEventListener('click', (e) => {
+      const idx = parseInt(e.target.getAttribute('data-idx'))
+      window.openLightbox(availableImages, idx)
+    })
+  })
+
+  const galleryImg = container.querySelector('.gallery-current-img')
+  const galleryCounter = container.querySelector('.gallery-counter')
+  const galleryPrevBtn = container.querySelector('.gallery-prev')
+  const galleryNextBtn = container.querySelector('.gallery-next')
+  if (galleryImg && (galleryPrevBtn || galleryNextBtn)) {
+    const showGalleryImage = (idx) => {
+      galleryImg.src = availableImages[idx]
+      galleryImg.setAttribute('data-idx', idx)
+      if (galleryCounter) galleryCounter.textContent = `${idx + 1} / ${availableImages.length}`
+    }
+    galleryPrevBtn.addEventListener('click', () => {
+      const current = parseInt(galleryImg.getAttribute('data-idx'))
+      showGalleryImage((current - 1 + availableImages.length) % availableImages.length)
+    })
+    galleryNextBtn.addEventListener('click', () => {
+      const current = parseInt(galleryImg.getAttribute('data-idx'))
+      showGalleryImage((current + 1) % availableImages.length)
+    })
+  }
+
+  const playTriggers = container.querySelectorAll('.card-play-btn, .track-item')
+  playTriggers.forEach(trigger => {
+    trigger.addEventListener('click', () => {
+      playGlobalTrack(trigger.getAttribute('data-url'), trigger.getAttribute('data-title'), trigger)
+    })
+  })
+
+  const buyButton = container.querySelector('.buy-btn')
+  const sizeSelect = container.querySelector('.card-size-select')
+  if (!buyButton) return
+  buyButton.addEventListener('click', () => {
+    if (isInert) {
+      return
+    } else if (isFree) {
+      openFreeDownloadModal(product)
+      return
+    }
+
+    let size = null
+    if (sizeSelect) {
+      size = sizeSelect.value
+      if (!size) {
+        sizeSelect.style.borderColor = '#ff4d4d'
+        return
+      }
+    }
+
+    addToCart(product, { size })
+    updateCartBadge()
+    const originalLabel = buyButton.textContent
+    buyButton.textContent = 'Added ✓'
+    setTimeout(() => { buyButton.textContent = originalLabel }, 1200)
+  })
+}
+
 function extractStoragePath(url, bucket) {
   if (!url) return null
   const marker = `/storage/v1/object/public/${bucket}/`
@@ -1133,6 +1323,8 @@ function initAdminPortal() {
     storeGrid.style.display = 'none'
     const landingView = document.getElementById('landing-view')
     if (landingView) landingView.style.display = 'none'
+    const productView = document.getElementById('product-view')
+    if (productView) productView.style.display = 'none'
     document.querySelector('.bodega-footer').style.display = 'none'
     document.body.style.overflow = 'hidden'
     adminPortal.style.display = 'flex'
@@ -1615,216 +1807,28 @@ async function loadBodega() {
   // BUILD CARDS
   products.forEach(product => {
    try {
-    const isFree = (product.price_cents || 0) === 0
-    const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
-    const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
-    const isComingSoon = !!product.coming_soon
-    const isInert = isSoldOut || isComingSoon
+    const flags = computeProductFlags(product)
 
     const card = document.createElement('div')
     card.className = 'product-card'
     card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
     card.setAttribute('data-product-id', product.id)
-
-    // Consolidate images into an array for the lightbox
-    const availableImages = []
-    if (product.cover_art_url) availableImages.push(product.cover_art_url)
-    if (product.image_2_url) availableImages.push(product.image_2_url)
-    if (product.image_3_url) availableImages.push(product.image_3_url)
-    if (Array.isArray(product.gallery_images)) availableImages.push(...product.gallery_images)
-
-    // Shows one image at a time with click-through arrows instead of a
-    // scrolling strip. The <img> itself is swapped in place on each click
-    // rather than rebuilding the gallery, since there's only ever one
-    // element to update.
-    let galleryHTML = ''
-    if (availableImages.length > 0) {
-      galleryHTML = `
-        <div class="image-gallery">
-          <img src="${availableImages[0]}" alt="${product.title}" class="lightbox-trigger gallery-current-img" data-idx="0">
-          ${availableImages.length > 1 ? `
-            <button type="button" class="gallery-arrow gallery-prev" aria-label="Previous photo">&#10094;</button>
-            <button type="button" class="gallery-arrow gallery-next" aria-label="Next photo">&#10095;</button>
-            <div class="gallery-counter">1 / ${availableImages.length}</div>
-          ` : ''}
-        </div>
-      `
-    } else {
-      galleryHTML = `<div class="no-image">NO IMAGE</div>`
-    }
-
-    const descriptionHTML = product.description
-      ? `<p class="description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>`
-      : ''
-
-    const sizesHTML = product.sizes 
-      ? `<div class="sizes-container">${product.sizes.split(',').map(s => `<span class="size-tag">${s.trim()}</span>`).join('')}</div>`
-      : ''
-
-    let audioHTML = ''
-
-    // Prefer the saved tracklist_snippets, but fall back to deriving tracks
-    // from download_files directly (filtering to just the audio ones) — this
-    // is what makes bundles saved before this fallback existed, or bundles
-    // that mix audio with cover art/tracklist images, still get a player.
-    // Each track's own trackNumber is the source of truth for play order —
-    // the array itself isn't guaranteed to already be in that order (e.g.
-    // it reflects whatever order the files were selected in at upload time).
-    const playableTracks = (product.tracklist_snippets && product.tracklist_snippets.length > 0)
-      ? [...product.tracklist_snippets].sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0))
-      : (Array.isArray(product.download_files)
-          ? product.download_files
-              .filter(f => isAudioUrl(f.url))
-              .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
-          : [])
-
-    if (playableTracks.length > 1) {
-      audioHTML = `
-        <div class="album-player-container" style="background: #111; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.3rem; border: 1px solid #333;">
-          <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title} — ${playableTracks[0].title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
-            <span class="play-icon">▶</span> Play Preview
-          </button>
-          <p style="font-size: 0.5rem; color: #888; margin: 0 0 0.4rem 0; text-transform: uppercase; letter-spacing: 1px;">Preview Tracklist</p>
-          <div class="tracklist-slider" style="max-height: 66px; overflow-y: auto; padding-right: 5px;">
-            <ul style="list-style: none; padding: 0; margin: 0;">
-              ${playableTracks.map((track) => `
-                <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
-                  <span class="play-icon" style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${track.title}
-                </li>
-              `).join('')}
-            </ul>
-          </div>
-        </div>
-      `
-    } else if (playableTracks.length === 1) {
-      audioHTML = `
-        <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
-          <span class="play-icon">▶</span> Play Preview
-        </button>
-      `
-    } else if (isAudioUrl(product.audio_preview_url)) {
-      audioHTML = `
-        <button class="card-play-btn" data-url="${product.audio_preview_url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
-          <span class="play-icon">▶</span> Play Preview
-        </button>
-      `
-    }
-
-    const needsSize = !isFree && !isInert && product.category === 'apparel' && product.sizes
-    const sizeOptions = needsSize ? product.sizes.split(',').map(s => s.trim()).filter(Boolean) : []
-    const sizeSelectHTML = needsSize
-      ? `<select class="card-size-select admin-input">
-          <option value="" disabled selected>Select Size</option>
-          ${sizeOptions.map(s => `<option value="${s}">${s}</option>`).join('')}
-        </select>`
-      : ''
-    const upchargedSizes = sizeOptions.filter(isUpchargeSize)
-    const sizeUpchargeHintHTML = upchargedSizes.length > 0
-      ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>`
-      : ''
-
-    const titleHTML = product.slug
-      ? `<a href="/products/${product.slug}/" class="product-title-link"><h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3></a>`
-      : `<h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>`
-
-    card.innerHTML = `
-      ${galleryHTML}
-      ${titleHTML}
-      <p class="price" style="margin: 0 0 0.15rem 0; font-size: 0.65rem;">${formattedPrice}</p>
-      <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
-      ${descriptionHTML}
-      ${sizesHTML}
-      <div style="margin-top: auto;"></div>
-      ${audioHTML}
-      ${sizeSelectHTML}
-      ${sizeUpchargeHintHTML}
-      <button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
-        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))}
-      </button>
-    `
-
-    // Wire up Lightbox Clicks
-    const images = card.querySelectorAll('.lightbox-trigger')
-    images.forEach(img => {
-      img.addEventListener('click', (e) => {
-        const idx = parseInt(e.target.getAttribute('data-idx'))
-        window.openLightbox(availableImages, idx)
-      })
-    })
-
-    // Wire up gallery prev/next arrows — swap the single <img>'s src rather
-    // than scrolling, since only one photo shows at a time now.
-    const galleryImg = card.querySelector('.gallery-current-img')
-    const galleryCounter = card.querySelector('.gallery-counter')
-    const galleryPrevBtn = card.querySelector('.gallery-prev')
-    const galleryNextBtn = card.querySelector('.gallery-next')
-    if (galleryImg && (galleryPrevBtn || galleryNextBtn)) {
-      const showGalleryImage = (idx) => {
-        galleryImg.src = availableImages[idx]
-        galleryImg.setAttribute('data-idx', idx)
-        if (galleryCounter) galleryCounter.textContent = `${idx + 1} / ${availableImages.length}`
-      }
-      galleryPrevBtn.addEventListener('click', () => {
-        const current = parseInt(galleryImg.getAttribute('data-idx'))
-        showGalleryImage((current - 1 + availableImages.length) % availableImages.length)
-      })
-      galleryNextBtn.addEventListener('click', () => {
-        const current = parseInt(galleryImg.getAttribute('data-idx'))
-        showGalleryImage((current + 1) % availableImages.length)
-      })
-    }
+    card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true })
 
     // A real <a href> so search engines can follow/index it and a bare
     // middle-click/ctrl-click/copy-link still gets the real URL — but a
-    // plain left-click just updates the address bar (the card the visitor
-    // is already looking at doesn't need a full reload to prove it's there).
+    // plain left-click shows the dedicated product page in-app instead of
+    // a full reload to a page the visitor was just clicking away from.
     const titleLink = card.querySelector('.product-title-link')
     if (titleLink) {
       titleLink.addEventListener('click', (e) => {
         if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return
         e.preventDefault()
-        // Deliberately not goToProductCard here — that also re-applies the
-        // category filter, which would yank a visitor off "ALL" onto just
-        // this product's category for what looked like a plain title click.
-        updateProductUrlAndMeta(product)
+        showProductPage(product)
       })
     }
 
-    // Wire up Play triggers (routed through the global audio engine)
-    const playTriggers = card.querySelectorAll('.card-play-btn, .track-item')
-    playTriggers.forEach(trigger => {
-      trigger.addEventListener('click', () => {
-        playGlobalTrack(trigger.getAttribute('data-url'), trigger.getAttribute('data-title'), trigger)
-      })
-    })
-
-    // Wire up purchase / free download
-    const buyButton = card.querySelector('.buy-btn')
-    const sizeSelect = card.querySelector('.card-size-select')
-    buyButton.addEventListener('click', () => {
-      if (isInert) {
-        return
-      } else if (isFree) {
-        openFreeDownloadModal(product)
-        return
-      }
-
-      let size = null
-      if (sizeSelect) {
-        size = sizeSelect.value
-        if (!size) {
-          sizeSelect.style.borderColor = '#ff4d4d'
-          return
-        }
-      }
-
-      addToCart(product, { size })
-      updateCartBadge()
-      const originalLabel = buyButton.textContent
-      buyButton.textContent = 'Added ✓'
-      setTimeout(() => { buyButton.textContent = originalLabel }, 1200)
-    })
-
+    wireProductInteractions(card, product, flags)
     storeGrid.appendChild(card)
    } catch (err) {
      console.error('Skipping product due to render error:', product, err)
@@ -1841,16 +1845,12 @@ async function loadBodega() {
   // result or shared link.
   const routedProduct = matchProductFromPath(products)
   if (routedProduct) {
-    goToProductCard(routedProduct)
+    goToProduct(routedProduct)
   } else {
     showLanding()
   }
 }
 
-// SEO: per-product Product/Offer JSON-LD so Google can pick up price,
-// availability, and image for shopping rich results. There are no
-// per-product URLs (single-page, no router), so offers.url points at
-// the store root — the best available target given that constraint.
 // Matches window.location.pathname against /products/<slug>/ — the path a
 // prerendered page (see scripts/prerender-products.js) was served at.
 function matchProductFromPath(products) {
@@ -1908,7 +1908,7 @@ function resetMetaTagsToHomepage() {
 }
 
 // Shared by every path that lands a visitor on a specific product (the
-// title-link click, the landing carousel/side boxes via goToProductCard,
+// title-link click, the landing carousel/side boxes via goToProduct,
 // and the initial-load match) so the URL and tab title/meta always agree
 // with whatever product is actually on screen.
 function updateProductUrlAndMeta(product) {
@@ -1925,12 +1925,16 @@ function updateProductUrlAndMeta(product) {
 // Back/Forward doesn't touch the visible filter/scroll state (a title-link
 // click never did either) — it only needs to keep the tab title/meta honest
 // about whatever URL the visitor has landed back on.
+// Doesn't try to restore whatever filter/landing state was showing before a
+// product page — Back just goes to the dedicated product page for a product
+// URL, or the landing page otherwise. Full browsing-history fidelity (e.g.
+// returning to the exact category filter you were on) isn't attempted here.
 window.addEventListener('popstate', () => {
   const match = matchProductFromPath(allProducts)
   if (match) {
-    setProductMetaTags(match)
+    showProductPage(match)
   } else {
-    resetMetaTagsToHomepage()
+    showLanding()
   }
 })
 
@@ -2072,6 +2076,7 @@ function showLanding() {
     return
   }
 
+  hideProductPage()
   landing.style.display = 'flex'
   storeGrid.style.display = 'none'
   document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.toggle('active', b.getAttribute('data-filter') === 'home'))
@@ -2086,6 +2091,7 @@ function showStore(filter = 'all') {
   const storeGrid = document.getElementById('store-grid')
   if (!storeGrid) return
 
+  hideProductPage()
   if (landing) landing.style.display = 'none'
   stopLandingRotation()
   storeGrid.style.display = 'grid'
@@ -2095,17 +2101,51 @@ function showStore(filter = 'all') {
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-// Sends the visitor from a landing box to that product's card on the shelf.
-function goToProductCard(product) {
-  const category = (product.category || '').toString().trim().toLowerCase()
-  showStore(category || 'all')
-  updateProductUrlAndMeta(product)
+function hideProductPage() {
+  const view = document.getElementById('product-view')
+  if (view) view.style.display = 'none'
+}
 
-  const card = document.querySelector(`.product-card[data-product-id="${product.id}"]`)
-  if (!card) return
-  card.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  card.classList.add('landing-target')
-  setTimeout(() => card.classList.remove('landing-target'), 2000)
+// The dedicated single-product page — a real product-detail view, not just
+// the grid with a card scrolled into focus. Built from the same
+// renderProductMarkup/wireProductInteractions the grid card uses, just with
+// the title unlinked (a page doesn't need to link to itself) and the full
+// untruncated description (the grid card's length cap exists for a small
+// tile, which doesn't apply here).
+function showProductPage(product) {
+  if (new URLSearchParams(window.location.search).get('mode') === 'admin') return
+
+  const view = document.getElementById('product-view')
+  const content = document.getElementById('product-view-content')
+  const landing = document.getElementById('landing-view')
+  const storeGrid = document.getElementById('store-grid')
+  if (!view || !content) return
+
+  if (landing) landing.style.display = 'none'
+  if (storeGrid) storeGrid.style.display = 'none'
+  stopLandingRotation()
+  document.querySelectorAll('.filter-btn[data-filter]').forEach(b => b.classList.remove('active'))
+  closeMobileNav()
+
+  const flags = computeProductFlags(product)
+  content.innerHTML = renderProductMarkup(product, flags, { linkTitle: false, truncateDescription: false })
+  wireProductInteractions(content, product, flags)
+
+  const backBtn = document.getElementById('product-back-btn')
+  if (backBtn) {
+    backBtn.onclick = () => showStore((product.category || '').toString().trim().toLowerCase() || 'all')
+  }
+
+  view.style.display = 'block'
+  updateProductUrlAndMeta(product)
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+// Sends the visitor from a landing box (carousel photo, Latest Release,
+// Panchos Pick) or the initial /products/<slug>/ route match to that
+// product's dedicated page.
+function goToProduct(product) {
+  showProductPage(product)
 }
 
 function startLandingRotation() {
@@ -2209,7 +2249,7 @@ function renderLandingSideBox(el, product, label) {
     <span class="landing-side-title">${product.title}</span>
     <span class="landing-side-cta">Buy Now</span>
   `
-  el.onclick = () => goToProductCard(product)
+  el.onclick = () => goToProduct(product)
 }
 
 function renderLandingPage(products) {
@@ -2257,7 +2297,7 @@ function renderLandingPage(products) {
     track.querySelectorAll('img[data-product-id]').forEach(img => {
       img.addEventListener('click', () => {
         const match = landingFeatured.find(p => p.id === img.getAttribute('data-product-id'))
-        if (match) goToProductCard(match)
+        if (match) goToProduct(match)
       })
     })
 
