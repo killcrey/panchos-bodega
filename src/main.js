@@ -133,16 +133,31 @@ async function loadAdminEmailCaptures() {
     return
   }
 
+  // One row per unique email — someone who's claimed several different free
+  // items is one engaged fan, not several different people. `captures` is
+  // already newest-first, so the first row seen per email is their most
+  // recent claim.
+  const byEmail = new Map()
+  for (const capture of captures) {
+    if (!byEmail.has(capture.email)) {
+      byEmail.set(capture.email, { email: capture.email, mostRecent: capture.created_at, products: [] })
+    }
+    const title = capture.products?.title || 'Deleted product'
+    const entry = byEmail.get(capture.email)
+    if (!entry.products.includes(title)) entry.products.push(title)
+  }
+  const uniqueCaptures = Array.from(byEmail.values())
+
   listEl.innerHTML = `
     <p style="font-size: 0.6rem; color: #e8b923; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 0.5rem 0;">
-      ${captures.length} capture${captures.length === 1 ? '' : 's'}
+      ${uniqueCaptures.length} unique email${uniqueCaptures.length === 1 ? '' : 's'} — ${captures.length} claim${captures.length === 1 ? '' : 's'}
     </p>
-    ${captures.map(capture => `
+    ${uniqueCaptures.map(entry => `
       <div class="tip-row">
         <div class="tip-row-meta">
-          <strong style="color: #ccc;">${capture.email}</strong>
-          <br>${capture.products?.title || 'Deleted product'}
-          <br>${capture.created_at ? new Date(capture.created_at).toLocaleDateString() : ''}
+          <strong style="color: #ccc;">${entry.email}</strong>
+          <br>${entry.products.join(', ')}
+          <br>${entry.mostRecent ? new Date(entry.mostRecent).toLocaleDateString() : ''}
         </div>
       </div>
     `).join('')}
