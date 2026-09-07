@@ -17,9 +17,16 @@ const cryptoProvider = Stripe.createSubtleCryptoProvider()
 // shared Resend Audience. RESEND_CONTACTS_API_KEY is a separate, more
 // broadly-scoped key from RESEND_API_KEY (confirmed live: the latter is
 // send-only and 401s on any Audiences/Contacts call).
-async function addContactToAudience(email: string) {
+// `audienceIdEnvVar` defaults to the shared list every source feeds
+// (RESEND_AUDIENCE_ID); the purchase-confirmation call site also passes
+// RESEND_BUYERS_AUDIENCE_ID so real buyers land in a second, addressable
+// list — Resend's Contacts API has no per-contact tag/property that
+// persists (confirmed live: sending `properties` on create/update round-
+// trips back as `{}`), so a separate Audience is the only real
+// segmentation primitive it has.
+async function addContactToAudience(email: string, audienceIdEnvVar: string = 'RESEND_AUDIENCE_ID') {
   const resendKey = Deno.env.get('RESEND_CONTACTS_API_KEY')
-  const audienceId = Deno.env.get('RESEND_AUDIENCE_ID')
+  const audienceId = Deno.env.get(audienceIdEnvVar)
   if (!resendKey || !audienceId) return
 
   try {
@@ -32,7 +39,7 @@ async function addContactToAudience(email: string) {
       body: JSON.stringify({ email, unsubscribed: false }),
     })
     if (!res.ok) {
-      console.error(`Failed to add ${email} to Resend audience:`, await res.text())
+      console.error(`Failed to add ${email} to Resend audience (${audienceIdEnvVar}):`, await res.text())
     }
   } catch (err) {
     console.error('Failed to add contact to Resend audience:', err)
@@ -357,8 +364,23 @@ serve(async (req) => {
     return new Response(`Webhook signature verification failed: ${err.message}`, { status: 400 })
   }
 
-  if (event.type === 'checkout.session.completed') {
+  // checkout.session.completed fires the moment the customer finishes the
+  // checkout flow, which for a card payment is also the moment it's paid —
+  // but for delayed-notification payment methods (some bank debits, buy-
+  // now-pay-later), the *session* can complete while payment_status is
+  // still 'unpaid', with the actual result arriving later as
+  // async_payment_succeeded/async_payment_failed. Fulfilling on
+  // "completed" alone, without checking payment_status, would ship/deliver
+  // before money has actually arrived if any such method is ever enabled.
+  if (event.type === 'checkout.session.completed' || event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session
+
+    if (session.payment_status !== 'paid') {
+      // Not paid yet — if this ever resolves, Stripe sends
+      // async_payment_succeeded (handled above) or async_payment_failed
+      // (nothing to do — no order was ever created for this session).
+      return new Response(JSON.stringify({ received: true, notYetPaid: true }), { status: 200 })
+    }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -559,6 +581,10 @@ serve(async (req) => {
       const metadata = session.metadata || {}
       const hasShipping = !!metadata.shipping_street1
       await addContactToAudience(session.customer_details.email)
+      // Real purchase (not a tip) — also lands them in Buyers specifically,
+      // so a future campaign can target people who've actually paid, not
+      // the whole undifferentiated list.
+      await addContactToAudience(session.customer_details.email, 'RESEND_BUYERS_AUDIENCE_ID')
       await sendOrderConfirmationEmail(session.customer_details.email, {
         lineRows,
         downloadBlocks,
