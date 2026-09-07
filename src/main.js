@@ -519,10 +519,31 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
     })
   }
 
+  // audio-vault is a private bucket — the stored URL on data-url is no
+  // longer directly playable, so a fresh short-lived signed URL is fetched
+  // right before playback instead of ever exposing a permanent public link.
   const playTriggers = container.querySelectorAll('.card-play-btn, .track-item')
   playTriggers.forEach(trigger => {
-    trigger.addEventListener('click', () => {
-      playGlobalTrack(trigger.getAttribute('data-url'), trigger.getAttribute('data-title'), trigger)
+    trigger.addEventListener('click', async () => {
+      // Plain opacity dimming, not a text-content swap — these triggers
+      // contain a styled child <span> icon, and setting .textContent to
+      // "restore" it afterward would flatten that markup permanently.
+      if (trigger.dataset.loading === 'true') return
+      trigger.dataset.loading = 'true'
+      trigger.style.opacity = '0.6'
+
+      try {
+        const { data, error } = await supabase.functions.invoke('get-playback-url', {
+          body: { url: trigger.getAttribute('data-url') }
+        })
+        if (error || !data?.url) throw error || new Error('No playback URL returned.')
+        playGlobalTrack(data.url, trigger.getAttribute('data-title'), trigger)
+      } catch (err) {
+        console.error('Failed to get playback URL:', err)
+      } finally {
+        trigger.dataset.loading = 'false'
+        trigger.style.opacity = ''
+      }
     })
   })
 

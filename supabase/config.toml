@@ -447,3 +447,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/sync-game-signups/deno.json"
 entrypoint = "./functions/sync-game-signups/index.ts"
+
+[functions.get-playback-url]
+enabled = true
+verify_jwt = false
+import_map = "./functions/get-playback-url/deno.json"
+entrypoint = "./functions/get-playback-url/index.ts"
