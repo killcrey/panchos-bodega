@@ -46,6 +46,28 @@ async function addContactToAudience(email: string, audienceIdEnvVar: string = 'R
   }
 }
 
+// Mirrors the same helper in free-download/index.ts. Resend has no managed
+// unsubscribe endpoint for transactional /emails sends (only Broadcasts
+// honor a contact's `unsubscribed` flag — confirmed against Resend's own
+// docs, which say to build and host this yourself), so this signs an
+// email with UNSUBSCRIBE_SECRET and points at the `unsubscribe` function,
+// which verifies the signature and flips `unsubscribed: true` across every
+// Resend Audience at once.
+async function buildUnsubscribeUrl(email: string): Promise<string> {
+  const secret = Deno.env.get('UNSUBSCRIBE_SECRET') ?? ''
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(email.toLowerCase()))
+  const token = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+  const base = Deno.env.get('SUPABASE_URL') ?? ''
+  return `${base}/functions/v1/unsubscribe?email=${encodeURIComponent(email)}&token=${token}`
+}
+
 // Buys the actual shipping label from Shippo using the exact rate the buyer
 // already paid for, and writes the result onto the order row. A failure here
 // never fails the webhook — the payment already succeeded, so the order
@@ -231,6 +253,8 @@ async function sendOrderConfirmationEmail(
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
+  const unsubscribeUrl = await buildUnsubscribeUrl(email)
+
   const itemRows = data.lineRows.map(row => `
     <tr>
       <td style="padding: 0.5rem 0; color: #fff; font-size: 0.85rem;">${row.title}${row.quantity > 1 ? ` &times; ${row.quantity}` : ''}</td>
@@ -282,6 +306,7 @@ async function sendOrderConfirmationEmail(
       ${addressHTML}
       ${customMessageBlockHTML(data.customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.75rem;">— The Invisible Panchos</p>
+      <p style="margin-top: 1rem; color: #555; font-size: 0.65rem;"><a href="${unsubscribeUrl}" style="color: #555;">Unsubscribe from our mailing list</a></p>
     </div>
   `
 
@@ -296,7 +321,11 @@ async function sendOrderConfirmationEmail(
         from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
         to: [email],
         subject: 'Your Panchos Bodega order confirmation',
-        html
+        html,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+        }
       })
     })
   } catch (err) {
@@ -307,6 +336,8 @@ async function sendOrderConfirmationEmail(
 async function sendTipThankYouEmail(email: string, amountCents: number, name: string | null, customMessage?: string | null) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
+
+  const unsubscribeUrl = await buildUnsubscribeUrl(email)
 
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #111; padding: 2rem; border: 1px solid #333;">
@@ -324,6 +355,7 @@ async function sendTipThankYouEmail(email: string, amountCents: number, name: st
       </p>
       ${customMessageBlockHTML(customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.75rem;">&mdash; The Invisible Panchos</p>
+      <p style="margin-top: 1rem; color: #555; font-size: 0.65rem;"><a href="${unsubscribeUrl}" style="color: #555;">Unsubscribe from our mailing list</a></p>
     </div>
   `
 
@@ -338,7 +370,11 @@ async function sendTipThankYouEmail(email: string, amountCents: number, name: st
         from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
         to: [email],
         subject: 'Thanks for the tip',
-        html
+        html,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+        }
       })
     })
   } catch (err) {

@@ -36,6 +36,28 @@ async function addContactToAudience(email: string) {
   }
 }
 
+// Mirrors the same helper in stripe-webhook/index.ts. Resend has no managed
+// unsubscribe endpoint for transactional /emails sends (only Broadcasts
+// honor a contact's `unsubscribed` flag — confirmed against Resend's own
+// docs, which say to build and host this yourself), so this signs an email
+// with UNSUBSCRIBE_SECRET and points at the `unsubscribe` function, which
+// verifies the signature and flips `unsubscribed: true` across every
+// Resend Audience at once.
+async function buildUnsubscribeUrl(email: string): Promise<string> {
+  const secret = Deno.env.get('UNSUBSCRIBE_SECRET') ?? ''
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(email.toLowerCase()))
+  const token = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+  const base = Deno.env.get('SUPABASE_URL') ?? ''
+  return `${base}/functions/v1/unsubscribe?email=${encodeURIComponent(email)}&token=${token}`
+}
+
 function extractStoragePath(url: string, bucket: string): string | null {
   if (!url) return null
   const marker = `/storage/v1/object/public/${bucket}/`
@@ -60,6 +82,8 @@ async function sendDownloadEmail(email: string, title: string, downloadUrl: stri
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
+  const unsubscribeUrl = await buildUnsubscribeUrl(email)
+
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
       <h2 style="letter-spacing: 1px;">Thanks for grabbing "${title}"!</h2>
@@ -73,6 +97,7 @@ async function sendDownloadEmail(email: string, title: string, downloadUrl: stri
       <p><strong>Multiple files?</strong> This downloads as a single .ZIP file — unzip it to get everything inside.</p>
       ${customMessageBlockHTML(customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.85rem;">— The Invisible Panchos</p>
+      <p style="margin-top: 1rem; color: #999; font-size: 0.7rem;"><a href="${unsubscribeUrl}" style="color: #999;">Unsubscribe from our mailing list</a></p>
     </div>
   `
 
@@ -87,7 +112,11 @@ async function sendDownloadEmail(email: string, title: string, downloadUrl: stri
         from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
         to: [email],
         subject: `Your download: ${title}`,
-        html
+        html,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+        }
       })
     })
   } catch (err) {
@@ -105,6 +134,8 @@ async function sendTrackListEmail(email: string, title: string, tracks: { title:
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
+  const unsubscribeUrl = await buildUnsubscribeUrl(email)
+
   const trackRows = tracks.map((t, i) => `
     <p style="margin: 0.5rem 0;">
       <a href="${t.url}" style="color: #000;">${i + 1}. ${t.title}</a>
@@ -121,6 +152,7 @@ async function sendTrackListEmail(email: string, title: string, tracks: { title:
       <p><strong>iPhone / iPad (Safari):</strong> Tap and hold a link, then choose "Download Linked File" — it saves to your Files app.</p>
       ${customMessageBlockHTML(customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.85rem;">— The Invisible Panchos</p>
+      <p style="margin-top: 1rem; color: #999; font-size: 0.7rem;"><a href="${unsubscribeUrl}" style="color: #999;">Unsubscribe from our mailing list</a></p>
     </div>
   `
 
@@ -135,7 +167,11 @@ async function sendTrackListEmail(email: string, title: string, tracks: { title:
         from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
         to: [email],
         subject: `Your download: ${title}`,
-        html
+        html,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+        }
       })
     })
   } catch (err) {
