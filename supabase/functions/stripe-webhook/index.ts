@@ -426,6 +426,12 @@ serve(async (req) => {
         if (email) {
           await sendTipThankYouEmail(email, amountCents, tipperName, siteSettings?.tip_thank_you_message)
           await addContactToAudience(email)
+          // A tipper is its own segment, distinct from Buyers — someone who
+          // gave money with no product, no download, and nothing shipped is
+          // a strong fan signal on its own, not a lesser version of a
+          // purchase. Deliberately not deduped against Buyers: someone who
+          // both tips and buys ends up in both audiences.
+          await addContactToAudience(email, 'RESEND_TIPPERS_AUDIENCE_ID')
         }
       } catch (err) {
         console.error('Failed to record tip for session', session.id, err)
