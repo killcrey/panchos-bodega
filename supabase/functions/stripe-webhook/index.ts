@@ -196,6 +196,18 @@ function money(cents: number | null | undefined): string {
   return `$${(((cents ?? 0)) / 100).toFixed(2)}`
 }
 
+// Admin-editable note (site_settings) appended near the sign-off of the
+// order confirmation and tip thank-you emails — blank/null means no note,
+// not an error, so every email works the same whether or not one is set.
+function customMessageBlockHTML(message: string | null | undefined): string {
+  if (!message) return ''
+  return `
+    <div style="margin: 1.5rem 0 0 0; padding-top: 1.5rem; border-top: 1px solid #444;">
+      <p style="color: #ccc; font-size: 0.85rem; font-style: italic; line-height: 1.6; margin: 0;">${message}</p>
+    </div>
+  `
+}
+
 async function sendOrderConfirmationEmail(
   email: string,
   data: {
@@ -206,6 +218,7 @@ async function sendOrderConfirmationEmail(
     shippingCents: number | null
     totalCents: number | null
     shippingAddress: { name: string; street1: string; street2: string; city: string; state: string; zip: string; country: string } | null
+    customMessage?: string | null
   }
 ) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
@@ -260,6 +273,7 @@ async function sendOrderConfirmationEmail(
       </table>
       ${downloadsHTML}
       ${addressHTML}
+      ${customMessageBlockHTML(data.customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.75rem;">— The Invisible Panchos</p>
     </div>
   `
@@ -283,7 +297,7 @@ async function sendOrderConfirmationEmail(
   }
 }
 
-async function sendTipThankYouEmail(email: string, amountCents: number, name: string | null) {
+async function sendTipThankYouEmail(email: string, amountCents: number, name: string | null, customMessage?: string | null) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
@@ -301,6 +315,7 @@ async function sendTipThankYouEmail(email: string, amountCents: number, name: st
         No album to download and nothing shipping out on this one — just us, genuinely grateful.
         Every dollar goes straight back into making the next thing.
       </p>
+      ${customMessageBlockHTML(customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.75rem;">&mdash; The Invisible Panchos</p>
     </div>
   `
@@ -350,6 +365,15 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    // Fetched once regardless of which branch below actually runs (tip vs.
+    // purchase are mutually exclusive per event) — blank/missing is a
+    // normal, expected state (no admin-set note), not an error.
+    const { data: siteSettings } = await supabase
+      .from('site_settings')
+      .select('purchase_thank_you_message, tip_thank_you_message')
+      .eq('id', true)
+      .single()
+
     // Tips short-circuit everything below: there's no product row behind the
     // ad-hoc Stripe product, nothing to fulfill, ship, or decrement. Handled
     // before the line-item loop specifically so decrement_inventory never
@@ -378,7 +402,7 @@ serve(async (req) => {
         }
 
         if (email) {
-          await sendTipThankYouEmail(email, amountCents, tipperName)
+          await sendTipThankYouEmail(email, amountCents, tipperName, siteSettings?.tip_thank_you_message)
           await addContactToAudience(email)
         }
       } catch (err) {
@@ -550,7 +574,8 @@ serve(async (req) => {
           state: metadata.shipping_state || '',
           zip: metadata.shipping_zip || '',
           country: metadata.shipping_country || ''
-        } : null
+        } : null,
+        customMessage: siteSettings?.purchase_thank_you_message
       })
     }
   }

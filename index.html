@@ -2326,6 +2326,7 @@
               <button type="button" class="admin-tab-btn" data-tab="orders">Orders</button>
               <button type="button" class="admin-tab-btn" data-tab="tips">Tips</button>
               <button type="button" class="admin-tab-btn" data-tab="email-captures">Email Captures</button>
+              <button type="button" class="admin-tab-btn" data-tab="messages">Messages</button>
             </div>
             <div class="admin-tab-panel" data-tab-panel="inventory">
               <div id="admin-inventory-list"></div>
@@ -2338,6 +2339,16 @@
             </div>
             <div class="admin-tab-panel" data-tab-panel="email-captures" style="display: none;">
               <div id="admin-email-captures-list"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="messages" style="display: none;">
+              <label class="admin-file-label" for="settings-purchase-message">Purchase &amp; Free Download Thank You Message</label>
+              <p class="field-hint">Appended near the end of the order confirmation email and the free download email. Leave blank to send those emails as-is, with no added note.</p>
+              <textarea id="settings-purchase-message" class="admin-input" rows="4" placeholder="e.g. Thanks for supporting independent music — this keeps the next record possible."></textarea>
+              <label class="admin-file-label" for="settings-tip-message">Tip Thank You Message</label>
+              <p class="field-hint">Appended near the end of the tip thank-you email only.</p>
+              <textarea id="settings-tip-message" class="admin-input" rows="4" placeholder="e.g. Every dollar goes straight back into the next record."></textarea>
+              <button type="button" id="settings-save-btn" class="admin-btn">Save Messages</button>
+              <div id="settings-status" class="field-status"></div>
             </div>
           </div>
         </div>

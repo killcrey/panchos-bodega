@@ -164,6 +164,29 @@ async function loadAdminEmailCaptures() {
   `
 }
 
+// The two admin-editable notes appended to automated emails — read by
+// stripe-webhook (order confirmation + tip thank-you) and free-download
+// (download email) at send time. Blank means "no note", not an error.
+async function loadAdminSettings() {
+  const purchaseInput = document.getElementById('settings-purchase-message')
+  const tipInput = document.getElementById('settings-tip-message')
+  if (!purchaseInput || !tipInput) return
+
+  const { data, error } = await supabase
+    .from('site_settings')
+    .select('purchase_thank_you_message, tip_thank_you_message')
+    .eq('id', true)
+    .single()
+
+  if (error) {
+    console.error('Failed to load site settings:', error)
+    return
+  }
+
+  purchaseInput.value = data?.purchase_thank_you_message || ''
+  tipInput.value = data?.tip_thank_you_message || ''
+}
+
 async function loadAdminOrders() {
   const listEl = document.getElementById('admin-orders-list')
   if (!listEl) return
@@ -1418,6 +1441,7 @@ function initAdminPortal() {
       loadAdminOrders()
       loadAdminTips()
       loadAdminEmailCaptures()
+      loadAdminSettings()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
@@ -1451,6 +1475,42 @@ function initAdminPortal() {
       })
     })
   })
+
+  const settingsSaveBtn = document.getElementById('settings-save-btn')
+  if (settingsSaveBtn) {
+    settingsSaveBtn.addEventListener('click', async () => {
+      const statusEl = document.getElementById('settings-status')
+      settingsSaveBtn.disabled = true
+      statusEl.textContent = 'Saving...'
+      statusEl.style.color = '#e8b923'
+
+      const purchaseMessage = document.getElementById('settings-purchase-message').value.trim() || null
+      const tipMessage = document.getElementById('settings-tip-message').value.trim() || null
+
+      // .update() alone doesn't error when RLS blocks it or the row simply
+      // doesn't match — it silently succeeds having touched zero rows.
+      // .select() forces the actual affected row(s) back so a no-op save
+      // can be told apart from a real one, instead of reporting "Saved."
+      // when nothing was written.
+      const { data, error } = await supabase
+        .from('site_settings')
+        .update({ purchase_thank_you_message: purchaseMessage, tip_thank_you_message: tipMessage })
+        .eq('id', true)
+        .select()
+
+      if (error) {
+        statusEl.textContent = error.message
+        statusEl.style.color = '#ff4d4d'
+      } else if (!data || data.length === 0) {
+        statusEl.textContent = 'Nothing was saved — no matching settings row found.'
+        statusEl.style.color = '#ff4d4d'
+      } else {
+        statusEl.textContent = 'Saved.'
+        statusEl.style.color = '#00ffcc'
+      }
+      settingsSaveBtn.disabled = false
+    })
+  }
 
   const uploadForm = document.getElementById('upload-form')
   const uploadStatus = document.getElementById('upload-status')

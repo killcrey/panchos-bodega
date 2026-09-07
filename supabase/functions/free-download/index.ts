@@ -44,7 +44,19 @@ function extractStoragePath(url: string, bucket: string): string | null {
   return decodeURIComponent(url.slice(idx + marker.length))
 }
 
-async function sendDownloadEmail(email: string, title: string, downloadUrl: string) {
+// Mirrors the same helper in stripe-webhook/index.ts — an admin-editable
+// note (site_settings.purchase_thank_you_message) appended near the sign-off.
+// Blank/null means no note, not an error.
+function customMessageBlockHTML(message: string | null | undefined): string {
+  if (!message) return ''
+  return `
+    <div style="margin: 1.5rem 0 0 0; padding-top: 1.5rem; border-top: 1px solid #444;">
+      <p style="color: #666; font-size: 0.85rem; font-style: italic; line-height: 1.6; margin: 0;">${message}</p>
+    </div>
+  `
+}
+
+async function sendDownloadEmail(email: string, title: string, downloadUrl: string, customMessage?: string | null) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
@@ -59,6 +71,7 @@ async function sendDownloadEmail(email: string, title: string, downloadUrl: stri
       <p><strong>Mac (Safari):</strong> Right-click the button and choose "Download Linked File."</p>
       <p><strong>iPhone / iPad (Safari):</strong> Tap and hold the button, then choose "Download Linked File" — it saves to your Files app.</p>
       <p><strong>Multiple files?</strong> This downloads as a single .ZIP file — unzip it to get everything inside.</p>
+      ${customMessageBlockHTML(customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.85rem;">— The Invisible Panchos</p>
     </div>
   `
@@ -88,7 +101,7 @@ async function sendDownloadEmail(email: string, title: string, downloadUrl: stri
 // email every track's own signed link — the buyer downloading right now in
 // the browser still gets a single assembled zip (see below), this is just
 // the fallback for opening the email later or on another device.
-async function sendTrackListEmail(email: string, title: string, tracks: { title: string; url: string }[]) {
+async function sendTrackListEmail(email: string, title: string, tracks: { title: string; url: string }[], customMessage?: string | null) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
@@ -106,6 +119,7 @@ async function sendTrackListEmail(email: string, title: string, tracks: { title:
       <p><strong>Windows / Android:</strong> Right-click (or tap and hold) a link and choose "Save Link As" / "Download Link."</p>
       <p><strong>Mac (Safari):</strong> Right-click a link and choose "Download Linked File."</p>
       <p><strong>iPhone / iPad (Safari):</strong> Tap and hold a link, then choose "Download Linked File" — it saves to your Files app.</p>
+      ${customMessageBlockHTML(customMessage)}
       <p style="margin-top: 2rem; color: #666; font-size: 0.85rem;">— The Invisible Panchos</p>
     </div>
   `
@@ -156,6 +170,13 @@ serve(async (req) => {
       .eq('id', productId)
       .single()
 
+    // Blank/missing is a normal, expected state (no admin-set note), not an error.
+    const { data: siteSettings } = await supabase
+      .from('site_settings')
+      .select('purchase_thank_you_message')
+      .eq('id', true)
+      .single()
+
     if (productError || !product) {
       throw new Error("Product not found.")
     }
@@ -200,7 +221,7 @@ serve(async (req) => {
 
       if (error) throw error
 
-      await sendDownloadEmail(email, product.title || 'your download', data.signedUrl)
+      await sendDownloadEmail(email, product.title || 'your download', data.signedUrl, siteSettings?.purchase_thank_you_message)
 
       return new Response(
         JSON.stringify({ downloadUrl: data.signedUrl }),
@@ -222,7 +243,7 @@ serve(async (req) => {
       if (error) throw error
       trackLinks.push({ title: items[i]?.title || items[i]?.name || `File ${i + 1}`, url: data.signedUrl })
     }
-    await sendTrackListEmail(email, product.title || 'your download', trackLinks)
+    await sendTrackListEmail(email, product.title || 'your download', trackLinks, siteSettings?.purchase_thank_you_message)
 
     const zip = new JSZip()
     for (const path of targetFilenames) {
