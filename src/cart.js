@@ -39,7 +39,11 @@ function saveCart(cart) {
 // product: a row from the `products` table. size is required when the
 // product has sizes. Quantity is capped at the product's tracked inventory,
 // if any.
-export function addToCart(product, { size = null, quantity = 1 } = {}) {
+// offerAmountCents is only passed for pricing_mode = 'offer_based' — the
+// buyer's chosen price stands in for product.price_cents. Never trusted as
+// final: create-checkout-session re-clamps it server-side against the
+// product's own offer_min_cents/offer_max_cents before charging anything.
+export function addToCart(product, { size = null, quantity = 1, offerAmountCents = null } = {}) {
   const cart = getCart()
   const key = cartKey(product.id, size)
   const existing = cart.find(item => item.key === key)
@@ -47,6 +51,10 @@ export function addToCart(product, { size = null, quantity = 1 } = {}) {
 
   if (existing) {
     existing.quantity = Math.min(existing.quantity + quantity, cap)
+    if (offerAmountCents != null) {
+      existing.priceCents = offerAmountCents + (isUpchargeSize(size) ? SIZE_UPCHARGE_CENTS : 0)
+      existing.offerAmountCents = offerAmountCents
+    }
   } else {
     // Only used client-side as a "does this ship" hint (cartHasPhysicalItems)
     // — checkout always re-resolves both Printful ids fresh from the
@@ -55,11 +63,14 @@ export function addToCart(product, { size = null, quantity = 1 } = {}) {
       ? (product.printful_variant_map[size || 'default']?.syncVariantId || null)
       : null
 
+    const basePriceCents = offerAmountCents != null ? offerAmountCents : product.price_cents
+
     cart.push({
       key,
       productId: product.id,
       title: product.title,
-      priceCents: product.price_cents + (isUpchargeSize(size) ? SIZE_UPCHARGE_CENTS : 0),
+      priceCents: basePriceCents + (isUpchargeSize(size) ? SIZE_UPCHARGE_CENTS : 0),
+      offerAmountCents,
       category: product.category || null,
       size,
       quantity: Math.min(quantity, cap),

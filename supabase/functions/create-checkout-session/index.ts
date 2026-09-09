@@ -29,7 +29,7 @@ serve(async (req) => {
     const productIds = [...new Set(items.map((i: any) => i.productId))]
     const { data: products, error: productsError } = await supabase
       .from('products')
-      .select('id, title, price_cents, category, stripe_product_id, published, inventory_count, weight_oz, sizes, printful_variant_map')
+      .select('id, title, price_cents, category, stripe_product_id, published, inventory_count, weight_oz, sizes, printful_variant_map, pricing_mode, offer_min_cents, offer_max_cents')
       .in('id', productIds)
 
     if (productsError) throw productsError
@@ -88,7 +88,15 @@ function isUpchargeSize(size: string | null | undefined): boolean {
       if (!product) throw new Error('One of the items in your cart no longer exists.')
       if (!product.published) throw new Error(`"${product.title}" is not available.`)
       if (!product.stripe_product_id) throw new Error(`"${product.title}" has no checkout configured yet.`)
-      if (!product.price_cents || product.price_cents <= 0) throw new Error(`"${product.title}" has no price set.`)
+      // Services never reach the cart at all — Offer Based/Reserve for a
+      // service go through create-product-payment-session's standalone
+      // Stripe session instead, which has no shipping/inventory/line-item
+      // concept to fit into. This is a defense-in-depth check; the
+      // storefront never routes a service here in the first place.
+      if (product.category === 'services') throw new Error(`"${product.title}" isn't purchased through the cart.`)
+      if (product.pricing_mode !== 'offer_based' && (!product.price_cents || product.price_cents <= 0)) {
+        throw new Error(`"${product.title}" has no price set.`)
+      }
 
       const quantity = Math.max(1, parseInt(item.quantity, 10) || 1)
       if (product.inventory_count != null && product.inventory_count < quantity) {
@@ -125,7 +133,18 @@ function isUpchargeSize(size: string | null | undefined): boolean {
         }
       }
 
-      const unitAmountCents = product.price_cents + (isUpchargeSize(item.size) ? SIZE_UPCHARGE_CENTS : 0)
+      // Offer Based never trusts the client's chosen amount outright — it's
+      // clamped to the admin-set bounds server-side, same "never trust the
+      // client" discipline as the size upcharge just below.
+      let baseAmountCents = product.price_cents
+      if (product.pricing_mode === 'offer_based') {
+        const min = product.offer_min_cents ?? 100
+        const max = product.offer_max_cents ?? 100000
+        const requested = Math.round(Number(item.offerAmountCents))
+        if (!Number.isFinite(requested)) throw new Error(`Missing offer amount for "${product.title}".`)
+        baseAmountCents = Math.min(Math.max(requested, min), max)
+      }
+      const unitAmountCents = baseAmountCents + (isUpchargeSize(item.size) ? SIZE_UPCHARGE_CENTS : 0)
 
       lineItems.push({
         price_data: {

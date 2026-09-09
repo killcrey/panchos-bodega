@@ -382,6 +382,59 @@ async function sendTipThankYouEmail(email: string, amountCents: number, name: st
   }
 }
 
+// Covers both Reserve and a service's Offer Based payment — the only real
+// difference between them is the copy, so one template branches on
+// pricingMode rather than duplicating the whole email.
+async function sendProductPaymentEmail(email: string, amountCents: number, productTitle: string, pricingMode: string) {
+  const resendKey = Deno.env.get('RESEND_API_KEY')
+  if (!resendKey) return
+
+  const unsubscribeUrl = await buildUnsubscribeUrl(email)
+  const isReserve = pricingMode === 'reserve'
+
+  const html = `
+    <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #111; padding: 2rem; border: 1px solid #333;">
+      <h2 style="letter-spacing: 1px; color: #fff; margin: 0 0 0.25rem 0;">${isReserve ? 'Reservation Confirmed' : 'Payment Received'}</h2>
+      <p style="color: #888; font-size: 0.8rem; margin: 0 0 1.5rem 0;">${productTitle}</p>
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="padding: 0.5rem 0 0 0; color: #fff; font-size: 0.95rem; font-weight: bold; border-top: 1px solid #444;">${isReserve ? 'Deposit' : 'Amount'}</td>
+          <td style="padding: 0.5rem 0 0 0; color: #00ffcc; font-size: 0.95rem; font-weight: bold; text-align: right; border-top: 1px solid #444;">${money(amountCents)}</td>
+        </tr>
+      </table>
+      <p style="margin: 1.5rem 0 0 0; color: #ccc; font-size: 0.8rem; line-height: 1.6;">
+        ${isReserve
+          ? 'This is a non-refundable deposit, applied toward the final price once we work out the details. We\'ll follow up by email.'
+          : 'Thanks for the support — we\'ll follow up by email to sort out the details.'}
+      </p>
+      <p style="margin-top: 2rem; color: #666; font-size: 0.75rem;">&mdash; The Invisible Panchos</p>
+      <p style="margin-top: 1rem; color: #555; font-size: 0.65rem;"><a href="${unsubscribeUrl}" style="color: #555;">Unsubscribe from our mailing list</a></p>
+    </div>
+  `
+
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${resendKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
+        to: [email],
+        subject: isReserve ? 'Your reservation is confirmed' : 'We got your offer',
+        html,
+        headers: {
+          'List-Unsubscribe': `<${unsubscribeUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+        }
+      })
+    })
+  } catch (err) {
+    console.error('Failed to send product payment email:', err)
+  }
+}
+
 serve(async (req) => {
   const signature = req.headers.get('Stripe-Signature')
   const body = await req.text()
@@ -471,6 +524,48 @@ serve(async (req) => {
         }
       } catch (err) {
         console.error('Failed to record tip for session', session.id, err)
+      }
+
+      return new Response(JSON.stringify({ received: true }), { status: 200 })
+    }
+
+    // Reserve and a service's Offer Based both land here — same "no real
+    // product row behind this session, nothing to fulfill/ship/decrement"
+    // reasoning as the tip branch above, just for a different ad-hoc
+    // session shape (see create-product-payment-session).
+    if (session.metadata?.productPayment === 'true') {
+      try {
+        const amountCents = session.amount_total ?? 0
+        const email = session.customer_details?.email || null
+        const name = session.customer_details?.name || null
+        const productTitle = session.metadata.productTitle || null
+        const pricingMode = session.metadata.pricingMode || 'offer_based'
+
+        const { error: insertError } = await supabase.from('product_payments').insert({
+          stripe_session_id: session.id,
+          product_id: session.metadata.productId || null,
+          product_title: productTitle,
+          pricing_mode: pricingMode,
+          amount_cents: amountCents,
+          email,
+          name,
+        })
+
+        if (insertError) {
+          if (insertError.code === '23505') {
+            return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 })
+          }
+          throw insertError
+        }
+
+        if (email) {
+          await sendProductPaymentEmail(email, amountCents, productTitle || 'Custom Service', pricingMode)
+          await addContactToAudience(email)
+          // Real revenue, same as any other purchase — lands in Buyers too.
+          await addContactToAudience(email, 'RESEND_BUYERS_AUDIENCE_ID')
+        }
+      } catch (err) {
+        console.error('Failed to record product payment for session', session.id, err)
       }
 
       return new Response(JSON.stringify({ received: true }), { status: 200 })

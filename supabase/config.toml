@@ -465,3 +465,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/submit-service-inquiry/deno.json"
 entrypoint = "./functions/submit-service-inquiry/index.ts"
+
+[functions.create-product-payment-session]
+enabled = true
+verify_jwt = false
+import_map = "./functions/create-product-payment-session/deno.json"
+entrypoint = "./functions/create-product-payment-session/index.ts"

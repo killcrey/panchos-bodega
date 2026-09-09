@@ -29,6 +29,18 @@ async function secureTheBag() {
     return
   }
 
+  // A Reserve deposit or a service's Offer Based payment — same reasoning
+  // as tips above, nothing to unlock here either.
+  if (urlParams.get('service') === '1') {
+    statusArea.innerHTML = `
+      <h2 style="color: #00ffcc;">THANK YOU</h2>
+      <p>Your payment went through. A receipt is on its way to your email, and we'll follow up soon.</p>
+      <p style="font-size: 0.8rem; color: #888; margin-top: 1rem;">Nothing to download here. Back to the Bodega whenever you're ready.</p>
+      <a href="/" class="btn" style="margin-top: 1.5rem;">Back to the Bodega</a>
+    `
+    return
+  }
+
   try {
     // 2. Hand the receipt to our digital bouncer in the cloud
     const response = await fetch(`${supabaseUrl}/functions/v1/secure-download`, {

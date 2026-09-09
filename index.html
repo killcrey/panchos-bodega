@@ -1883,7 +1883,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal, #service-inquiry-modal {
+      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal, #service-inquiry-modal, #offer-modal, #reserve-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -2220,6 +2220,34 @@
       </div>
     </div>
 
+    <div id="offer-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Make an Offer</p>
+        <p id="offer-subtitle" style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;"></p>
+        <div class="tip-amount-wrap">
+          <span class="tip-currency">$</span>
+          <input type="number" id="offer-amount" class="admin-input tip-amount-input" step="1" placeholder="Amount">
+        </div>
+        <div id="offer-status" class="field-status"></div>
+        <div class="edit-modal-actions">
+          <button type="button" id="offer-cancel-btn" class="admin-btn">Cancel</button>
+          <button type="button" id="offer-submit-btn" class="admin-btn">Add to Cart</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="reserve-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Reserve</p>
+        <p id="reserve-subtitle" style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;"></p>
+        <div id="reserve-status" class="field-status"></div>
+        <div class="edit-modal-actions">
+          <button type="button" id="reserve-cancel-btn" class="admin-btn">Cancel</button>
+          <button type="button" id="reserve-confirm-btn" class="admin-btn">Reserve — $25.00</button>
+        </div>
+      </div>
+    </div>
+
     <div id="shipping-checkout-modal">
       <div class="edit-modal-content">
         <p class="admin-title">Shipping Address</p>
@@ -2292,8 +2320,16 @@
                 <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Auto-fills from the title until you edit it directly.</p>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
                 <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) and the buy button becomes a quote-request form instead of checkout.</p>
-                <input type="number" id="upload-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
-                <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
+                <div id="upload-offer-bounds-group" style="display: none;">
+                  <input type="number" id="upload-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
+                  <input type="number" id="upload-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
+                  <p class="field-hint">Buyer picks an amount in this range instead of a fixed price.</p>
+                </div>
+                <p id="upload-reserve-note" class="field-hint" style="display: none; color: #e8b923;">Price locked to $25.00 — non-refundable, applied toward the final price once details are worked out.</p>
+                <div id="upload-inventory-group">
+                  <input type="number" id="upload-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
+                  <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
+                </div>
                 <input type="hidden" id="upload-stripe-product-id">
                 <textarea id="upload-description" class="admin-input" placeholder="Description" maxlength="400" required></textarea>
                 <p class="field-hint">Max 400 characters — shown in full on the product card, no truncation.</p>
@@ -2304,6 +2340,13 @@
                   <option value="music">Music</option>
                   <option value="services">Services</option>
                   <option value="pancho picks">Pancho Picks</option>
+                </select>
+                <label class="admin-file-label" for="upload-pricing-mode">Pricing Mode</label>
+                <select id="upload-pricing-mode" class="admin-input">
+                  <option value="standard" selected>Standard</option>
+                  <option value="free">Free Download</option>
+                  <option value="offer_based">Offer Based (buyer names price)</option>
+                  <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
                 </select>
                 <div id="upload-sizes-group" style="display: none;">
                   <input type="text" id="upload-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
@@ -2321,11 +2364,13 @@
                 <label class="admin-file-label" for="upload-file">Digital File(s) — audio, PDF, or image (optional; select multiple to bundle as a .zip)</label>
                 <div id="upload-file-preview" class="admin-file-chip-list"></div>
                 <input type="file" id="upload-file" class="admin-input" accept="audio/*,application/pdf,image/*" multiple>
-                <input type="hidden" id="upload-stripe-url">
-                <button type="button" id="upload-generate-stripe-btn" class="admin-btn">Generate Checkout ID</button>
-                <p class="field-hint"><strong style="color: #ff4d4d;">Required before this item can be bought</strong>, unless it's free — set price to $0 instead and the storefront offers a free download.</p>
-                <p class="field-hint" style="color: #00ffcc;">NEW PRICE DOES NOT NEED REGENERATION.</p>
-                <div id="upload-stripe-status" class="field-status"></div>
+                <div id="upload-stripe-section">
+                  <input type="hidden" id="upload-stripe-url">
+                  <button type="button" id="upload-generate-stripe-btn" class="admin-btn">Generate Checkout ID</button>
+                  <p class="field-hint"><strong style="color: #ff4d4d;">Required before this item can be bought</strong>, unless it's free — set price to $0 instead and the storefront offers a free download.</p>
+                  <p class="field-hint" style="color: #00ffcc;">NEW PRICE DOES NOT NEED REGENERATION.</p>
+                  <div id="upload-stripe-status" class="field-status"></div>
+                </div>
                 <label class="admin-checkbox-row">
                   <input type="checkbox" id="upload-published" checked>
                   Publish Immediately
@@ -2399,8 +2444,16 @@
               <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Changing this breaks any link already shared with this old slug.</p>
               <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
               <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
-              <input type="number" id="edit-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
-              <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
+              <div id="edit-offer-bounds-group" style="display: none;">
+                <input type="number" id="edit-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
+                <input type="number" id="edit-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
+                <p class="field-hint">Buyer picks an amount in this range instead of a fixed price.</p>
+              </div>
+              <p id="edit-reserve-note" class="field-hint" style="display: none; color: #e8b923;">Price locked to $25.00 — non-refundable, applied toward the final price once details are worked out.</p>
+              <div id="edit-inventory-group">
+                <input type="number" id="edit-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
+                <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
+              </div>
               <input type="hidden" id="edit-stripe-product-id">
               <textarea id="edit-description" class="admin-input" placeholder="Description" maxlength="400" required></textarea>
               <p class="field-hint">Max 400 characters — shown in full on the product card, no truncation.</p>
@@ -2411,6 +2464,13 @@
                 <option value="music">Music</option>
                 <option value="services">Services</option>
                 <option value="pancho picks">Pancho Picks</option>
+              </select>
+              <label class="admin-file-label" for="edit-pricing-mode">Pricing Mode</label>
+              <select id="edit-pricing-mode" class="admin-input">
+                <option value="standard">Standard</option>
+                <option value="free">Free Download</option>
+                <option value="offer_based">Offer Based (buyer names price)</option>
+                <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
               </select>
               <div id="edit-sizes-group" style="display: none;">
                 <input type="text" id="edit-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
@@ -2432,11 +2492,13 @@
               <span id="edit-file-current-info" class="field-status"></span>
               <div id="edit-file-preview" class="admin-file-chip-list"></div>
               <input type="file" id="edit-file" class="admin-input" accept="audio/*,application/pdf,image/*" multiple>
-              <input type="hidden" id="edit-stripe-url">
-              <button type="button" id="edit-generate-stripe-btn" class="admin-btn">Generate Checkout ID</button>
-              <p class="field-hint"><strong style="color: #ff4d4d;">Required before this item can be bought</strong>, unless it's free — set price to $0 instead and the storefront offers a free download.</p>
-              <p class="field-hint" style="color: #00ffcc;">NEW PRICE DOES NOT NEED REGENERATION.</p>
-              <div id="edit-stripe-status" class="field-status"></div>
+              <div id="edit-stripe-section">
+                <input type="hidden" id="edit-stripe-url">
+                <button type="button" id="edit-generate-stripe-btn" class="admin-btn">Generate Checkout ID</button>
+                <p class="field-hint"><strong style="color: #ff4d4d;">Required before this item can be bought</strong>, unless it's free — set price to $0 instead and the storefront offers a free download.</p>
+                <p class="field-hint" style="color: #00ffcc;">NEW PRICE DOES NOT NEED REGENERATION.</p>
+                <div id="edit-stripe-status" class="field-status"></div>
+              </div>
               <label class="admin-checkbox-row">
                 <input type="checkbox" id="edit-published">
                 Published

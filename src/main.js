@@ -34,8 +34,19 @@ async function loadAdminInventory() {
     const item = document.createElement('div')
     item.className = 'inventory-item'
     const isPublished = product.published !== false
-    const isFree = (product.price_cents || 0) === 0
+    const pricingMode = product.pricing_mode || 'standard'
+    // pricing_mode = 'free' forces price_cents to 0 (see readPricingModeFields),
+    // same as a plain $0 standard product always has — either one displays as
+    // FREE. offer_based also stores price_cents as 0 (unused, replaced by the
+    // min/max bounds below), so it's deliberately excluded here rather than
+    // read off price_cents too.
+    const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (product.price_cents || 0) === 0)
     const hasCheckoutId = !!product.stripe_product_id
+    // Services (any mode) and Free/Reserve never need a Stripe Checkout ID —
+    // services skip the cart's Stripe pipeline entirely, Free never checks
+    // out, Reserve uses its own ad-hoc session. Offer Based still needs one
+    // unless it's a service, which uses that same ad-hoc session instead.
+    const needsCheckoutId = product.category !== 'services' && pricingMode !== 'free' && pricingMode !== 'reserve' && !isFree
     const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
     const isTracked = product.inventory_count != null
     const isSoldOut = isTracked && product.inventory_count <= 0
@@ -44,15 +55,21 @@ async function loadAdminInventory() {
       latest_release: 'Latest Release',
       pancho_pick: 'Panchos Pick',
     }[product.landing_slot] || ''
+    const priceLabel =
+      pricingMode === 'reserve' ? '$25.00 DEPOSIT' :
+      pricingMode === 'offer_based' ? `OFFER${product.offer_min_cents != null ? ` $${(product.offer_min_cents / 100).toFixed(2)}+` : ''}` :
+      isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
-        <div class="inventory-item-meta">${isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}${isTracked ? ` — ${product.inventory_count} IN STOCK` : ''}</div>
+        <div class="inventory-item-meta">${priceLabel} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}${isTracked ? ` — ${product.inventory_count} IN STOCK` : ''}</div>
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
         ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
+        ${pricingMode === 'offer_based' ? '<span class="inventory-status-badge status-checkout-set">Offer Based</span>' : ''}
+        ${pricingMode === 'reserve' ? '<span class="inventory-status-badge status-checkout-set">Reserve</span>' : ''}
         ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
         ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
-        ${!isFree ? (hasCheckoutId
+        ${needsCheckoutId ? (hasCheckoutId
           ? '<span class="inventory-status-badge status-checkout-set">Checkout ID Set</span>'
           : '<span class="inventory-status-badge status-warning">No Checkout ID</span>') : ''}
         ${landingSlotLabel ? `<span class="inventory-status-badge status-landing-slot">${landingSlotLabel}</span>` : ''}
@@ -167,27 +184,65 @@ async function loadAdminEmailCaptures() {
 // Same "active to-do queue" shape as loadAdminOrders — a handled inquiry
 // drops off the list rather than staying in an ever-growing ledger, since
 // each one needs a human follow-up (unlike tips, which just accumulate).
+// Shows both service_inquiries (Quote requests — need a human follow-up, so
+// an "active queue" like Orders) and product_payments (Reserve deposits and
+// a service's Offer Based — already paid, listed as a read-only ledger like
+// Tips, since there's no "handled" state for money that already cleared).
 async function loadAdminServiceInquiries() {
   const listEl = document.getElementById('admin-service-inquiries-list')
   if (!listEl) return
 
-  const { data: inquiries, error } = await supabase
-    .from('service_inquiries')
-    .select('*')
-    .eq('status', 'new')
-    .order('created_at', { ascending: false })
+  const [{ data: inquiries, error: inquiriesError }, { data: payments, error: paymentsError }] = await Promise.all([
+    supabase.from('service_inquiries').select('*').eq('status', 'new').order('created_at', { ascending: false }),
+    supabase.from('product_payments').select('*').order('created_at', { ascending: false }).limit(50),
+  ])
 
-  if (error) {
+  if (inquiriesError || paymentsError) {
     listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load inquiries.</p>'
     return
   }
 
-  if (!inquiries || inquiries.length === 0) {
-    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No open inquiries.</p>'
-    return
+  listEl.innerHTML = ''
+
+  const paymentsHeading = document.createElement('p')
+  paymentsHeading.style.cssText = 'font-size: 0.6rem; color: #e8b923; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 0.5rem 0;'
+  paymentsHeading.textContent = `Reserve & Offer Payments (${(payments || []).length})`
+  listEl.appendChild(paymentsHeading)
+
+  if (!payments || payments.length === 0) {
+    const empty = document.createElement('p')
+    empty.style.cssText = 'font-size: 0.65rem; color: #888; margin: 0 0 1rem 0;'
+    empty.textContent = 'None yet.'
+    listEl.appendChild(empty)
+  } else {
+    payments.forEach(payment => {
+      const item = document.createElement('div')
+      item.className = 'tip-row'
+      item.innerHTML = `
+        <div class="tip-row-meta">
+          <strong style="color: #ccc;">${payment.product_title || 'Deleted product'}</strong>
+          <span class="inventory-status-badge status-checkout-set" style="margin-left: 0.4rem;">${payment.pricing_mode === 'reserve' ? 'Reserve' : 'Offer'}</span>
+          ${payment.name || payment.email ? `<br>${[payment.name, payment.email].filter(Boolean).join(' — ')}` : ''}
+          <br>${payment.created_at ? new Date(payment.created_at).toLocaleDateString() : ''}
+        </div>
+        <div class="tip-row-amount">$${((payment.amount_cents || 0) / 100).toFixed(2)}</div>
+      `
+      listEl.appendChild(item)
+    })
   }
 
-  listEl.innerHTML = ''
+  const inquiriesHeading = document.createElement('p')
+  inquiriesHeading.style.cssText = 'font-size: 0.6rem; color: #e8b923; letter-spacing: 1px; text-transform: uppercase; margin: 1rem 0 0.5rem 0;'
+  inquiriesHeading.textContent = `Open Quote Requests (${(inquiries || []).length})`
+  listEl.appendChild(inquiriesHeading)
+
+  if (!inquiries || inquiries.length === 0) {
+    const empty = document.createElement('p')
+    empty.style.cssText = 'font-size: 0.65rem; color: #888;'
+    empty.textContent = 'No open inquiries.'
+    listEl.appendChild(empty)
+    return
+  }
 
   inquiries.forEach(inquiry => {
     const item = document.createElement('div')
@@ -394,7 +449,8 @@ function computeProductFlags(product) {
   const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
   const isComingSoon = !!product.coming_soon
   const isService = product.category === 'services'
-  return { isFree, isSoldOut, isComingSoon, isService, isInert: isSoldOut || isComingSoon }
+  const pricingMode = product.pricing_mode || 'standard'
+  return { isFree, isSoldOut, isComingSoon, isService, pricingMode, isInert: isSoldOut || isComingSoon }
 }
 
 // Shared by both the grid card and the dedicated product page — they're the
@@ -404,10 +460,16 @@ function computeProductFlags(product) {
 // doesn't), and `truncateDescription` is the card's small-tile-friendly cap
 // that the dedicated page has no reason to apply.
 function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true, showDescription = true, showFullGallery = true, showAudioPreview = true } = {}) {
-  const { isFree, isInert, isComingSoon, isSoldOut, isService } = flags
-  const formattedPrice = isService
-    ? (isFree ? 'Custom Pricing' : `Starting at $${(product.price_cents / 100).toFixed(2)}`)
-    : (isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`)
+  const { isFree, isInert, isComingSoon, isSoldOut, isService, pricingMode } = flags
+  // Pricing Mode overrides the plain price/service logic below it — those
+  // only ever apply to pricingMode === 'standard', the default every
+  // existing product already has.
+  const formattedPrice =
+    pricingMode === 'free' ? 'FREE' :
+    pricingMode === 'reserve' ? '$25.00 to Reserve' :
+    pricingMode === 'offer_based' ? (product.offer_min_cents != null ? `From $${(product.offer_min_cents / 100).toFixed(2)}` : 'Name Your Price') :
+    isService ? (isFree ? 'Custom Pricing' : `Starting at $${(product.price_cents / 100).toFixed(2)}`) :
+    (isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`)
   const availableImages = productImages(product)
 
   // The card face only ever shows the first photo — flipping through the
@@ -483,7 +545,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     `
   }
 
-  const needsSize = !isFree && !isInert && product.category === 'apparel' && product.sizes
+  const needsSize = pricingMode !== 'free' && !isInert && product.category === 'apparel' && product.sizes
   const sizeOptions = needsSize ? product.sizes.split(',').map(s => s.trim()).filter(Boolean) : []
   // The card shows sizes as plain informational tags only (sizesHTML,
   // above) — the interactive picker and its price-upcharge hint are part
@@ -500,7 +562,11 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     : ''
   const buyButtonHTML = showBuyControls
     ? `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
-        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isService ? 'Request a Quote' : (isFree ? 'Get It Free' : 'Add to Cart')))}
+        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' :
+          (pricingMode === 'free' ? 'Get It Free' :
+           pricingMode === 'reserve' ? 'Reserve' :
+           pricingMode === 'offer_based' ? 'Make an Offer' :
+           isService ? 'Request a Quote' : (isFree ? 'Get It Free' : 'Add to Cart')))}
       </button>`
     : ''
 
@@ -536,7 +602,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
 // holds it — a grid card or the dedicated product page — since both are
 // built from the exact same renderProductMarkup output.
 function wireProductInteractions(container, product, flags, { enableLightbox = true } = {}) {
-  const { isFree, isInert, isService } = flags
+  const { isFree, isInert, isService, pricingMode } = flags
   const availableImages = productImages(product)
 
   // The card disables this — clicking its (single, arrow-less) photo now
@@ -605,6 +671,23 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
   if (!buyButton) return
   buyButton.addEventListener('click', () => {
     if (isInert) {
+      return
+    } else if (pricingMode === 'free') {
+      openFreeDownloadModal(product)
+      return
+    } else if (pricingMode === 'reserve') {
+      openReserveModal(product)
+      return
+    } else if (pricingMode === 'offer_based') {
+      let size = null
+      if (sizeSelect) {
+        size = sizeSelect.value
+        if (!size) {
+          sizeSelect.style.borderColor = '#ff4d4d'
+          return
+        }
+      }
+      openOfferModal(product, size)
       return
     } else if (isService) {
       openServiceInquiryModal(product)
@@ -787,12 +870,96 @@ async function deleteProduct(product) {
 // depending on the individual product.
 const SHIPPABLE_CATEGORIES = ['apparel', 'art', 'music', 'pancho picks']
 
-function updateSizesVisibility(categoryValue, groupId) {
-  document.getElementById(groupId).style.display = categoryValue === 'apparel' ? 'block' : 'none'
+function updateSizesVisibility(categoryValue, pricingMode, groupId) {
+  const show = categoryValue === 'apparel' && pricingMode !== 'free' && pricingMode !== 'reserve'
+  document.getElementById(groupId).style.display = show ? 'block' : 'none'
 }
 
-function updateWeightVisibility(categoryValue, groupId) {
-  document.getElementById(groupId).style.display = SHIPPABLE_CATEGORIES.includes(categoryValue) ? 'block' : 'none'
+function updateWeightVisibility(categoryValue, pricingMode, groupId) {
+  const show = SHIPPABLE_CATEGORIES.includes(categoryValue) && pricingMode !== 'free' && pricingMode !== 'reserve'
+  document.getElementById(groupId).style.display = show ? 'block' : 'none'
+}
+
+// Pricing Mode (see the products.pricing_mode migration) governs how a
+// price is determined, and combined with category, which fields are even
+// relevant: Free/Reserve never ship or track inventory or need a generated
+// Stripe Checkout ID (Free skips Stripe entirely; Reserve and a service's
+// Offer Based use a standalone session instead — see
+// create-product-payment-session), Offer Based replaces the fixed price
+// with buyer-chosen bounds. Reserve only means something for a service
+// ("applied toward the final price" of what, otherwise?) — its option is
+// disabled rather than merely hidden outside Services, so switching
+// category away can't leave a stale Reserve selection in place silently.
+function updatePricingModeUI(prefix) {
+  const category = document.getElementById(`${prefix}-category`).value
+  const pricingModeSelect = document.getElementById(`${prefix}-pricing-mode`)
+  const reserveOption = pricingModeSelect.querySelector('option[value="reserve"]')
+  const isServices = category === 'services'
+
+  reserveOption.disabled = !isServices
+  const priceInput = document.getElementById(`${prefix}-price`)
+  if (!isServices && pricingModeSelect.value === 'reserve') {
+    pricingModeSelect.value = 'standard'
+    // The $25 lock was for Reserve specifically — leaving it in place after
+    // an automatic reset would look like a real price the admin chose.
+    priceInput.value = ''
+  }
+  const pricingMode = pricingModeSelect.value
+  const offerGroup = document.getElementById(`${prefix}-offer-bounds-group`)
+  const reserveNote = document.getElementById(`${prefix}-reserve-note`)
+  const inventoryGroup = document.getElementById(`${prefix}-inventory-group`)
+  const stripeSection = document.getElementById(`${prefix}-stripe-section`)
+
+  priceInput.style.display = pricingMode === 'offer_based' ? 'none' : 'block'
+  priceInput.required = pricingMode !== 'offer_based'
+  offerGroup.style.display = pricingMode === 'offer_based' ? 'block' : 'none'
+  reserveNote.style.display = pricingMode === 'reserve' ? 'block' : 'none'
+
+  if (pricingMode === 'free') {
+    priceInput.value = '0'
+    priceInput.disabled = true
+  } else if (pricingMode === 'reserve') {
+    priceInput.value = '25'
+    priceInput.disabled = true
+  } else {
+    priceInput.disabled = false
+  }
+
+  const hideForMode = isServices || pricingMode === 'free' || pricingMode === 'reserve'
+  inventoryGroup.style.display = hideForMode ? 'none' : 'block'
+  stripeSection.style.display = hideForMode ? 'none' : 'block'
+
+  updateSizesVisibility(category, pricingMode, `${prefix}-sizes-group`)
+  updateWeightVisibility(category, pricingMode, `${prefix}-weight-group`)
+}
+
+// Services-only, so this never needs to be per-product configurable —
+// see create-product-payment-session, which is the actual source of truth
+// at charge time; this constant only drives what the admin form displays.
+const RESERVE_DEPOSIT_CENTS = 2500
+
+// Reads price_cents/pricing_mode/offer bounds together since they're
+// interdependent: what price_cents even means depends on pricing_mode, so
+// they have to be derived as one unit rather than three independent reads.
+function readPricingModeFields(prefix, rawPrice) {
+  const pricingMode = document.getElementById(`${prefix}-pricing-mode`).value || 'standard'
+  let priceCents = Math.round((rawPrice || 0) * 100)
+  let offerMinCents = null
+  let offerMaxCents = null
+
+  if (pricingMode === 'free') {
+    priceCents = 0
+  } else if (pricingMode === 'reserve') {
+    priceCents = RESERVE_DEPOSIT_CENTS
+  } else if (pricingMode === 'offer_based') {
+    priceCents = 0
+    const minRaw = parseFloat(document.getElementById(`${prefix}-offer-min`).value)
+    const maxRaw = parseFloat(document.getElementById(`${prefix}-offer-max`).value)
+    offerMinCents = Number.isFinite(minRaw) ? Math.round(minRaw * 100) : null
+    offerMaxCents = Number.isFinite(maxRaw) ? Math.round(maxRaw * 100) : null
+  }
+
+  return { pricingMode, priceCents, offerMinCents, offerMaxCents }
 }
 
 // Parses the admin's "S:12345:67890, M:12346:67891" (or a bare
@@ -953,8 +1120,10 @@ function openEditModal(product) {
   document.getElementById('edit-sizes').value = product.sizes || ''
   document.getElementById('edit-weight').value = product.weight_oz != null ? product.weight_oz : ''
   document.getElementById('edit-printful-variants').value = formatPrintfulVariantMap(product.printful_variant_map)
-  updateSizesVisibility(product.category, 'edit-sizes-group')
-  updateWeightVisibility(product.category, 'edit-weight-group')
+  document.getElementById('edit-pricing-mode').value = product.pricing_mode || 'standard'
+  document.getElementById('edit-offer-min').value = product.offer_min_cents != null ? (product.offer_min_cents / 100).toFixed(2) : ''
+  document.getElementById('edit-offer-max').value = product.offer_max_cents != null ? (product.offer_max_cents / 100).toFixed(2) : ''
+  updatePricingModeUI('edit')
   document.getElementById('edit-image').value = ''
   document.getElementById('edit-file').value = ''
   editNewImageFiles = []
@@ -1085,6 +1254,129 @@ function initServiceInquiryModal() {
       statusEl.style.color = '#ff4d4d'
     } finally {
       submitBtn.disabled = false
+    }
+  })
+}
+
+let offerProduct = null
+let offerSize = null
+
+// One modal covers both paths Offer Based can take: a physical/digital item
+// (any category but services) collects the amount here and adds to cart —
+// the rest of checkout is the normal cart flow. A service has no cart entry
+// point at all, so it goes straight to a standalone Stripe session instead
+// (create-product-payment-session, same shape as create-tip-session).
+function openOfferModal(product, size = null) {
+  offerProduct = product
+  offerSize = size
+  const minD = (product.offer_min_cents ?? 100) / 100
+  const maxD = (product.offer_max_cents ?? 100000) / 100
+  document.getElementById('offer-subtitle').textContent = `For "${product.title}" — choose an amount between $${minD.toFixed(2)} and $${maxD.toFixed(2)}.`
+  document.getElementById('offer-amount').min = minD
+  document.getElementById('offer-amount').max = maxD
+  document.getElementById('offer-amount').value = ''
+  document.getElementById('offer-status').textContent = ''
+  document.getElementById('offer-submit-btn').textContent = product.category === 'services' ? 'Continue to Payment' : 'Add to Cart'
+  document.getElementById('offer-modal').style.display = 'flex'
+}
+
+function closeOfferModal() {
+  offerProduct = null
+  offerSize = null
+  document.getElementById('offer-modal').style.display = 'none'
+}
+
+function initOfferModal() {
+  const modal = document.getElementById('offer-modal')
+  if (!modal) return
+
+  const cancelBtn = document.getElementById('offer-cancel-btn')
+  const submitBtn = document.getElementById('offer-submit-btn')
+  const amountInput = document.getElementById('offer-amount')
+  const statusEl = document.getElementById('offer-status')
+
+  cancelBtn.addEventListener('click', closeOfferModal)
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeOfferModal() })
+
+  submitBtn.addEventListener('click', async () => {
+    if (!offerProduct) return
+    const dollars = parseFloat(amountInput.value)
+    const minD = (offerProduct.offer_min_cents ?? 100) / 100
+    const maxD = (offerProduct.offer_max_cents ?? 100000) / 100
+    if (!Number.isFinite(dollars) || dollars < minD || dollars > maxD) {
+      statusEl.textContent = `Enter an amount between $${minD.toFixed(2)} and $${maxD.toFixed(2)}.`
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
+    const amountCents = Math.round(dollars * 100)
+
+    submitBtn.disabled = true
+    statusEl.textContent = 'One moment...'
+    statusEl.style.color = '#e8b923'
+
+    try {
+      if (offerProduct.category === 'services') {
+        const { data, error } = await supabase.functions.invoke('create-product-payment-session', {
+          body: { productId: offerProduct.id, amountCents }
+        })
+        if (error) throw error
+        if (!data?.url) throw new Error('Could not start checkout. Try again in a moment.')
+        window.location.href = data.url
+      } else {
+        addToCart(offerProduct, { size: offerSize, offerAmountCents: amountCents })
+        updateCartBadge()
+        closeOfferModal()
+      }
+    } catch (err) {
+      statusEl.textContent = await describeFunctionError(err)
+      statusEl.style.color = '#ff4d4d'
+      submitBtn.disabled = false
+    }
+  })
+}
+
+let reserveProduct = null
+
+function openReserveModal(product) {
+  reserveProduct = product
+  document.getElementById('reserve-subtitle').textContent = `Reserve "${product.title}" for a $25.00 non-refundable deposit, applied toward the final price.`
+  document.getElementById('reserve-status').textContent = ''
+  document.getElementById('reserve-modal').style.display = 'flex'
+}
+
+function closeReserveModal() {
+  reserveProduct = null
+  document.getElementById('reserve-modal').style.display = 'none'
+}
+
+function initReserveModal() {
+  const modal = document.getElementById('reserve-modal')
+  if (!modal) return
+
+  const cancelBtn = document.getElementById('reserve-cancel-btn')
+  const confirmBtn = document.getElementById('reserve-confirm-btn')
+  const statusEl = document.getElementById('reserve-status')
+
+  cancelBtn.addEventListener('click', closeReserveModal)
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeReserveModal() })
+
+  confirmBtn.addEventListener('click', async () => {
+    if (!reserveProduct) return
+    confirmBtn.disabled = true
+    statusEl.textContent = 'Sending you to checkout...'
+    statusEl.style.color = '#e8b923'
+
+    try {
+      const { data, error } = await supabase.functions.invoke('create-product-payment-session', {
+        body: { productId: reserveProduct.id }
+      })
+      if (error) throw error
+      if (!data?.url) throw new Error('Could not start checkout. Try again in a moment.')
+      window.location.href = data.url
+    } catch (err) {
+      statusEl.textContent = await describeFunctionError(err)
+      statusEl.style.color = '#ff4d4d'
+      confirmBtn.disabled = false
     }
   })
 }
@@ -1282,7 +1574,7 @@ function initCartModal() {
 
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-        body: { items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, size: i.size })) }
+        body: { items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, size: i.size, offerAmountCents: i.offerAmountCents ?? null })) }
       })
       if (error) throw error
       window.location.href = data.url
@@ -1458,7 +1750,7 @@ function initShippingCheckoutModal() {
     try {
       const { data, error } = await supabase.functions.invoke('create-checkout-session', {
         body: {
-          items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, size: i.size })),
+          items: cart.map(i => ({ productId: i.productId, quantity: i.quantity, size: i.size, offerAmountCents: i.offerAmountCents ?? null })),
           rateId: selectedShippingRateId,
           toAddress: lastToAddress
         }
@@ -1670,10 +1962,9 @@ function initAdminPortal() {
   const uploadStatus = document.getElementById('upload-status')
   const uploadSubmitBtn = document.getElementById('upload-submit-btn')
 
-  document.getElementById('upload-category').addEventListener('change', (e) => {
-    updateSizesVisibility(e.target.value, 'upload-sizes-group')
-    updateWeightVisibility(e.target.value, 'upload-weight-group')
-  })
+  document.getElementById('upload-category').addEventListener('change', () => updatePricingModeUI('upload'))
+  document.getElementById('upload-pricing-mode').addEventListener('change', () => updatePricingModeUI('upload'))
+  updatePricingModeUI('upload')
 
   wireSlugAutofill('upload-title', 'upload-slug')
   wireSlugAutofill('edit-title', 'edit-slug')
@@ -1779,6 +2070,7 @@ function initAdminPortal() {
       const published = document.getElementById('upload-published').checked
       const comingSoon = document.getElementById('upload-coming-soon').checked
       const landingSlot = await resolveLandingSlot('upload-landing-slot', null)
+      const { pricingMode, priceCents, offerMinCents, offerMaxCents } = readPricingModeFields('upload', price)
 
       const { coverUrl, galleryImages } = await processImageFiles(uploadNewImageFiles)
 
@@ -1787,7 +2079,10 @@ function initAdminPortal() {
       const { error: insertError } = await supabase.from('products').insert({
         title,
         slug,
-        price_cents: Math.round(price * 100),
+        price_cents: priceCents,
+        pricing_mode: pricingMode,
+        offer_min_cents: offerMinCents,
+        offer_max_cents: offerMaxCents,
         description,
         category,
         sizes,
@@ -1812,6 +2107,7 @@ function initAdminPortal() {
         : 'Product Deployed Successfully'
       uploadStatus.style.color = '#00ffcc'
       uploadForm.reset()
+      updatePricingModeUI('upload')
       uploadNewImageFiles = []
       document.getElementById('upload-image-preview').innerHTML = ''
       uploadNewDigitalFiles = []
@@ -1830,10 +2126,8 @@ function initAdminPortal() {
   const editSaveBtn = document.getElementById('edit-save-btn')
   const editCancelBtn = document.getElementById('edit-cancel-btn')
 
-  document.getElementById('edit-category').addEventListener('change', (e) => {
-    updateSizesVisibility(e.target.value, 'edit-sizes-group')
-    updateWeightVisibility(e.target.value, 'edit-weight-group')
-  })
+  document.getElementById('edit-category').addEventListener('change', () => updatePricingModeUI('edit'))
+  document.getElementById('edit-pricing-mode').addEventListener('change', () => updatePricingModeUI('edit'))
 
   const editGenerateStripeBtn = document.getElementById('edit-generate-stripe-btn')
   const editStripeStatus = document.getElementById('edit-stripe-status')
@@ -1872,6 +2166,7 @@ function initAdminPortal() {
       const published = document.getElementById('edit-published').checked
       const comingSoon = document.getElementById('edit-coming-soon').checked
       const landingSlot = await resolveLandingSlot('edit-landing-slot', id)
+      const { pricingMode, priceCents, offerMinCents, offerMaxCents } = readPricingModeFields('edit', price)
 
       // New photos are appended to whatever's left in editKeptImages (the
       // admin can remove individual existing photos via the × on each
@@ -1899,7 +2194,10 @@ function initAdminPortal() {
       const { error: updateError } = await supabase.from('products').update({
         title,
         slug,
-        price_cents: Math.round(price * 100),
+        price_cents: priceCents,
+        pricing_mode: pricingMode,
+        offer_min_cents: offerMinCents,
+        offer_max_cents: offerMaxCents,
         description,
         category,
         sizes,
@@ -2535,8 +2833,12 @@ function renderLandingDetail(product) {
   const detail = document.getElementById('landing-detail')
   if (!detail || !product) return
 
-  const isFree = (product.price_cents || 0) === 0
-  const formattedPrice = isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
+  const pricingMode = product.pricing_mode || 'standard'
+  const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (product.price_cents || 0) === 0)
+  const formattedPrice =
+    pricingMode === 'reserve' ? '$25.00 to Reserve' :
+    pricingMode === 'offer_based' ? (product.offer_min_cents != null ? `From $${(product.offer_min_cents / 100).toFixed(2)}` : 'Name Your Price') :
+    isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
 
   detail.innerHTML = `
     <h3 class="landing-detail-title">${product.title}</h3>
@@ -2739,6 +3041,8 @@ function initTipModal() {
 
 initFreeDownloadModal()
 initServiceInquiryModal()
+initOfferModal()
+initReserveModal()
 initShippingCheckoutModal()
 initCartModal()
 initTipModal()
