@@ -2315,11 +2315,26 @@
             <p class="panel-title">Stock the Shelf</p>
             <div id="upload-form-container">
               <form id="upload-form">
+                <select id="upload-category" class="admin-input" required>
+                  <option value="" disabled selected>Select Category</option>
+                  <option value="apparel">Apparel</option>
+                  <option value="art">Art</option>
+                  <option value="music">Music</option>
+                  <option value="services">Services</option>
+                  <option value="pancho picks">Pancho Picks</option>
+                </select>
                 <input type="text" id="upload-title" class="admin-input" placeholder="Title" required>
                 <input type="text" id="upload-slug" class="admin-input" placeholder="URL slug (auto-filled from title)">
                 <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Auto-fills from the title until you edit it directly.</p>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
                 <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) and the buy button becomes a quote-request form instead of checkout.</p>
+                <label class="admin-file-label" for="upload-pricing-mode">Pricing Mode</label>
+                <select id="upload-pricing-mode" class="admin-input">
+                  <option value="standard" selected>Standard</option>
+                  <option value="free">Free Download</option>
+                  <option value="offer_based">Offer Based (buyer names price)</option>
+                  <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
+                </select>
                 <div id="upload-offer-bounds-group" style="display: none;">
                   <input type="number" id="upload-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                   <input type="number" id="upload-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
@@ -2333,21 +2348,6 @@
                 <input type="hidden" id="upload-stripe-product-id">
                 <textarea id="upload-description" class="admin-input" placeholder="Description" maxlength="400" required></textarea>
                 <p class="field-hint">Max 400 characters — shown in full on the product card, no truncation.</p>
-                <select id="upload-category" class="admin-input" required>
-                  <option value="" disabled selected>Select Category</option>
-                  <option value="apparel">Apparel</option>
-                  <option value="art">Art</option>
-                  <option value="music">Music</option>
-                  <option value="services">Services</option>
-                  <option value="pancho picks">Pancho Picks</option>
-                </select>
-                <label class="admin-file-label" for="upload-pricing-mode">Pricing Mode</label>
-                <select id="upload-pricing-mode" class="admin-input">
-                  <option value="standard" selected>Standard</option>
-                  <option value="free">Free Download</option>
-                  <option value="offer_based">Offer Based (buyer names price)</option>
-                  <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
-                </select>
                 <div id="upload-sizes-group" style="display: none;">
                   <input type="text" id="upload-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                   <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
@@ -2439,11 +2439,26 @@
           <form id="edit-product-form">
             <input type="hidden" id="edit-id">
             <div class="edit-modal-fields">
+              <select id="edit-category" class="admin-input" required>
+                <option value="" disabled>Select Category</option>
+                <option value="apparel">Apparel</option>
+                <option value="art">Art</option>
+                <option value="music">Music</option>
+                <option value="services">Services</option>
+                <option value="pancho picks">Pancho Picks</option>
+              </select>
               <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
               <input type="text" id="edit-slug" class="admin-input" placeholder="URL slug">
               <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Changing this breaks any link already shared with this old slug.</p>
               <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
               <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
+              <label class="admin-file-label" for="edit-pricing-mode">Pricing Mode</label>
+              <select id="edit-pricing-mode" class="admin-input">
+                <option value="standard">Standard</option>
+                <option value="free">Free Download</option>
+                <option value="offer_based">Offer Based (buyer names price)</option>
+                <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
+              </select>
               <div id="edit-offer-bounds-group" style="display: none;">
                 <input type="number" id="edit-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                 <input type="number" id="edit-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
@@ -2457,21 +2472,6 @@
               <input type="hidden" id="edit-stripe-product-id">
               <textarea id="edit-description" class="admin-input" placeholder="Description" maxlength="400" required></textarea>
               <p class="field-hint">Max 400 characters — shown in full on the product card, no truncation.</p>
-              <select id="edit-category" class="admin-input" required>
-                <option value="" disabled>Select Category</option>
-                <option value="apparel">Apparel</option>
-                <option value="art">Art</option>
-                <option value="music">Music</option>
-                <option value="services">Services</option>
-                <option value="pancho picks">Pancho Picks</option>
-              </select>
-              <label class="admin-file-label" for="edit-pricing-mode">Pricing Mode</label>
-              <select id="edit-pricing-mode" class="admin-input">
-                <option value="standard">Standard</option>
-                <option value="free">Free Download</option>
-                <option value="offer_based">Offer Based (buyer names price)</option>
-                <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
-              </select>
               <div id="edit-sizes-group" style="display: none;">
                 <input type="text" id="edit-sizes" class="admin-input" placeholder="Sizes, comma-separated (e.g. S, M, L, XL)">
                 <p class="field-hint">Buyers will pick one of these at Stripe checkout.</p>
