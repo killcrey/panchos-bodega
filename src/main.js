@@ -164,6 +164,56 @@ async function loadAdminEmailCaptures() {
   `
 }
 
+// Same "active to-do queue" shape as loadAdminOrders — a handled inquiry
+// drops off the list rather than staying in an ever-growing ledger, since
+// each one needs a human follow-up (unlike tips, which just accumulate).
+async function loadAdminServiceInquiries() {
+  const listEl = document.getElementById('admin-service-inquiries-list')
+  if (!listEl) return
+
+  const { data: inquiries, error } = await supabase
+    .from('service_inquiries')
+    .select('*')
+    .eq('status', 'new')
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load inquiries.</p>'
+    return
+  }
+
+  if (!inquiries || inquiries.length === 0) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No open inquiries.</p>'
+    return
+  }
+
+  listEl.innerHTML = ''
+
+  inquiries.forEach(inquiry => {
+    const item = document.createElement('div')
+    item.className = 'order-item'
+    item.innerHTML = `
+      <div class="order-item-title">${inquiry.product_title || 'General inquiry'}</div>
+      <div class="order-item-meta">
+        <strong>${inquiry.name}</strong> — ${inquiry.email}
+        <br>${inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString() : ''}
+        ${inquiry.event_date ? `<br><strong>Date:</strong> ${inquiry.event_date}` : ''}
+        ${inquiry.budget ? `<br><strong>Budget:</strong> ${inquiry.budget}` : ''}
+        ${inquiry.message ? `<br><strong>Message:</strong> ${inquiry.message}` : ''}
+      </div>
+      <div class="order-item-actions">
+        <a href="mailto:${inquiry.email}">Reply</a>
+        <button type="button" class="mark-handled-btn">Mark Handled</button>
+      </div>
+    `
+    item.querySelector('.mark-handled-btn').addEventListener('click', async () => {
+      await supabase.from('service_inquiries').update({ status: 'handled' }).eq('id', inquiry.id)
+      loadAdminServiceInquiries()
+    })
+    listEl.appendChild(item)
+  })
+}
+
 // The two admin-editable notes appended to automated emails — read by
 // stripe-webhook (order confirmation + tip thank-you) and free-download
 // (download email) at send time. Blank means "no note", not an error.
@@ -343,7 +393,8 @@ function computeProductFlags(product) {
   const isFree = (product.price_cents || 0) === 0
   const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
   const isComingSoon = !!product.coming_soon
-  return { isFree, isSoldOut, isComingSoon, isInert: isSoldOut || isComingSoon }
+  const isService = product.category === 'services'
+  return { isFree, isSoldOut, isComingSoon, isService, isInert: isSoldOut || isComingSoon }
 }
 
 // Shared by both the grid card and the dedicated product page — they're the
@@ -353,8 +404,10 @@ function computeProductFlags(product) {
 // doesn't), and `truncateDescription` is the card's small-tile-friendly cap
 // that the dedicated page has no reason to apply.
 function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true, showDescription = true, showFullGallery = true, showAudioPreview = true } = {}) {
-  const { isFree, isInert, isComingSoon, isSoldOut } = flags
-  const formattedPrice = isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`
+  const { isFree, isInert, isComingSoon, isSoldOut, isService } = flags
+  const formattedPrice = isService
+    ? (isFree ? 'Custom Pricing' : `Starting at $${(product.price_cents / 100).toFixed(2)}`)
+    : (isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`)
   const availableImages = productImages(product)
 
   // The card face only ever shows the first photo — flipping through the
@@ -447,7 +500,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     : ''
   const buyButtonHTML = showBuyControls
     ? `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
-        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isFree ? 'Get It Free' : 'Add to Cart'))}
+        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isService ? 'Request a Quote' : (isFree ? 'Get It Free' : 'Add to Cart')))}
       </button>`
     : ''
 
@@ -483,7 +536,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
 // holds it — a grid card or the dedicated product page — since both are
 // built from the exact same renderProductMarkup output.
 function wireProductInteractions(container, product, flags, { enableLightbox = true } = {}) {
-  const { isFree, isInert } = flags
+  const { isFree, isInert, isService } = flags
   const availableImages = productImages(product)
 
   // The card disables this — clicking its (single, arrow-less) photo now
@@ -552,6 +605,9 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
   if (!buyButton) return
   buyButton.addEventListener('click', () => {
     if (isInert) {
+      return
+    } else if (isService) {
+      openServiceInquiryModal(product)
       return
     } else if (isFree) {
       openFreeDownloadModal(product)
@@ -955,6 +1011,82 @@ function openFreeDownloadModal(product) {
 function closeFreeDownloadModal() {
   freeDownloadProduct = null
   document.getElementById('free-download-modal').style.display = 'none'
+}
+
+let serviceInquiryProduct = null
+
+function openServiceInquiryModal(product) {
+  serviceInquiryProduct = product
+  document.getElementById('service-inquiry-subtitle').textContent = `For "${product.title}" — tell us the details and we'll follow up with pricing.`
+  document.getElementById('service-inquiry-name').value = ''
+  document.getElementById('service-inquiry-email').value = ''
+  document.getElementById('service-inquiry-date').value = ''
+  document.getElementById('service-inquiry-budget').value = ''
+  document.getElementById('service-inquiry-message').value = ''
+  document.getElementById('service-inquiry-status').textContent = ''
+  document.getElementById('service-inquiry-form-view').style.display = 'block'
+  document.getElementById('service-inquiry-result-view').style.display = 'none'
+  document.getElementById('service-inquiry-modal').style.display = 'flex'
+}
+
+function closeServiceInquiryModal() {
+  serviceInquiryProduct = null
+  document.getElementById('service-inquiry-modal').style.display = 'none'
+}
+
+function initServiceInquiryModal() {
+  const modal = document.getElementById('service-inquiry-modal')
+  if (!modal) return
+
+  const cancelBtn = document.getElementById('service-inquiry-cancel-btn')
+  const closeBtn = document.getElementById('service-inquiry-close-btn')
+  const submitBtn = document.getElementById('service-inquiry-submit-btn')
+  const statusEl = document.getElementById('service-inquiry-status')
+
+  cancelBtn.addEventListener('click', closeServiceInquiryModal)
+  closeBtn.addEventListener('click', closeServiceInquiryModal)
+  modal.addEventListener('click', (e) => { if (e.target === modal) closeServiceInquiryModal() })
+
+  submitBtn.addEventListener('click', async () => {
+    const name = document.getElementById('service-inquiry-name').value.trim()
+    const email = document.getElementById('service-inquiry-email').value.trim()
+    if (!name) {
+      statusEl.textContent = 'Enter your name.'
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
+    if (!email || !email.includes('@')) {
+      statusEl.textContent = 'Enter a valid email address.'
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
+
+    submitBtn.disabled = true
+    statusEl.textContent = 'Sending...'
+    statusEl.style.color = '#e8b923'
+
+    try {
+      const { error } = await supabase.functions.invoke('submit-service-inquiry', {
+        body: {
+          productId: serviceInquiryProduct?.id || null,
+          name,
+          email,
+          eventDate: document.getElementById('service-inquiry-date').value || null,
+          budget: document.getElementById('service-inquiry-budget').value.trim() || null,
+          message: document.getElementById('service-inquiry-message').value.trim() || null,
+        }
+      })
+      if (error) throw error
+
+      document.getElementById('service-inquiry-form-view').style.display = 'none'
+      document.getElementById('service-inquiry-result-view').style.display = 'block'
+    } catch (err) {
+      statusEl.textContent = await describeFunctionError(err)
+      statusEl.style.color = '#ff4d4d'
+    } finally {
+      submitBtn.disabled = false
+    }
+  })
 }
 
 // Calls a download-delivering Edge Function directly (bypassing
@@ -1462,6 +1594,7 @@ function initAdminPortal() {
       loadAdminOrders()
       loadAdminTips()
       loadAdminEmailCaptures()
+      loadAdminServiceInquiries()
       loadAdminSettings()
     } else {
       loginView.style.display = 'block'
@@ -2605,6 +2738,7 @@ function initTipModal() {
 }
 
 initFreeDownloadModal()
+initServiceInquiryModal()
 initShippingCheckoutModal()
 initCartModal()
 initTipModal()

@@ -459,3 +459,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/unsubscribe/deno.json"
 entrypoint = "./functions/unsubscribe/index.ts"
+
+[functions.submit-service-inquiry]
+enabled = true
+verify_jwt = false
+import_map = "./functions/submit-service-inquiry/deno.json"
+entrypoint = "./functions/submit-service-inquiry/index.ts"

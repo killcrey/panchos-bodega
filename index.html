@@ -1883,7 +1883,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal {
+      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal, #service-inquiry-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -2194,6 +2194,32 @@
       </div>
     </div>
 
+    <div id="service-inquiry-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Request a Quote</p>
+
+        <div id="service-inquiry-form-view">
+          <p id="service-inquiry-subtitle" style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;"></p>
+          <input type="text" id="service-inquiry-name" class="admin-input" placeholder="Your name" maxlength="100">
+          <input type="email" id="service-inquiry-email" class="admin-input" placeholder="Email">
+          <input type="date" id="service-inquiry-date" class="admin-input">
+          <p class="field-hint">Event or project date (optional).</p>
+          <input type="text" id="service-inquiry-budget" class="admin-input" placeholder="Budget range (optional)" maxlength="100">
+          <textarea id="service-inquiry-message" class="admin-input" placeholder="Tell us what you need" maxlength="1000" rows="3"></textarea>
+          <div id="service-inquiry-status" class="field-status"></div>
+          <div class="edit-modal-actions">
+            <button type="button" id="service-inquiry-cancel-btn" class="admin-btn">Cancel</button>
+            <button type="button" id="service-inquiry-submit-btn" class="admin-btn">Send Request</button>
+          </div>
+        </div>
+
+        <div id="service-inquiry-result-view" style="display: none;">
+          <p style="font-size: 0.75rem; color: #00ffcc; margin: 0 0 1rem 0;">Request sent — we'll be in touch by email.</p>
+          <button type="button" id="service-inquiry-close-btn" class="admin-btn">Close</button>
+        </div>
+      </div>
+    </div>
+
     <div id="shipping-checkout-modal">
       <div class="edit-modal-content">
         <p class="admin-title">Shipping Address</p>
@@ -2265,7 +2291,7 @@
                 <input type="text" id="upload-slug" class="admin-input" placeholder="URL slug (auto-filled from title)">
                 <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Auto-fills from the title until you edit it directly.</p>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
-                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
+                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) and the buy button becomes a quote-request form instead of checkout.</p>
                 <input type="number" id="upload-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
                 <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
                 <input type="hidden" id="upload-stripe-product-id">
@@ -2327,6 +2353,7 @@
               <button type="button" class="admin-tab-btn" data-tab="orders">Orders</button>
               <button type="button" class="admin-tab-btn" data-tab="tips">Tips</button>
               <button type="button" class="admin-tab-btn" data-tab="email-captures">Email Captures</button>
+              <button type="button" class="admin-tab-btn" data-tab="inquiries">Inquiries</button>
               <button type="button" class="admin-tab-btn" data-tab="messages">Messages</button>
             </div>
             <div class="admin-tab-panel" data-tab-panel="inventory">
@@ -2340,6 +2367,9 @@
             </div>
             <div class="admin-tab-panel" data-tab-panel="email-captures" style="display: none;">
               <div id="admin-email-captures-list"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="inquiries" style="display: none;">
+              <div id="admin-service-inquiries-list"></div>
             </div>
             <div class="admin-tab-panel" data-tab-panel="messages" style="display: none;">
               <label class="admin-file-label" for="settings-purchase-message">Purchase &amp; Free Download Thank You Message</label>
