@@ -2326,8 +2326,6 @@
                 <input type="text" id="upload-title" class="admin-input" placeholder="Title" required>
                 <input type="text" id="upload-slug" class="admin-input" placeholder="URL slug (auto-filled from title)">
                 <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Auto-fills from the title until you edit it directly.</p>
-                <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
-                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) and the buy button becomes a quote-request form instead of checkout.</p>
                 <label class="admin-file-label" for="upload-pricing-mode">Pricing Mode</label>
                 <select id="upload-pricing-mode" class="admin-input">
                   <option value="standard" selected>Standard</option>
@@ -2335,6 +2333,8 @@
                   <option value="offer_based">Offer Based (buyer names price)</option>
                   <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
                 </select>
+                <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
+                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) and the buy button becomes a quote-request form instead of checkout.</p>
                 <div id="upload-offer-bounds-group" style="display: none;">
                   <input type="number" id="upload-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                   <input type="number" id="upload-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
@@ -2450,8 +2450,6 @@
               <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
               <input type="text" id="edit-slug" class="admin-input" placeholder="URL slug">
               <p class="field-hint">Product page will be at /products/&lt;slug&gt;/. Changing this breaks any link already shared with this old slug.</p>
-              <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
-              <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
               <label class="admin-file-label" for="edit-pricing-mode">Pricing Mode</label>
               <select id="edit-pricing-mode" class="admin-input">
                 <option value="standard">Standard</option>
@@ -2459,6 +2457,8 @@
                 <option value="offer_based">Offer Based (buyer names price)</option>
                 <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
               </select>
+              <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
+              <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
               <div id="edit-offer-bounds-group" style="display: none;">
                 <input type="number" id="edit-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                 <input type="number" id="edit-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
