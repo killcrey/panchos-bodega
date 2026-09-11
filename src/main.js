@@ -437,11 +437,18 @@ function wireSlugAutofill(titleInputId, slugInputId) {
 }
 
 const AUDIO_URL_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
+const IMAGE_URL_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg']
 
 function isAudioUrl(url) {
   if (!url) return false
   const clean = url.split('?')[0].toLowerCase()
   return AUDIO_URL_EXTENSIONS.some(ext => clean.endsWith(ext))
+}
+
+function isImageUrl(url) {
+  if (!url) return false
+  const clean = url.split('?')[0].toLowerCase()
+  return IMAGE_URL_EXTENSIONS.some(ext => clean.endsWith(ext))
 }
 
 function computeProductFlags(product) {
@@ -1191,6 +1198,41 @@ function renderPickedFilesPreview(files, previewEl) {
 // (add more, remove individual ones) instead of replace-the-whole-set.
 let editKeptImages = []
 
+// Normalizes whichever shape a product's digital files are currently in
+// (a track album's tracklist_snippets, a multi-file download_files bundle,
+// or one legacy audio_preview_url) into one list, so the edit form can show
+// what's actually attached — filename and, if it's an image, a thumbnail —
+// instead of a vague count. This is exactly what would have caught a photo
+// accidentally uploaded as a "digital file" instead of a product photo
+// (see the Printful category note below): the thumbnail alone makes an
+// image sitting where an audio/PDF file should be immediately obvious.
+function currentDigitalFileList(product) {
+  if (Array.isArray(product.tracklist_snippets) && product.tracklist_snippets.length > 0) {
+    return product.tracklist_snippets.map(t => ({ url: t.url, name: t.title || t.url }))
+  }
+  if (Array.isArray(product.download_files) && product.download_files.length > 0) {
+    return product.download_files.map(f => ({ url: f.url, name: f.name || f.url }))
+  }
+  if (product.audio_preview_url) {
+    const name = decodeURIComponent((product.audio_preview_url.split('/').pop() || product.audio_preview_url).replace(/^\d+-/, ''))
+    return [{ url: product.audio_preview_url, name }]
+  }
+  return []
+}
+
+function renderEditCurrentFilesPreview(product) {
+  const previewEl = document.getElementById('edit-file-current-preview')
+  const files = currentDigitalFileList(product)
+  previewEl.innerHTML = files.length === 0
+    ? '<p class="field-hint">No digital file attached.</p>'
+    : files.map(f => `
+        <div class="admin-file-chip">
+          ${isImageUrl(f.url) ? `<img src="${f.url}" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; margin-right: 0.4rem; vertical-align: middle;">` : ''}
+          <span class="admin-file-chip-name">${f.name}</span>
+        </div>
+      `).join('')
+}
+
 function renderEditImagePreview() {
   const previewEl = document.getElementById('edit-image-preview')
   previewEl.innerHTML = editKeptImages.map((url, idx) => `
@@ -1237,16 +1279,8 @@ function openEditModal(product) {
     .filter(Boolean)
   renderEditImagePreview()
 
-  const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
-  const fileCount = Array.isArray(product.download_files) ? product.download_files.length : 0
-  const currentFileInfo = document.getElementById('edit-file-current-info')
-  currentFileInfo.textContent = trackCount > 0
-    ? `Currently: ${trackCount}-track album`
-    : fileCount > 1
-      ? `Currently: ${fileCount}-file bundle`
-      : product.audio_preview_url
-        ? 'Currently: digital file attached'
-        : 'Currently: no digital file attached'
+  renderEditCurrentFilesPreview(product)
+  document.getElementById('edit-file-clear').checked = false
 
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
   document.getElementById('edit-published').checked = product.published !== false
@@ -2285,6 +2319,15 @@ function initAdminPortal() {
       let fileUrl = editingProduct ? editingProduct.audio_preview_url : null
       let downloadFiles = editingProduct ? editingProduct.download_files : null
       let tracklistSnippets = editingProduct ? editingProduct.tracklist_snippets : null
+      // Checked and no new files picked: drop whatever's currently attached
+      // (a stray/mistaken file, or a product that shouldn't have one at
+      // all) without requiring a replacement to be uploaded first — there
+      // was previously no way to clear this to nothing.
+      if (document.getElementById('edit-file-clear').checked) {
+        fileUrl = null
+        downloadFiles = null
+        tracklistSnippets = null
+      }
       if (editNewDigitalFiles.length > 0) {
         const result = await processDigitalFiles(editNewDigitalFiles)
         fileUrl = result.fileUrl
