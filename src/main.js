@@ -497,9 +497,17 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     : ''
   const descriptionHTML = descriptionText ? `<p class="description">${descriptionText}</p>` : ''
 
-  const sizesHTML = product.sizes
-    ? `<div class="sizes-container">${product.sizes.split(',').map(s => `<span class="size-tag">${s.trim()}</span>`).join('')}</div>`
-    : ''
+  // A 'printful' category product has no free-text Sizes field (grayed out
+  // in the admin — redundant with the Printful IDs field, which already
+  // keys each size), so its sizes are read from printful_variant_map's own
+  // keys instead. 'default' means a sizeless single-variant product, not a
+  // size choice.
+  const printfulSizeKeys = product.category === 'printful' && product.printful_variant_map
+    ? Object.keys(product.printful_variant_map).filter(k => k !== 'default')
+    : []
+  const sizesHTML = product.category === 'printful'
+    ? (printfulSizeKeys.length > 0 ? `<div class="sizes-container">${printfulSizeKeys.map(s => `<span class="size-tag">${s}</span>`).join('')}</div>` : '')
+    : (product.sizes ? `<div class="sizes-container">${product.sizes.split(',').map(s => `<span class="size-tag">${s.trim()}</span>`).join('')}</div>` : '')
 
   // Card no longer plays audio at all — preview belongs on the product page.
   let audioHTML = ''
@@ -545,8 +553,13 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     `
   }
 
-  const needsSize = pricingMode !== 'free' && !isInert && product.category === 'apparel' && product.sizes
-  const sizeOptions = needsSize ? product.sizes.split(',').map(s => s.trim()).filter(Boolean) : []
+  const needsSize = pricingMode !== 'free' && !isInert && (
+    (product.category === 'apparel' && product.sizes) ||
+    (product.category === 'printful' && printfulSizeKeys.length > 0)
+  )
+  const sizeOptions = !needsSize ? [] : (
+    product.category === 'printful' ? printfulSizeKeys : product.sizes.split(',').map(s => s.trim()).filter(Boolean)
+  )
   // The card shows sizes as plain informational tags only (sizesHTML,
   // above) — the interactive picker and its price-upcharge hint are part
   // of the buy flow, so they only exist where showBuyControls is on.
@@ -878,13 +891,31 @@ async function deleteProduct(product) {
 // depending on the individual product.
 const SHIPPABLE_CATEGORIES = ['apparel', 'art', 'music', 'pancho picks']
 
+// 'printful' is its own category (fields for it: Printful IDs; not: the
+// free-text Sizes box, self-ship Package Weight — sizes there come from the
+// Printful IDs' own S:/M:/L: keys, and Printful quotes shipping itself, no
+// weight needed), but it's still a shippable, Printful-fulfillable category
+// like the others — this just adds it to that check without folding it into
+// SHIPPABLE_CATEGORIES itself, since that list specifically means "this
+// category still needs the self-ship Package Weight field."
+function canUsePrintful(categoryValue) {
+  return SHIPPABLE_CATEGORIES.includes(categoryValue) || categoryValue === 'printful'
+}
+
 function updateSizesVisibility(categoryValue, pricingMode, groupId) {
   const show = categoryValue === 'apparel' && pricingMode !== 'free' && pricingMode !== 'reserve'
   document.getElementById(groupId).style.display = show ? 'block' : 'none'
 }
 
 function updateWeightVisibility(categoryValue, pricingMode, groupId) {
+  // Excludes 'printful' deliberately — that category ships via Printful's
+  // own rate quoting, keyed off its variant IDs, never a self-ship weight.
   const show = SHIPPABLE_CATEGORIES.includes(categoryValue) && pricingMode !== 'free' && pricingMode !== 'reserve'
+  document.getElementById(groupId).style.display = show ? 'block' : 'none'
+}
+
+function updatePrintfulVisibility(categoryValue, pricingMode, groupId) {
+  const show = canUsePrintful(categoryValue) && pricingMode !== 'free' && pricingMode !== 'reserve'
   document.getElementById(groupId).style.display = show ? 'block' : 'none'
 }
 
@@ -939,6 +970,7 @@ function updatePricingModeUI(prefix) {
 
   updateSizesVisibility(category, pricingMode, `${prefix}-sizes-group`)
   updateWeightVisibility(category, pricingMode, `${prefix}-weight-group`)
+  updatePrintfulVisibility(category, pricingMode, `${prefix}-printful-group`)
 }
 
 // Services-only, so this never needs to be per-product configurable —
@@ -1796,7 +1828,7 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, newDig
   // Printful items never get a Payment Link — it collects a shipping
   // address but never attaches a shipping charge, so if it were ever
   // used the shipping cost would land on us instead of the buyer.
-  const isPrintful = SHIPPABLE_CATEGORIES.includes(category) && !!document.getElementById(printfulInputId).value.trim()
+  const isPrintful = canUsePrintful(category) && !!document.getElementById(printfulInputId).value.trim()
 
   if (!title) {
     statusEl.textContent = 'Enter a title before generating a link.'
@@ -2068,7 +2100,7 @@ function initAdminPortal() {
       const sizes = category === 'apparel' ? (document.getElementById('upload-sizes').value.trim() || null) : null
       const weightRaw = SHIPPABLE_CATEGORIES.includes(category) ? document.getElementById('upload-weight').value.trim() : ''
       const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
-      const printfulVariantMap = SHIPPABLE_CATEGORIES.includes(category)
+      const printfulVariantMap = canUsePrintful(category)
         ? parsePrintfulVariantMap(document.getElementById('upload-printful-variants').value)
         : null
       const inventoryRaw = document.getElementById('upload-inventory').value.trim()
@@ -2164,7 +2196,7 @@ function initAdminPortal() {
       const sizes = category === 'apparel' ? (document.getElementById('edit-sizes').value.trim() || null) : null
       const weightRaw = SHIPPABLE_CATEGORIES.includes(category) ? document.getElementById('edit-weight').value.trim() : ''
       const weightOz = weightRaw === '' ? null : parseFloat(weightRaw)
-      const printfulVariantMap = SHIPPABLE_CATEGORIES.includes(category)
+      const printfulVariantMap = canUsePrintful(category)
         ? parsePrintfulVariantMap(document.getElementById('edit-printful-variants').value)
         : null
       const inventoryRaw = document.getElementById('edit-inventory').value.trim()

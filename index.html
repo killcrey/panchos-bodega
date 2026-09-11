@@ -2321,6 +2321,7 @@
                   <option value="art">Art</option>
                   <option value="music">Music</option>
                   <option value="services">Services</option>
+                  <option value="printful">Printful</option>
                   <option value="pancho picks">Pancho Picks</option>
                 </select>
                 <input type="text" id="upload-title" class="admin-input" placeholder="Title" required>
@@ -2355,12 +2356,14 @@
                 <div id="upload-weight-group" style="display: none;">
                   <input type="number" id="upload-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
                   <p class="field-hint">Leave blank for a pure digital download or a Printful item (below). Set a weight to self-ship this as a physical item — buyers get a live shipping rate from Shippo at checkout based on it.</p>
+                </div>
+                <div id="upload-printful-group" style="display: none;">
                   <input type="text" id="upload-printful-variants" class="admin-input" placeholder="Printful IDs, e.g. S:12345:67890, M:12346:67891">
-                  <p class="field-hint">Fulfilled by Printful instead of self-shipped — leave Package Weight blank if you use this. Paste the IDs given to you here.</p>
+                  <p class="field-hint">Fulfilled by Printful instead of self-shipped. Paste the IDs given to you here. For the Printful category, the sizes shown to buyers come from these IDs' own S:/M:/L: labels — the Sizes box above doesn't apply.</p>
                 </div>
                 <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
-                <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple>
                 <div id="upload-image-preview" class="admin-image-preview"></div>
+                <input type="file" id="upload-image" class="admin-input" accept="image/*" multiple>
                 <label class="admin-file-label" for="upload-file">Digital File(s) — audio, PDF, or image (optional; select multiple to bundle as a .zip)</label>
                 <div id="upload-file-preview" class="admin-file-chip-list"></div>
                 <input type="file" id="upload-file" class="admin-input" accept="audio/*,application/pdf,image/*" multiple>
@@ -2445,6 +2448,7 @@
                 <option value="art">Art</option>
                 <option value="music">Music</option>
                 <option value="services">Services</option>
+                <option value="printful">Printful</option>
                 <option value="pancho picks">Pancho Picks</option>
               </select>
               <input type="text" id="edit-title" class="admin-input" placeholder="Title" required>
@@ -2479,8 +2483,10 @@
               <div id="edit-weight-group" style="display: none;">
                 <input type="number" id="edit-weight" class="admin-input" placeholder="Package Weight, oz" step="0.1" min="0">
                 <p class="field-hint">Leave blank for a pure digital download or a Printful item (below). Set a weight to self-ship this as a physical item — buyers get a live shipping rate from Shippo at checkout based on it.</p>
+              </div>
+              <div id="edit-printful-group" style="display: none;">
                 <input type="text" id="edit-printful-variants" class="admin-input" placeholder="Printful IDs, e.g. S:12345:67890, M:12346:67891">
-                <p class="field-hint">Fulfilled by Printful instead of self-shipped — leave Package Weight blank if you use this. Paste the IDs given to you here.</p>
+                <p class="field-hint">Fulfilled by Printful instead of self-shipped. Paste the IDs given to you here. For the Printful category, the sizes shown to buyers come from these IDs' own S:/M:/L: labels — the Sizes box above doesn't apply.</p>
               </div>
               <label class="admin-file-label">Current Photos (click × to remove one)</label>
               <span id="edit-image-current-info" class="field-status"></span>
