@@ -728,7 +728,9 @@ function isAudioFile(file) {
 
 async function uploadToVault(file) {
   const path = `${Date.now()}-${file.name}`
-  const { error } = await supabase.storage.from('audio-vault').upload(path, file)
+  // Same fix as processImageFiles below — without this, every signed
+  // playback/download URL serves with Cache-Control: no-cache.
+  const { error } = await supabase.storage.from('audio-vault').upload(path, file, { cacheControl: '2592000' })
   if (error) throw error
   const { data } = supabase.storage.from('audio-vault').getPublicUrl(path)
   return { url: data.publicUrl, path }
@@ -812,7 +814,13 @@ async function processImageFiles(files) {
   const urls = []
   for (const file of files) {
     const path = `${Date.now()}-${file.name}`
-    const { error } = await supabase.storage.from('bodega-images').upload(path, file)
+    // Without an explicit cacheControl, this bucket was serving every object
+    // with `Cache-Control: no-cache` (confirmed live via response headers on
+    // existing uploads) — every visitor re-fetches every product photo from
+    // Supabase's origin on every page view instead of the CDN/browser
+    // caching it. 30 days is safe since a product photo's URL changes (new
+    // timestamp prefix) whenever it's actually replaced.
+    const { error } = await supabase.storage.from('bodega-images').upload(path, file, { cacheControl: '2592000' })
     if (error) throw error
     const { data } = supabase.storage.from('bodega-images').getPublicUrl(path)
     urls.push(data.publicUrl)
