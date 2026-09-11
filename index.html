@@ -1883,7 +1883,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal, #service-inquiry-modal, #offer-modal, #reserve-modal {
+      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal, #service-inquiry-modal, #offer-modal, #reserve-modal, #featured-full-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -2528,6 +2528,17 @@
             </div>
           </form>
           <div id="edit-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="featured-full-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Featured Is Full</p>
+        <p style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Featured only holds 3 at a time. Pick one to replace:</p>
+        <div id="featured-full-list"></div>
+        <div class="edit-modal-actions">
+          <button type="button" id="featured-full-cancel-btn" class="admin-btn">Cancel</button>
         </div>
       </div>
     </div>

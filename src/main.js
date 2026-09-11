@@ -1051,6 +1051,48 @@ function formatPrintfulVariantMap(map) {
   return entries.map(([size, v]) => `${size}:${v.variantId}:${v.syncVariantId}`).join(', ')
 }
 
+let featuredFullResolver = null
+
+function openFeaturedFullModal(products) {
+  const listEl = document.getElementById('featured-full-list')
+  listEl.innerHTML = products.map(p => `
+    <button type="button" class="admin-btn featured-full-pick-btn" data-id="${p.id}" style="display: block; width: 100%; margin-bottom: 0.5rem; text-align: left;">${p.title}</button>
+  `).join('')
+  listEl.querySelectorAll('.featured-full-pick-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-id')
+      closeFeaturedFullModal()
+      if (featuredFullResolver) featuredFullResolver(id)
+    })
+  })
+  document.getElementById('featured-full-modal').style.display = 'flex'
+}
+
+function closeFeaturedFullModal() {
+  document.getElementById('featured-full-modal').style.display = 'none'
+}
+
+function initFeaturedFullModal() {
+  const modal = document.getElementById('featured-full-modal')
+  if (!modal) return
+  const cancel = () => {
+    closeFeaturedFullModal()
+    if (featuredFullResolver) featuredFullResolver(null)
+  }
+  document.getElementById('featured-full-cancel-btn').addEventListener('click', cancel)
+  modal.addEventListener('click', (e) => { if (e.target === modal) cancel() })
+}
+
+// Resolves to the id of the featured product the admin chose to bump, or
+// null if they cancelled (resolveLandingSlot falls back to the old hard
+// error in that case, so cancelling never silently proceeds).
+function pickFeaturedToReplace(products) {
+  return new Promise((resolve) => {
+    featuredFullResolver = resolve
+    openFeaturedFullModal(products)
+  })
+}
+
 // Validates the landing-page slot picked in an admin form against what's
 // already slotted. 'featured' holds up to three products, so it's capped
 // here (the DB can't express "at most 3"); the two single-occupancy slots
@@ -1071,18 +1113,37 @@ async function resolveLandingSlot(selectId, productId) {
 
   if (slot === 'featured') {
     if (others.length >= 3) {
-      throw new Error(`Already 3 featured products (${others.map(p => p.title).join(', ')}). Clear one first.`)
+      // Unlike the single-occupancy slots below, there's no one obvious
+      // product to bump — ask which of the 3 to replace instead of just
+      // erroring, since guessing (oldest? last in the list?) would surprise
+      // the admin either way.
+      const toReplaceId = await pickFeaturedToReplace(others)
+      if (!toReplaceId) {
+        throw new Error(`Already 3 featured products (${others.map(p => p.title).join(', ')}). Clear one first.`)
+      }
+      // .update() under RLS returns { error: null } even when zero rows
+      // matched — chaining .select() and checking the result is the only
+      // way to actually know the clear happened.
+      const { data: cleared, error: clearError } = await supabase
+        .from('products')
+        .update({ landing_slot: null })
+        .eq('id', toReplaceId)
+        .select()
+      if (clearError) throw clearError
+      if (!cleared || cleared.length === 0) throw new Error('Failed to clear the replaced product\'s Featured slot — try again.')
     }
     return slot
   }
 
   // Latest Release / Panchos Pick: only one product may hold each.
   if (others.length > 0) {
-    const { error: clearError } = await supabase
+    const { data: cleared, error: clearError } = await supabase
       .from('products')
       .update({ landing_slot: null })
       .in('id', others.map(p => p.id))
+      .select()
     if (clearError) throw clearError
+    if (!cleared || cleared.length !== others.length) throw new Error('Failed to clear the previous slot holder — try again.')
   }
 
   return slot
@@ -3083,6 +3144,7 @@ initFreeDownloadModal()
 initServiceInquiryModal()
 initOfferModal()
 initReserveModal()
+initFeaturedFullModal()
 initShippingCheckoutModal()
 initCartModal()
 initTipModal()
