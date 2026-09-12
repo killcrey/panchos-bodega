@@ -1883,7 +1883,7 @@
       }
 
       /* EDIT MODAL */
-      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal, #service-inquiry-modal, #offer-modal, #reserve-modal, #featured-full-modal {
+      #edit-modal, #free-download-modal, #shipping-checkout-modal, #cart-modal, #tip-modal, #service-inquiry-modal, #offer-modal, #reserve-modal, #featured-full-modal, #printful-lookup-modal {
         display: none;
         position: fixed;
         top: 0;
@@ -2359,6 +2359,7 @@
                 </div>
                 <div id="upload-printful-group" style="display: none;">
                   <input type="text" id="upload-printful-variants" class="admin-input" placeholder="Printful IDs, e.g. S:12345:67890, M:12346:67891">
+                  <button type="button" id="upload-printful-lookup-btn" class="admin-btn admin-btn-small">Look Up Printful IDs</button>
                   <p class="field-hint">Fulfilled by Printful instead of self-shipped. Paste the IDs given to you here. For the Printful category, the sizes shown to buyers come from these IDs' own S:/M:/L: labels — the Sizes box above doesn't apply.</p>
                 </div>
                 <label class="admin-file-label" for="upload-image">Product Photos (select multiple — first is the main photo)</label>
@@ -2486,6 +2487,7 @@
               </div>
               <div id="edit-printful-group" style="display: none;">
                 <input type="text" id="edit-printful-variants" class="admin-input" placeholder="Printful IDs, e.g. S:12345:67890, M:12346:67891">
+                <button type="button" id="edit-printful-lookup-btn" class="admin-btn admin-btn-small">Look Up Printful IDs</button>
                 <p class="field-hint">Fulfilled by Printful instead of self-shipped. Paste the IDs given to you here. For the Printful category, the sizes shown to buyers come from these IDs' own S:/M:/L: labels — the Sizes box above doesn't apply.</p>
               </div>
               <label class="admin-file-label">Current Photos (click × to remove one)</label>
@@ -2544,6 +2546,17 @@
         <div id="featured-full-list"></div>
         <div class="edit-modal-actions">
           <button type="button" id="featured-full-cancel-btn" class="admin-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="printful-lookup-modal">
+      <div class="edit-modal-content">
+        <p class="admin-title">Your Synced Printful Products</p>
+        <p style="font-size: 0.7rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;">Pulled live from Printful — find the matching product below and click "Use This" to fill its IDs into the field.</p>
+        <div id="printful-lookup-list"></div>
+        <div class="edit-modal-actions">
+          <button type="button" id="printful-lookup-cancel-btn" class="admin-btn">Close</button>
         </div>
       </div>
     </div>

@@ -1090,6 +1090,74 @@ function initFeaturedFullModal() {
   modal.addEventListener('click', (e) => { if (e.target === modal) cancel() })
 }
 
+// Admin reference tool for the Printful IDs field — Printful's own
+// dashboard doesn't reliably surface the plain numeric IDs its API
+// actually needs (confirmed live: the variant row shows a hashed
+// reference, not the integer id), so this calls printful-variant-lookup
+// (which does hit the real API) and lets the admin fill the field with
+// one click instead of hunting for the numbers by hand.
+let printfulLookupTargetId = null
+
+function openPrintfulLookupModal(targetInputId) {
+  printfulLookupTargetId = targetInputId
+  document.getElementById('printful-lookup-list').innerHTML = '<p class="field-hint">Loading your synced Printful products...</p>'
+  document.getElementById('printful-lookup-modal').style.display = 'flex'
+  loadPrintfulLookupList()
+}
+
+function closePrintfulLookupModal() {
+  document.getElementById('printful-lookup-modal').style.display = 'none'
+}
+
+function renderPrintfulLookupList(products) {
+  const listEl = document.getElementById('printful-lookup-list')
+
+  if (products.length === 0) {
+    listEl.innerHTML = '<p class="field-hint">No products synced to Printful yet.</p>'
+    return
+  }
+
+  listEl.innerHTML = products.map((p, idx) => `
+    <div class="tip-row">
+      <div class="tip-row-meta">
+        <strong style="color: #ccc;">${p.name}</strong>
+        <br><span style="font-size: 0.6rem; color: #888;">${p.formatted || 'No variants found'}</span>
+      </div>
+      ${p.formatted ? `<button type="button" class="admin-btn admin-btn-small printful-use-btn" data-idx="${idx}">Use This</button>` : ''}
+    </div>
+  `).join('')
+
+  listEl.querySelectorAll('.printful-use-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const product = products[parseInt(btn.getAttribute('data-idx'), 10)]
+      if (printfulLookupTargetId && product?.formatted) {
+        document.getElementById(printfulLookupTargetId).value = product.formatted
+      }
+      closePrintfulLookupModal()
+    })
+  })
+}
+
+async function loadPrintfulLookupList() {
+  const listEl = document.getElementById('printful-lookup-list')
+  try {
+    const { data, error } = await supabase.functions.invoke('printful-variant-lookup')
+    if (error) throw error
+    renderPrintfulLookupList(data?.products || [])
+  } catch (err) {
+    listEl.innerHTML = `<p class="field-hint" style="color: #ff4d4d;">${await describeFunctionError(err)}</p>`
+  }
+}
+
+function initPrintfulLookupModal() {
+  const modal = document.getElementById('printful-lookup-modal')
+  if (!modal) return
+  document.getElementById('printful-lookup-cancel-btn').addEventListener('click', closePrintfulLookupModal)
+  modal.addEventListener('click', (e) => { if (e.target === modal) closePrintfulLookupModal() })
+  document.getElementById('upload-printful-lookup-btn').addEventListener('click', () => openPrintfulLookupModal('upload-printful-variants'))
+  document.getElementById('edit-printful-lookup-btn').addEventListener('click', () => openPrintfulLookupModal('edit-printful-variants'))
+}
+
 // Resolves to the id of the featured product the admin chose to bump, or
 // null if they cancelled (resolveLandingSlot falls back to the old hard
 // error in that case, so cancelling never silently proceeds).
@@ -3188,6 +3256,7 @@ initServiceInquiryModal()
 initOfferModal()
 initReserveModal()
 initFeaturedFullModal()
+initPrintfulLookupModal()
 initShippingCheckoutModal()
 initCartModal()
 initTipModal()

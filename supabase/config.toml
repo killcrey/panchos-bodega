@@ -430,6 +430,12 @@ verify_jwt = true
 import_map = "./functions/create-stripe-link/deno.json"
 entrypoint = "./functions/create-stripe-link/index.ts"
 
+[functions.printful-variant-lookup]
+enabled = true
+verify_jwt = true
+import_map = "./functions/printful-variant-lookup/deno.json"
+entrypoint = "./functions/printful-variant-lookup/index.ts"
+
 [functions.free-download]
 enabled = true
 verify_jwt = false
