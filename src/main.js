@@ -2983,7 +2983,13 @@ function showStore(filter = 'all', { skipHistoryUpdate = false } = {}) {
   if (landing) landing.style.display = 'none'
   stopLandingRotation()
   storeGrid.style.display = 'grid'
-  applyFilter(filter)
+  // A filter that matches no tab (e.g. a raw category with no filter of its
+  // own — this is exactly how the "Back to the Bodega" bug happened)
+  // previously fell through to applyFilter silently hiding every card,
+  // since no card's data-category could match it either. Falling back to
+  // 'all' here means a bad filter value is merely wrong, not a blank page.
+  const validFilters = Array.from(document.querySelectorAll('.filter-btn[data-filter]')).map(b => b.getAttribute('data-filter'))
+  applyFilter(validFilters.includes(filter) ? filter : 'all')
   resetMetaTagsToHomepage()
   closeMobileNav()
   window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -3021,7 +3027,12 @@ function showProductPage(product) {
 
   const backBtn = document.getElementById('product-back-btn')
   if (backBtn) {
-    backBtn.onclick = () => showStore((product.category || '').toString().trim().toLowerCase() || 'all')
+    // Must go through displayCategory — a Printful category has no filter
+    // tab of its own (see isPrintfulCategory/displayCategory above), so
+    // using the raw category here filtered every card out silently instead
+    // of falling back to a real tab (confirmed live: this exact bug, found
+    // and fixed 2026-09-12).
+    backBtn.onclick = () => showStore(displayCategory((product.category || '').toString().trim().toLowerCase()) || 'all')
   }
 
   view.style.display = 'block'
