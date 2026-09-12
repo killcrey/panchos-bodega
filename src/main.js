@@ -504,15 +504,16 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     : ''
   const descriptionHTML = descriptionText ? `<p class="description">${descriptionText}</p>` : ''
 
-  // A 'printful' category product has no free-text Sizes field (grayed out
+  // A Printful category product has no free-text Sizes field (grayed out
   // in the admin — redundant with the Printful IDs field, which already
   // keys each size), so its sizes are read from printful_variant_map's own
   // keys instead. 'default' means a sizeless single-variant product, not a
   // size choice.
-  const printfulSizeKeys = product.category === 'printful' && product.printful_variant_map
+  const isPrintfulProduct = isPrintfulCategory(product.category)
+  const printfulSizeKeys = isPrintfulProduct && product.printful_variant_map
     ? Object.keys(product.printful_variant_map).filter(k => k !== 'default')
     : []
-  const sizesHTML = product.category === 'printful'
+  const sizesHTML = isPrintfulProduct
     ? (printfulSizeKeys.length > 0 ? `<div class="sizes-container">${printfulSizeKeys.map(s => `<span class="size-tag">${s}</span>`).join('')}</div>` : '')
     : (product.sizes ? `<div class="sizes-container">${product.sizes.split(',').map(s => `<span class="size-tag">${s.trim()}</span>`).join('')}</div>` : '')
 
@@ -562,10 +563,10 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
 
   const needsSize = pricingMode !== 'free' && !isInert && (
     (product.category === 'apparel' && product.sizes) ||
-    (product.category === 'printful' && printfulSizeKeys.length > 0)
+    (isPrintfulProduct && printfulSizeKeys.length > 0)
   )
   const sizeOptions = !needsSize ? [] : (
-    product.category === 'printful' ? printfulSizeKeys : product.sizes.split(',').map(s => s.trim()).filter(Boolean)
+    isPrintfulProduct ? printfulSizeKeys : product.sizes.split(',').map(s => s.trim()).filter(Boolean)
   )
   // The card shows sizes as plain informational tags only (sizesHTML,
   // above) — the interactive picker and its price-upcharge hint are part
@@ -606,7 +607,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     ${galleryHTML}
     ${titleHTML}
     <p class="price" style="margin: 0 0 0.15rem 0; font-size: 0.65rem;">${formattedPrice}</p>
-    <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(product.category || 'UNCATEGORIZED').toUpperCase()}</p>
+    <p style="font-size: 0.5rem; letter-spacing: 1px; color: #aaa; margin: 0 0 0.2rem 0;">${(displayCategory(product.category) || 'UNCATEGORIZED').toUpperCase()}</p>
     ${descriptionHTML}
     ${sizesHTML}
     ${trailingSpacerHTML}
@@ -898,15 +899,38 @@ async function deleteProduct(product) {
 // depending on the individual product.
 const SHIPPABLE_CATEGORIES = ['apparel', 'art', 'music', 'pancho picks']
 
-// 'printful' is its own category (fields for it: Printful IDs; not: the
-// free-text Sizes box, self-ship Package Weight — sizes there come from the
-// Printful IDs' own S:/M:/L: keys, and Printful quotes shipping itself, no
-// weight needed), but it's still a shippable, Printful-fulfillable category
-// like the others — this just adds it to that check without folding it into
+// Printful categories (fields for them: Printful IDs; not: the free-text
+// Sizes box, self-ship Package Weight — sizes come from the Printful IDs'
+// own S:/M:/L: keys, and Printful quotes shipping itself, no weight
+// needed), but each still needs to show up under the storefront category a
+// customer would actually browse for it — a fulfillment method isn't
+// something customers filter by, so 'printful-apparel'/'printful-picks'
+// exist specifically to file into the Apparel/Pancho Picks filter tabs
+// (see displayCategory) while still getting all of Printful's admin-form
+// behavior. Plain 'printful' (pre-split) is kept recognized here too, for
+// any existing row still using it — it just won't match a filter tab.
+function isPrintfulCategory(categoryValue) {
+  return categoryValue === 'printful' || categoryValue === 'printful-apparel' || categoryValue === 'printful-picks'
+}
+
+// The customer-facing category a product should be filed/labeled under —
+// a Printful category is an admin-only fulfillment distinction, not
+// something a customer browses by, so it's shown and filtered as its real
+// category (Apparel or Pancho Picks) everywhere the storefront renders or
+// filters by category. loadAdminInventory deliberately does NOT use this —
+// the admin should see the real stored category, not the customer-facing one.
+function displayCategory(categoryValue) {
+  if (categoryValue === 'printful-apparel') return 'apparel'
+  if (categoryValue === 'printful-picks') return 'pancho picks'
+  return categoryValue
+}
+
+// It's still a shippable, Printful-fulfillable category like the others —
+// this just adds it to that check without folding it into
 // SHIPPABLE_CATEGORIES itself, since that list specifically means "this
 // category still needs the self-ship Package Weight field."
 function canUsePrintful(categoryValue) {
-  return SHIPPABLE_CATEGORIES.includes(categoryValue) || categoryValue === 'printful'
+  return SHIPPABLE_CATEGORIES.includes(categoryValue) || isPrintfulCategory(categoryValue)
 }
 
 function updateSizesVisibility(categoryValue, pricingMode, groupId) {
@@ -2629,7 +2653,7 @@ async function loadBodega() {
 
     const card = document.createElement('div')
     card.className = 'product-card'
-    card.setAttribute('data-category', (product.category || '').toString().trim().toLowerCase())
+    card.setAttribute('data-category', displayCategory((product.category || '').toString().trim().toLowerCase()))
     card.setAttribute('data-product-id', product.id)
     card.innerHTML = renderProductMarkup(product, flags, { linkTitle: true, truncateDescription: true, showBuyControls: false, showDescription: false, showFullGallery: false, showAudioPreview: false })
 
@@ -3055,7 +3079,7 @@ function renderLandingDetail(product) {
   detail.innerHTML = `
     <h3 class="landing-detail-title">${product.title}</h3>
     <p class="landing-detail-price">${formattedPrice}</p>
-    <p class="landing-detail-category">${(product.category || 'uncategorized').toUpperCase()}</p>
+    <p class="landing-detail-category">${(displayCategory(product.category) || 'uncategorized').toUpperCase()}</p>
     ${product.description ? `<p class="landing-detail-description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>` : ''}
   `
   // Reassigned on every slide change so it always points at whichever
