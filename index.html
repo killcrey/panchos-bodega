@@ -2202,6 +2202,7 @@
           <p id="service-inquiry-subtitle" style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;"></p>
           <input type="text" id="service-inquiry-name" class="admin-input" placeholder="Your name" maxlength="100">
           <input type="email" id="service-inquiry-email" class="admin-input" placeholder="Email">
+          <input type="tel" id="service-inquiry-phone" class="admin-input" placeholder="Phone number (optional)" maxlength="30">
           <input type="date" id="service-inquiry-date" class="admin-input">
           <p class="field-hint">Event or project date (optional).</p>
           <input type="text" id="service-inquiry-budget" class="admin-input" placeholder="Budget range (optional)" maxlength="100">
@@ -2336,7 +2337,7 @@
                   <option value="offer_based">Offer Based (buyer names price)</option>
                 </select>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required autocomplete="off">
-                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) — the product page always shows a MESSAGE US button (quote-request form) plus a PAYMENT button (flat $25 non-refundable deposit), regardless of Pricing Mode.</p>
+                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) — the product page always shows a REQUEST A QUOTE button plus a PAYMENT button (customer enters whatever amount you tell them to pay), regardless of Pricing Mode.</p>
                 <div id="upload-offer-bounds-group" style="display: none;">
                   <input type="number" id="upload-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                   <input type="number" id="upload-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
@@ -2463,7 +2464,7 @@
                 <option value="offer_based">Offer Based (buyer names price)</option>
               </select>
               <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required autocomplete="off">
-              <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, the product page always shows a MESSAGE US button (quote-request form) plus a PAYMENT button (flat $25 non-refundable deposit), regardless of Pricing Mode.</p>
+              <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, the product page always shows a REQUEST A QUOTE button plus a PAYMENT button (customer enters whatever amount you tell them to pay), regardless of Pricing Mode.</p>
               <div id="edit-offer-bounds-group" style="display: none;">
                 <input type="number" id="edit-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                 <input type="number" id="edit-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">

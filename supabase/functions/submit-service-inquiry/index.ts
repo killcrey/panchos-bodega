@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-async function notifyAdmin(data: { productTitle: string | null; name: string; email: string; eventDate: string | null; budget: string | null; message: string | null }) {
+async function notifyAdmin(data: { productTitle: string | null; name: string; email: string; phone: string | null; eventDate: string | null; budget: string | null; message: string | null }) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
@@ -15,6 +15,7 @@ async function notifyAdmin(data: { productTitle: string | null; name: string; em
       <h2 style="letter-spacing: 1px;">New Service Inquiry</h2>
       <p><strong>Service:</strong> ${data.productTitle || 'Not specified'}</p>
       <p><strong>From:</strong> ${data.name} &lt;${data.email}&gt;</p>
+      ${data.phone ? `<p><strong>Phone:</strong> ${data.phone}</p>` : ''}
       ${data.eventDate ? `<p><strong>Date:</strong> ${data.eventDate}</p>` : ''}
       ${data.budget ? `<p><strong>Budget:</strong> ${data.budget}</p>` : ''}
       ${data.message ? `<p><strong>Message:</strong><br>${data.message.replace(/\n/g, '<br>')}</p>` : ''}
@@ -78,7 +79,7 @@ serve(async (req) => {
   }
 
   try {
-    const { productId, name, email, eventDate, budget, message } = await req.json()
+    const { productId, name, email, phone, eventDate, budget, message } = await req.json()
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       throw new Error("Please enter your name.")
@@ -105,6 +106,7 @@ serve(async (req) => {
       product_title: productTitle,
       name: name.trim(),
       email,
+      phone: phone || null,
       event_date: eventDate || null,
       budget: budget || null,
       message: message || null,
@@ -112,7 +114,7 @@ serve(async (req) => {
 
     if (insertError) throw insertError
 
-    await notifyAdmin({ productTitle, name: name.trim(), email, eventDate: eventDate || null, budget: budget || null, message: message || null })
+    await notifyAdmin({ productTitle, name: name.trim(), email, phone: phone || null, eventDate: eventDate || null, budget: budget || null, message: message || null })
     await sendConfirmation(email, name.trim(), productTitle)
 
     return new Response(

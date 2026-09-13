@@ -41,6 +41,7 @@ async function loadAdminInventory() {
     // min/max bounds below), so it's deliberately excluded here rather than
     // read off price_cents too.
     const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (product.price_cents || 0) === 0)
+    const isService = product.category === 'services'
     const hasCheckoutId = !!product.stripe_product_id
     // Services (any mode) and Free never need a Stripe Checkout ID —
     // services always use create-product-payment-session's ad-hoc sessions
@@ -54,15 +55,19 @@ async function loadAdminInventory() {
       latest_release: 'Latest Release',
       pancho_pick: 'Panchos Pick',
     }[product.landing_slot] || ''
+    // A $0 service means "Custom Pricing" on its product page (too varied to
+    // quote a number), not a free giveaway — showing "FREE" here read as
+    // exactly that, incorrectly.
     const priceLabel =
       pricingMode === 'offer_based' ? `OFFER${product.offer_min_cents != null ? ` $${(product.offer_min_cents / 100).toFixed(2)}+` : ''}` :
+      isService && isFree ? 'CUSTOM PRICING' :
       isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
     item.innerHTML = `
       <div class="inventory-item-info">
         <div class="inventory-item-title">${product.title || 'Untitled'}</div>
         <div class="inventory-item-meta">${priceLabel} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}${isTracked ? ` — ${product.inventory_count} IN STOCK` : ''}</div>
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
-        ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
+        ${!isService && isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
         ${pricingMode === 'offer_based' ? '<span class="inventory-status-badge status-checkout-set">Offer Based</span>' : ''}
         ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
         ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
@@ -181,7 +186,7 @@ async function loadAdminEmailCaptures() {
 // Same "active to-do queue" shape as loadAdminOrders — a handled inquiry
 // drops off the list rather than staying in an ever-growing ledger, since
 // each one needs a human follow-up (unlike tips, which just accumulate).
-// Shows both service_inquiries (MESSAGE US quote requests — need a human
+// Shows both service_inquiries (REQUEST A QUOTE requests — need a human
 // follow-up, so an "active queue" like Orders) and product_payments
 // (PAYMENT button charges — already paid, listed as a read-only ledger like
 // Tips, since there's no "handled" state for money that already cleared).
@@ -246,7 +251,7 @@ async function loadAdminServiceInquiries() {
     item.innerHTML = `
       <div class="order-item-title">${inquiry.product_title || 'General inquiry'}</div>
       <div class="order-item-meta">
-        <strong>${inquiry.name}</strong> — ${inquiry.email}
+        <strong>${inquiry.name}</strong> — ${inquiry.email}${inquiry.phone ? ` — ${inquiry.phone}` : ''}
         <br>${inquiry.created_at ? new Date(inquiry.created_at).toLocaleDateString() : ''}
         ${inquiry.event_date ? `<br><strong>Date:</strong> ${inquiry.event_date}` : ''}
         ${inquiry.budget ? `<br><strong>Budget:</strong> ${inquiry.budget}` : ''}
@@ -577,7 +582,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>`
     : ''
   // Every service shows the same two thinner buttons regardless of pricing
-  // mode — MESSAGE US (the existing quote-request inquiry, for pitching
+  // mode — REQUEST A QUOTE (the existing quote-request inquiry, for pitching
   // details/asking questions before paying anything) and PAYMENT (opens an
   // amount-entry modal — no fixed price, nothing non-refundable; the admin
   // tells the customer what to pay off-site, they type that amount in).
@@ -586,7 +591,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
   // unconditional (see create-product-payment-session).
   const buyButtonHTML = !showBuyControls ? '' : isService
     ? `<div style="display: flex; gap: 0.4rem; margin-top: 0.3rem;">
-        <button class="service-message-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: transparent; color: ${isInert ? '#666' : '#00ffcc'}; border: 1px solid ${isInert ? '#444' : '#00ffcc'}; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">Message Us</button>
+        <button class="service-message-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: transparent; color: ${isInert ? '#666' : '#00ffcc'}; border: 1px solid ${isInert ? '#444' : '#00ffcc'}; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">Request A Quote</button>
         <button class="service-payment-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">${isComingSoon ? 'Coming Soon' : 'Payment'}</button>
       </div>`
     : `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
@@ -692,7 +697,7 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
     })
   })
 
-  // Services get their own two-button wiring — MESSAGE US always opens the
+  // Services get their own two-button wiring — REQUEST A QUOTE always opens the
   // quote-request inquiry, PAYMENT always starts the flat $25 deposit
   // checkout, regardless of pricing_mode (see renderProductMarkup above).
   if (isService) {
@@ -1001,7 +1006,7 @@ function updatePrintfulVisibility(categoryValue, pricingMode, groupId) {
 // Stripe Checkout ID (it skips Stripe entirely), Offer Based replaces the
 // fixed price with buyer-chosen bounds. Services ignore pricing_mode
 // entirely on the storefront now — every service product page always shows
-// the same MESSAGE US + PAYMENT buttons (see renderProductMarkup/
+// the same REQUEST A QUOTE + PAYMENT buttons (see renderProductMarkup/
 // wireProductInteractions) — PAYMENT opens an amount-entry modal, no fixed
 // price of its own, which is what retired the old services-only Reserve
 // mode (2026-09-13). Offer Based is disabled for Services for the same
@@ -1009,7 +1014,7 @@ function updatePrintfulVisibility(categoryValue, pricingMode, groupId) {
 // bounds. Price still matters for a service, just as *display* only —
 // "Starting at $X" for a service with a real base rate (e.g. a performance),
 // or leave it at $0 for one that's too varied to quote a number for (e.g. a
-// website build) — it shows "Custom Pricing" instead. Either way MESSAGE US
+// website build) — it shows "Custom Pricing" instead. Either way REQUEST A QUOTE
 // and PAYMENT behave identically; Price never drives their behavior.
 function updatePricingModeUI(prefix) {
   const category = document.getElementById(`${prefix}-category`).value
@@ -1506,6 +1511,7 @@ function openServiceInquiryModal(product) {
   document.getElementById('service-inquiry-subtitle').textContent = `For "${product.title}" — tell us the details and we'll follow up with pricing.`
   document.getElementById('service-inquiry-name').value = ''
   document.getElementById('service-inquiry-email').value = ''
+  document.getElementById('service-inquiry-phone').value = ''
   document.getElementById('service-inquiry-date').value = ''
   document.getElementById('service-inquiry-budget').value = ''
   document.getElementById('service-inquiry-message').value = ''
@@ -1557,6 +1563,7 @@ function initServiceInquiryModal() {
           productId: serviceInquiryProduct?.id || null,
           name,
           email,
+          phone: document.getElementById('service-inquiry-phone').value.trim() || null,
           eventDate: document.getElementById('service-inquiry-date').value || null,
           budget: document.getElementById('service-inquiry-budget').value.trim() || null,
           message: document.getElementById('service-inquiry-message').value.trim() || null,
@@ -1658,7 +1665,7 @@ function initOfferModal() {
 // customer-typed amount (the admin tells them what to pay, off-site — no
 // fixed deposit, nothing non-refundable) and starts checkout for exactly
 // that. "Reserve" in the sense of a message before paying anything is
-// openServiceInquiryModal below (the MESSAGE US button).
+// openServiceInquiryModal below (the REQUEST A QUOTE button).
 let reserveProduct = null
 
 function openReserveModal(product) {
