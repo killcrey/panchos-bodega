@@ -2238,12 +2238,12 @@
 
     <div id="reserve-modal">
       <div class="edit-modal-content">
-        <p class="admin-title">Reserve</p>
+        <p class="admin-title">Payment</p>
         <p id="reserve-subtitle" style="font-size: 0.75rem; color: #aaa; margin: 0 0 1rem 0; line-height: 1.5;"></p>
         <div id="reserve-status" class="field-status"></div>
         <div class="edit-modal-actions">
           <button type="button" id="reserve-cancel-btn" class="admin-btn">Cancel</button>
-          <button type="button" id="reserve-confirm-btn" class="admin-btn">Reserve — $25.00</button>
+          <button type="button" id="reserve-confirm-btn" class="admin-btn">Pay $25.00</button>
         </div>
       </div>
     </div>
@@ -2333,16 +2333,14 @@
                   <option value="standard" selected>Standard</option>
                   <option value="free">Free Download</option>
                   <option value="offer_based">Offer Based (buyer names price)</option>
-                  <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
                 </select>
                 <input type="number" id="upload-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
-                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) and the buy button becomes a quote-request form instead of checkout.</p>
+                <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, this shows as a starting price (or "Custom Pricing" at $0) — the product page always shows a MESSAGE US button (quote-request form) plus a PAYMENT button (flat $25 non-refundable deposit), regardless of Pricing Mode.</p>
                 <div id="upload-offer-bounds-group" style="display: none;">
                   <input type="number" id="upload-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                   <input type="number" id="upload-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
                   <p class="field-hint">Buyer picks an amount in this range instead of a fixed price.</p>
                 </div>
-                <p id="upload-reserve-note" class="field-hint" style="display: none; color: #e8b923;">Price locked to $25.00 — non-refundable, applied toward the final price once details are worked out.</p>
                 <div id="upload-inventory-group">
                   <input type="number" id="upload-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
                   <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>
@@ -2462,16 +2460,14 @@
                 <option value="standard">Standard</option>
                 <option value="free">Free Download</option>
                 <option value="offer_based">Offer Based (buyer names price)</option>
-                <option value="reserve">Reserve (Services only — $25 non-refundable deposit)</option>
               </select>
               <input type="number" id="edit-price" class="admin-input" placeholder="Price (USD)" step="0.01" min="0" required>
-              <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item.</p>
+              <p class="field-hint">Set price to $0 to offer this as a free download instead of a paid item. For the Services category, the product page always shows a MESSAGE US button (quote-request form) plus a PAYMENT button (flat $25 non-refundable deposit), regardless of Pricing Mode.</p>
               <div id="edit-offer-bounds-group" style="display: none;">
                 <input type="number" id="edit-offer-min" class="admin-input" placeholder="Minimum Offer (USD)" step="0.01" min="0.01">
                 <input type="number" id="edit-offer-max" class="admin-input" placeholder="Maximum Offer (USD)" step="0.01" min="0.01">
                 <p class="field-hint">Buyer picks an amount in this range instead of a fixed price.</p>
               </div>
-              <p id="edit-reserve-note" class="field-hint" style="display: none; color: #e8b923;">Price locked to $25.00 — non-refundable, applied toward the final price once details are worked out.</p>
               <div id="edit-inventory-group">
                 <input type="number" id="edit-inventory" class="admin-input" placeholder="Inventory Count (optional)" step="1" min="0">
                 <p class="field-hint">Leave blank for unlimited stock. Set a number to auto-track it — the storefront shows SOLD OUT once it hits 0.</p>

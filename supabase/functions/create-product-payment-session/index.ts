@@ -52,11 +52,13 @@ serve(async (req) => {
     let productName: string
     let productDescription: string
 
-    if (product.pricing_mode === 'reserve') {
-      finalAmountCents = RESERVE_DEPOSIT_CENTS
-      productName = `Reservation Deposit — ${product.title}`
-      productDescription = 'Non-refundable. Applied toward the final price once details are worked out.'
-    } else if (product.pricing_mode === 'offer_based') {
+    // Every service now gets the same flat, unconditional deposit button on
+    // its product page (see renderProductMarkup/wireProductInteractions in
+    // main.js) — this no longer depends on a since-removed 'reserve'
+    // pricing_mode. amountCents is only ever sent by the (still-supported,
+    // but no longer UI-reachable for services) Offer Based path; anything
+    // else defaults to the flat deposit.
+    if (amountCents != null) {
       const min = product.offer_min_cents ?? 100
       const max = product.offer_max_cents ?? 100000
       const requested = Math.round(Number(amountCents))
@@ -65,7 +67,9 @@ serve(async (req) => {
       productName = `Custom Offer — ${product.title}`
       productDescription = 'Thanks for supporting The Invisible Panchos.'
     } else {
-      throw new Error('This product is not set up for direct payment.')
+      finalAmountCents = RESERVE_DEPOSIT_CENTS
+      productName = `Reservation Deposit — ${product.title}`
+      productDescription = 'Non-refundable. Applied toward the final price once details are worked out.'
     }
 
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
@@ -91,12 +95,18 @@ serve(async (req) => {
       // `productPayment` is what stripe-webhook branches on, mirroring how
       // it already branches on `tip` — skips every fulfillment step
       // (inventory, downloads, shipping labels, Printful) that a real
-      // product line item would otherwise trigger.
+      // product line item would otherwise trigger. `pricingMode` here
+      // reflects which branch above actually ran (flat deposit vs custom
+      // offer) — not product.pricing_mode, which stopped describing a
+      // service's payment behavior once every service got the same
+      // unconditional deposit button regardless of its stored pricing mode.
+      // The admin's Reserve/Offer payments badge (loadAdminOrders) reads
+      // this value, so it still needs 'reserve' / 'offer_based' exactly.
       metadata: {
         productPayment: 'true',
         productId: product.id,
         productTitle: product.title,
-        pricingMode: product.pricing_mode,
+        pricingMode: amountCents != null ? 'offer_based' : 'reserve',
       },
       success_url: `${SITE_URL}/success.html?session_id={CHECKOUT_SESSION_ID}&service=1`,
       cancel_url: `${SITE_URL}/`,

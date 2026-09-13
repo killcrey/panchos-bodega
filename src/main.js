@@ -42,11 +42,10 @@ async function loadAdminInventory() {
     // read off price_cents too.
     const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (product.price_cents || 0) === 0)
     const hasCheckoutId = !!product.stripe_product_id
-    // Services (any mode) and Free/Reserve never need a Stripe Checkout ID —
-    // services skip the cart's Stripe pipeline entirely, Free never checks
-    // out, Reserve uses its own ad-hoc session. Offer Based still needs one
-    // unless it's a service, which uses that same ad-hoc session instead.
-    const needsCheckoutId = product.category !== 'services' && pricingMode !== 'free' && pricingMode !== 'reserve' && !isFree
+    // Services (any mode) and Free never need a Stripe Checkout ID —
+    // services always use create-product-payment-session's ad-hoc sessions
+    // instead of the cart's Stripe pipeline, Free never checks out.
+    const needsCheckoutId = product.category !== 'services' && pricingMode !== 'free' && !isFree
     const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
     const isTracked = product.inventory_count != null
     const isSoldOut = isTracked && product.inventory_count <= 0
@@ -56,7 +55,6 @@ async function loadAdminInventory() {
       pancho_pick: 'Panchos Pick',
     }[product.landing_slot] || ''
     const priceLabel =
-      pricingMode === 'reserve' ? '$25.00 DEPOSIT' :
       pricingMode === 'offer_based' ? `OFFER${product.offer_min_cents != null ? ` $${(product.offer_min_cents / 100).toFixed(2)}+` : ''}` :
       isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
     item.innerHTML = `
@@ -66,7 +64,6 @@ async function loadAdminInventory() {
         <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
         ${isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
         ${pricingMode === 'offer_based' ? '<span class="inventory-status-badge status-checkout-set">Offer Based</span>' : ''}
-        ${pricingMode === 'reserve' ? '<span class="inventory-status-badge status-checkout-set">Reserve</span>' : ''}
         ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
         ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
         ${needsCheckoutId ? (hasCheckoutId
@@ -473,9 +470,8 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
   // existing product already has.
   const formattedPrice =
     pricingMode === 'free' ? 'FREE' :
-    pricingMode === 'reserve' ? '$25.00 to Reserve' :
-    pricingMode === 'offer_based' ? (product.offer_min_cents != null ? `From $${(product.offer_min_cents / 100).toFixed(2)}` : 'Name Your Price') :
     isService ? (isFree ? 'Custom Pricing' : `Starting at $${(product.price_cents / 100).toFixed(2)}`) :
+    pricingMode === 'offer_based' ? (product.offer_min_cents != null ? `From $${(product.offer_min_cents / 100).toFixed(2)}` : 'Name Your Price') :
     (isFree ? 'FREE' : `$${(product.price_cents / 100).toFixed(2)}`)
   const availableImages = productImages(product)
 
@@ -581,15 +577,26 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
   const sizeUpchargeHintHTML = (showBuyControls && upchargedSizes.length > 0)
     ? `<p style="font-size: 0.5rem; color: #e8b923; margin: 0.2rem 0 0 0;">+$${(SIZE_UPCHARGE_CENTS / 100).toFixed(0)} for ${upchargedSizes.join(', ')}</p>`
     : ''
-  const buyButtonHTML = showBuyControls
-    ? `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
+  // Every service shows the same two thinner buttons regardless of pricing
+  // mode — MESSAGE US (the existing quote-request inquiry, for pitching
+  // details/asking questions before paying anything) and PAYMENT (a flat
+  // $25 non-refundable deposit, applied toward the final price once scope
+  // is worked out over message). There's no "Make an Offer"/"Reserve"
+  // branching here anymore — pricing_mode stopped being a services UI
+  // switch once Payment became unconditional (see create-product-payment-
+  // session, which no longer requires pricing_mode === 'reserve' either).
+  const buyButtonHTML = !showBuyControls ? '' : isService
+    ? `<div style="display: flex; gap: 0.4rem; margin-top: 0.3rem;">
+        <button class="service-message-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: transparent; color: ${isInert ? '#666' : '#00ffcc'}; border: 1px solid ${isInert ? '#444' : '#00ffcc'}; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">Message Us</button>
+        <button class="service-payment-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">${isComingSoon ? 'Coming Soon' : 'Payment'}</button>
+      </div>
+      <p style="font-size: 0.5rem; color: #888; margin: 0.3rem 0 0 0; line-height: 1.4;">$25.00 — non-refundable, applied toward the final price once details are worked out.</p>`
+    : `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
         ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' :
           (pricingMode === 'free' ? 'Get It Free' :
-           pricingMode === 'reserve' ? 'Reserve' :
            pricingMode === 'offer_based' ? 'Make an Offer' :
-           isService ? 'Request a Quote' : (isFree ? 'Get It Free' : 'Add to Cart')))}
+           (isFree ? 'Get It Free' : 'Add to Cart')))}
       </button>`
-    : ''
 
   const titleInner = `<h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>`
   const titleHTML = (linkTitle && product.slug)
@@ -687,6 +694,27 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
     })
   })
 
+  // Services get their own two-button wiring — MESSAGE US always opens the
+  // quote-request inquiry, PAYMENT always starts the flat $25 deposit
+  // checkout, regardless of pricing_mode (see renderProductMarkup above).
+  if (isService) {
+    const messageBtn = container.querySelector('.service-message-btn')
+    const paymentBtn = container.querySelector('.service-payment-btn')
+    if (messageBtn) {
+      messageBtn.addEventListener('click', () => {
+        if (isInert) return
+        openServiceInquiryModal(product)
+      })
+    }
+    if (paymentBtn) {
+      paymentBtn.addEventListener('click', () => {
+        if (isInert) return
+        openReserveModal(product)
+      })
+    }
+    return
+  }
+
   const buyButton = container.querySelector('.buy-btn')
   const sizeSelect = container.querySelector('.card-size-select')
   if (!buyButton) return
@@ -695,9 +723,6 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
       return
     } else if (pricingMode === 'free') {
       openFreeDownloadModal(product)
-      return
-    } else if (pricingMode === 'reserve') {
-      openReserveModal(product)
       return
     } else if (pricingMode === 'offer_based') {
       let size = null
@@ -709,9 +734,6 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
         }
       }
       openOfferModal(product, size)
-      return
-    } else if (isService) {
-      openServiceInquiryModal(product)
       return
     } else if (isFree) {
       openFreeDownloadModal(product)
@@ -959,62 +981,56 @@ function canUsePrintful(categoryValue) {
 }
 
 function updateSizesVisibility(categoryValue, pricingMode, groupId) {
-  const show = categoryValue === 'apparel' && pricingMode !== 'free' && pricingMode !== 'reserve'
+  const show = categoryValue === 'apparel' && pricingMode !== 'free'
   document.getElementById(groupId).style.display = show ? 'block' : 'none'
 }
 
 function updateWeightVisibility(categoryValue, pricingMode, groupId) {
   // Excludes 'printful' deliberately — that category ships via Printful's
   // own rate quoting, keyed off its variant IDs, never a self-ship weight.
-  const show = SHIPPABLE_CATEGORIES.includes(categoryValue) && pricingMode !== 'free' && pricingMode !== 'reserve'
+  const show = SHIPPABLE_CATEGORIES.includes(categoryValue) && pricingMode !== 'free'
   document.getElementById(groupId).style.display = show ? 'block' : 'none'
 }
 
 function updatePrintfulVisibility(categoryValue, pricingMode, groupId) {
-  const show = canUsePrintful(categoryValue) && pricingMode !== 'free' && pricingMode !== 'reserve'
+  const show = canUsePrintful(categoryValue) && pricingMode !== 'free'
   document.getElementById(groupId).style.display = show ? 'block' : 'none'
 }
 
 // Pricing Mode (see the products.pricing_mode migration) governs how a
 // price is determined, and combined with category, which fields are even
-// relevant: Free/Reserve never ship or track inventory or need a generated
-// Stripe Checkout ID (Free skips Stripe entirely; Reserve and a service's
-// Offer Based use a standalone session instead — see
-// create-product-payment-session), Offer Based replaces the fixed price
-// with buyer-chosen bounds. Reserve only means something for a service
-// ("applied toward the final price" of what, otherwise?) — its option is
-// disabled rather than merely hidden outside Services, so switching
-// category away can't leave a stale Reserve selection in place silently.
+// relevant: Free never ships or tracks inventory or needs a generated
+// Stripe Checkout ID (it skips Stripe entirely), Offer Based replaces the
+// fixed price with buyer-chosen bounds. Services ignore pricing_mode
+// entirely on the storefront now — every service product page always shows
+// the same MESSAGE US + flat-$25-deposit PAYMENT buttons (see
+// renderProductMarkup/wireProductInteractions), which is what retired the
+// old services-only Reserve mode (2026-09-13) — a deposit-taking button no
+// longer needs opting into via this dropdown, it's just how every service
+// works. Offer Based is disabled for Services for the same reason: there's
+// no UI left on a service page that would ever read its bounds.
 function updatePricingModeUI(prefix) {
   const category = document.getElementById(`${prefix}-category`).value
   const pricingModeSelect = document.getElementById(`${prefix}-pricing-mode`)
-  const reserveOption = pricingModeSelect.querySelector('option[value="reserve"]')
+  const offerBasedOption = pricingModeSelect.querySelector('option[value="offer_based"]')
   const isServices = category === 'services'
 
-  reserveOption.disabled = !isServices
+  offerBasedOption.disabled = isServices
   const priceInput = document.getElementById(`${prefix}-price`)
-  if (!isServices && pricingModeSelect.value === 'reserve') {
+  if (isServices && pricingModeSelect.value === 'offer_based') {
     pricingModeSelect.value = 'standard'
-    // The $25 lock was for Reserve specifically — leaving it in place after
-    // an automatic reset would look like a real price the admin chose.
-    priceInput.value = ''
   }
   const pricingMode = pricingModeSelect.value
   const offerGroup = document.getElementById(`${prefix}-offer-bounds-group`)
-  const reserveNote = document.getElementById(`${prefix}-reserve-note`)
   const inventoryGroup = document.getElementById(`${prefix}-inventory-group`)
   const stripeSection = document.getElementById(`${prefix}-stripe-section`)
 
   priceInput.style.display = pricingMode === 'offer_based' ? 'none' : 'block'
   priceInput.required = pricingMode !== 'offer_based'
   offerGroup.style.display = pricingMode === 'offer_based' ? 'block' : 'none'
-  reserveNote.style.display = pricingMode === 'reserve' ? 'block' : 'none'
 
   if (pricingMode === 'free') {
     priceInput.value = '0'
-    priceInput.disabled = true
-  } else if (pricingMode === 'reserve') {
-    priceInput.value = '25'
     priceInput.disabled = true
   } else {
     priceInput.disabled = false
@@ -1036,7 +1052,7 @@ function updatePricingModeUI(prefix) {
   // loadAdminInventory) — so both should hide the same now-irrelevant
   // fields here too, not just an explicit 'free' selection.
   const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (parseFloat(priceInput.value) || 0) === 0)
-  const hideForMode = isServices || isFree || pricingMode === 'reserve'
+  const hideForMode = isServices || isFree
   inventoryGroup.style.display = hideForMode ? 'none' : 'block'
   stripeSection.style.display = hideForMode ? 'none' : 'block'
 
@@ -1044,11 +1060,6 @@ function updatePricingModeUI(prefix) {
   updateWeightVisibility(category, pricingMode, `${prefix}-weight-group`)
   updatePrintfulVisibility(category, pricingMode, `${prefix}-printful-group`)
 }
-
-// Services-only, so this never needs to be per-product configurable —
-// see create-product-payment-session, which is the actual source of truth
-// at charge time; this constant only drives what the admin form displays.
-const RESERVE_DEPOSIT_CENTS = 2500
 
 // Reads price_cents/pricing_mode/offer bounds together since they're
 // interdependent: what price_cents even means depends on pricing_mode, so
@@ -1061,8 +1072,6 @@ function readPricingModeFields(prefix, rawPrice) {
 
   if (pricingMode === 'free') {
     priceCents = 0
-  } else if (pricingMode === 'reserve') {
-    priceCents = RESERVE_DEPOSIT_CENTS
   } else if (pricingMode === 'offer_based') {
     priceCents = 0
     const minRaw = parseFloat(document.getElementById(`${prefix}-offer-min`).value)
@@ -1641,11 +1650,16 @@ function initOfferModal() {
   })
 }
 
+// Internal names kept as "reserve" (predates the 2026-09-13 services
+// redesign) even though the customer-facing copy now says "Payment" — this
+// is the flat $25 deposit confirm step, wired to the service product
+// page's PAYMENT button. "Reserve" in the new customer-facing sense (a
+// message/inquiry before paying anything) is openServiceInquiryModal below.
 let reserveProduct = null
 
 function openReserveModal(product) {
   reserveProduct = product
-  document.getElementById('reserve-subtitle').textContent = `Reserve "${product.title}" for a $25.00 non-refundable deposit, applied toward the final price.`
+  document.getElementById('reserve-subtitle').textContent = `"${product.title}" — $25.00, non-refundable, applied toward the final price once details are worked out.`
   document.getElementById('reserve-status').textContent = ''
   document.getElementById('reserve-modal').style.display = 'flex'
 }
@@ -3205,7 +3219,7 @@ function renderLandingDetail(product) {
   const pricingMode = product.pricing_mode || 'standard'
   const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (product.price_cents || 0) === 0)
   const formattedPrice =
-    pricingMode === 'reserve' ? '$25.00 to Reserve' :
+    product.category === 'services' ? (isFree ? 'Custom Pricing' : `Starting at $${((product.price_cents || 0) / 100).toFixed(2)}`) :
     pricingMode === 'offer_based' ? (product.offer_min_cents != null ? `From $${(product.offer_min_cents / 100).toFixed(2)}` : 'Name Your Price') :
     isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
 
