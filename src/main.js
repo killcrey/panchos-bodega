@@ -747,6 +747,31 @@ function isAudioFile(file) {
   return file.type.startsWith('audio/')
 }
 
+// Derives fileUrl/downloadFiles/tracklistSnippets from a list of {name, url}
+// digital files already sitting in Storage — the same tail logic
+// processDigitalFiles uses for a freshly uploaded batch, factored out so the
+// edit form's save handler can run it again over kept-files-plus-new-uploads
+// combined, instead of only ever looking at whatever was newly picked (see
+// the edit form's own digital-file section below). Audio detection reads
+// the URL's real extension rather than `name`, since a kept file sourced
+// from tracklist_snippets has its track title (no extension) as `name`.
+function deriveDigitalFileFields(items) {
+  const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
+  if (sorted.length === 0) return { fileUrl: null, downloadFiles: null, tracklistSnippets: null }
+
+  const audioTracks = []
+  sorted.forEach(f => {
+    if (isAudioUrl(f.url)) {
+      audioTracks.push({ trackNumber: audioTracks.length + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url })
+    }
+  })
+
+  let fileUrl = sorted[0].url
+  if (audioTracks.length === 1) fileUrl = audioTracks[0].url
+
+  return { fileUrl, downloadFiles: sorted, tracklistSnippets: audioTracks.length > 1 ? audioTracks : null }
+}
+
 async function uploadToVault(file) {
   const path = `${Date.now()}-${file.name}`
   // Same fix as processImageFiles below — without this, every signed
@@ -1306,6 +1331,13 @@ function renderPickedFilesPreview(files, previewEl) {
 // (add more, remove individual ones) instead of replace-the-whole-set.
 let editKeptImages = []
 
+// The edit form's existing-digital-file chips, mirroring editKeptImages —
+// picking new files used to fully replace whatever was here (a real
+// incident: adding two cover images wiped an 11-track album's audio files),
+// so this is now kept/editable state combined with any new uploads at save
+// time, the same additive pattern the photo picker already uses.
+let editKeptDigitalFiles = []
+
 // Normalizes whichever shape a product's digital files are currently in
 // (a track album's tracklist_snippets, a multi-file download_files bundle,
 // or one legacy audio_preview_url) into one list, so the edit form can show
@@ -1328,15 +1360,17 @@ function currentDigitalFileList(product) {
   return []
 }
 
-// audio-vault is a private bucket (see get-playback-url) — a plain public
-// URL to an image inside it 404s straight from Storage ("Bucket not
-// found"), which is what showed as a broken picture icon here. Chips render
-// immediately with no image, then each thumbnail's real short-lived signed
-// URL is fetched in the background and swapped in, the same signing
+// Renders editKeptDigitalFiles (not the product directly — see the
+// comment on that variable) with a remove button per chip, same pattern as
+// renderEditImagePreview. audio-vault is a private bucket (see
+// get-playback-url), so a plain public URL to an image inside it 404s
+// straight from Storage ("Bucket not found") — chips render immediately
+// with no image, then each thumbnail's real short-lived signed URL is
+// fetched in the background and swapped in, the same signing
 // get-playback-url already does for track playback.
-function renderEditCurrentFilesPreview(product) {
+function renderEditCurrentFilesPreview() {
   const previewEl = document.getElementById('edit-file-current-preview')
-  const files = currentDigitalFileList(product)
+  const files = editKeptDigitalFiles
   if (files.length === 0) {
     previewEl.innerHTML = '<p class="field-hint">No digital file attached.</p>'
     return
@@ -1345,6 +1379,7 @@ function renderEditCurrentFilesPreview(product) {
     <div class="admin-file-chip">
       ${isImageUrl(f.url) ? `<img data-thumb-idx="${idx}" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; margin-right: 0.4rem; vertical-align: middle; background: #333;">` : ''}
       <span class="admin-file-chip-name">${f.name}</span>
+      <button type="button" class="admin-file-remove-btn" data-idx="${idx}" aria-label="Remove file">&times;</button>
     </div>
   `).join('')
 
@@ -1408,7 +1443,8 @@ function openEditModal(product) {
     .filter(Boolean)
   renderEditImagePreview()
 
-  renderEditCurrentFilesPreview(product)
+  editKeptDigitalFiles = currentDigitalFileList(product)
+  renderEditCurrentFilesPreview()
   document.getElementById('edit-file-clear').checked = false
 
   document.getElementById('edit-stripe-url').value = product.stripe_url || ''
@@ -1426,6 +1462,7 @@ function closeEditModal() {
   editKeptImages = []
   editNewImageFiles = []
   editNewDigitalFiles = []
+  editKeptDigitalFiles = []
   document.getElementById('edit-modal').style.display = 'none'
 }
 
@@ -2321,6 +2358,13 @@ function initAdminPortal() {
     renderPickedFilesPreview(editNewDigitalFiles, document.getElementById('edit-file-preview'))
   })
 
+  document.getElementById('edit-file-current-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-file-remove-btn')
+    if (!removeBtn) return
+    editKeptDigitalFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderEditCurrentFilesPreview()
+  })
+
   const uploadGenerateStripeBtn = document.getElementById('upload-generate-stripe-btn')
   const uploadStripeStatus = document.getElementById('upload-stripe-status')
 
@@ -2475,23 +2519,29 @@ function initAdminPortal() {
       const image2Url = null
       const image3Url = null
 
-      let fileUrl = editingProduct ? editingProduct.audio_preview_url : null
-      let downloadFiles = editingProduct ? editingProduct.download_files : null
-      let tracklistSnippets = editingProduct ? editingProduct.tracklist_snippets : null
-      // Checked and no new files picked: drop whatever's currently attached
-      // (a stray/mistaken file, or a product that shouldn't have one at
-      // all) without requiring a replacement to be uploaded first — there
-      // was previously no way to clear this to nothing.
-      if (document.getElementById('edit-file-clear').checked) {
-        fileUrl = null
-        downloadFiles = null
-        tracklistSnippets = null
-      }
+      // Checked: drop everything currently attached (a stray/mistaken file,
+      // or a product that shouldn't have one at all) regardless of what's
+      // still left in editKeptDigitalFiles — the fast "start over" option.
+      // Otherwise, new uploads are ADDED to whatever's left in
+      // editKeptDigitalFiles (already reflects any individual × removals),
+      // not a replacement for it — picking a couple of new cover images used
+      // to silently wipe an entire album's audio files here (a real
+      // incident), the same bug the photo picker never had.
+      const keptFiles = document.getElementById('edit-file-clear').checked ? [] : editKeptDigitalFiles
+      let fileUrl = null
+      let downloadFiles = null
+      let tracklistSnippets = null
       if (editNewDigitalFiles.length > 0) {
-        const result = await processDigitalFiles(editNewDigitalFiles)
-        fileUrl = result.fileUrl
-        downloadFiles = result.downloadFiles
-        tracklistSnippets = result.tracklistSnippets
+        const uploaded = await processDigitalFiles(editNewDigitalFiles)
+        const combined = deriveDigitalFileFields([...keptFiles, ...(uploaded.downloadFiles || [])])
+        fileUrl = combined.fileUrl
+        downloadFiles = combined.downloadFiles
+        tracklistSnippets = combined.tracklistSnippets
+      } else if (keptFiles.length > 0) {
+        const combined = deriveDigitalFileFields(keptFiles)
+        fileUrl = combined.fileUrl
+        downloadFiles = combined.downloadFiles
+        tracklistSnippets = combined.tracklistSnippets
       }
 
       const { error: updateError } = await supabase.from('products').update({
