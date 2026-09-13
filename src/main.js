@@ -1001,12 +1001,16 @@ function updatePrintfulVisibility(categoryValue, pricingMode, groupId) {
 // Stripe Checkout ID (it skips Stripe entirely), Offer Based replaces the
 // fixed price with buyer-chosen bounds. Services ignore pricing_mode
 // entirely on the storefront now — every service product page always shows
-// the same MESSAGE US + flat-$25-deposit PAYMENT buttons (see
-// renderProductMarkup/wireProductInteractions), which is what retired the
-// old services-only Reserve mode (2026-09-13) — a deposit-taking button no
-// longer needs opting into via this dropdown, it's just how every service
-// works. Offer Based is disabled for Services for the same reason: there's
-// no UI left on a service page that would ever read its bounds.
+// the same MESSAGE US + PAYMENT buttons (see renderProductMarkup/
+// wireProductInteractions) — PAYMENT opens an amount-entry modal, no fixed
+// price of its own, which is what retired the old services-only Reserve
+// mode (2026-09-13). Offer Based is disabled for Services for the same
+// reason: there's no UI left on a service page that would ever read its
+// bounds. Price still matters for a service, just as *display* only —
+// "Starting at $X" for a service with a real base rate (e.g. a performance),
+// or leave it at $0 for one that's too varied to quote a number for (e.g. a
+// website build) — it shows "Custom Pricing" instead. Either way MESSAGE US
+// and PAYMENT behave identically; Price never drives their behavior.
 function updatePricingModeUI(prefix) {
   const category = document.getElementById(`${prefix}-category`).value
   const pricingModeSelect = document.getElementById(`${prefix}-pricing-mode`)
