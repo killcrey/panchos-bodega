@@ -995,6 +995,16 @@ function updatePricingModeUI(prefix) {
     priceInput.disabled = false
   }
 
+  if (pricingMode === 'offer_based') {
+    // Default the floor to $1, not $0 — a blank/zero Minimum Offer would
+    // make Offer Based behave like a second way to spell Free (see the
+    // isFree check above), which defeats the point of Free being its own
+    // deliberate choice. Only fills it when empty, so it never clobbers a
+    // real value already typed or loaded from an existing product.
+    const offerMinInput = document.getElementById(`${prefix}-offer-min`)
+    if (!offerMinInput.value) offerMinInput.value = '1.00'
+  }
+
   // A standard-mode product priced at $0 is functionally the same as
   // pricing_mode 'free' everywhere it matters — both trigger the
   // storefront's free-download flow (see the isFree check in
