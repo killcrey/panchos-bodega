@@ -21,3 +21,22 @@
   # disabled outright rather than fighting false positives on values that
   # are supposed to ship to the browser.
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
+
+# scripts/prerender-products.js writes a real static file per product at
+# build time (dist/products/<slug>/index.html) — but that's a snapshot of
+# the products table as of the last deploy. A product added, published, or
+# given a slug for the first time *after* that deploy has no matching file
+# on disk yet, and with no fallback rule, Netlify serves its own hard 404
+# for that path instead of ever loading the app — confirmed live (a
+# brand-new service product 404'd on refresh; an old one worked fine).
+# Netlify serves a real file over a redirect whenever one exists at that
+# exact path (no `force`), so this only ever applies to a path with no
+# prerendered file — every existing product page keeps getting its real,
+# per-product SEO'd HTML unchanged. For the gap case, this falls back to
+# the SPA shell, which resolves the product from the live DB client-side
+# (matchProductFromPath in main.js) instead of dead-ending on a 404 the
+# instant a product is added and not yet deployed.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
