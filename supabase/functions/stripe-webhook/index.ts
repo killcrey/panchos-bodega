@@ -382,30 +382,28 @@ async function sendTipThankYouEmail(email: string, amountCents: number, name: st
   }
 }
 
-// Covers both Reserve and a service's Offer Based payment — the only real
-// difference between them is the copy, so one template branches on
-// pricingMode rather than duplicating the whole email.
+// Every service PAYMENT is the same shape now — a customer-typed amount,
+// nothing fixed or non-refundable (see create-product-payment-session) — so
+// this no longer branches on pricingMode; that parameter only survives
+// because product_payments.pricing_mode is NOT NULL in the DB.
 async function sendProductPaymentEmail(email: string, amountCents: number, productTitle: string, pricingMode: string) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
   const unsubscribeUrl = await buildUnsubscribeUrl(email)
-  const isReserve = pricingMode === 'reserve'
 
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #111; padding: 2rem; border: 1px solid #333;">
-      <h2 style="letter-spacing: 1px; color: #fff; margin: 0 0 0.25rem 0;">${isReserve ? 'Reservation Confirmed' : 'Payment Received'}</h2>
+      <h2 style="letter-spacing: 1px; color: #fff; margin: 0 0 0.25rem 0;">Payment Received</h2>
       <p style="color: #888; font-size: 0.8rem; margin: 0 0 1.5rem 0;">${productTitle}</p>
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
-          <td style="padding: 0.5rem 0 0 0; color: #fff; font-size: 0.95rem; font-weight: bold; border-top: 1px solid #444;">${isReserve ? 'Deposit' : 'Amount'}</td>
+          <td style="padding: 0.5rem 0 0 0; color: #fff; font-size: 0.95rem; font-weight: bold; border-top: 1px solid #444;">Amount</td>
           <td style="padding: 0.5rem 0 0 0; color: #00ffcc; font-size: 0.95rem; font-weight: bold; text-align: right; border-top: 1px solid #444;">${money(amountCents)}</td>
         </tr>
       </table>
       <p style="margin: 1.5rem 0 0 0; color: #ccc; font-size: 0.8rem; line-height: 1.6;">
-        ${isReserve
-          ? 'This is a non-refundable deposit, applied toward the final price once we work out the details. We\'ll follow up by email.'
-          : 'Thanks for the support — we\'ll follow up by email to sort out the details.'}
+        Thanks for the support — we'll follow up by email to sort out the details.
       </p>
       <p style="margin-top: 2rem; color: #666; font-size: 0.75rem;">&mdash; The Invisible Panchos</p>
       <p style="margin-top: 1rem; color: #555; font-size: 0.65rem;"><a href="${unsubscribeUrl}" style="color: #555;">Unsubscribe from our mailing list</a></p>
@@ -422,7 +420,7 @@ async function sendProductPaymentEmail(email: string, amountCents: number, produ
       body: JSON.stringify({
         from: 'Panchos Bodega <downloads@theinvisiblepanchos.com>',
         to: [email],
-        subject: isReserve ? 'Your reservation is confirmed' : 'We got your offer',
+        subject: 'We got your payment',
         html,
         headers: {
           'List-Unsubscribe': `<${unsubscribeUrl}>`,

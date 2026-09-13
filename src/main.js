@@ -181,9 +181,9 @@ async function loadAdminEmailCaptures() {
 // Same "active to-do queue" shape as loadAdminOrders — a handled inquiry
 // drops off the list rather than staying in an ever-growing ledger, since
 // each one needs a human follow-up (unlike tips, which just accumulate).
-// Shows both service_inquiries (Quote requests — need a human follow-up, so
-// an "active queue" like Orders) and product_payments (Reserve deposits and
-// a service's Offer Based — already paid, listed as a read-only ledger like
+// Shows both service_inquiries (MESSAGE US quote requests — need a human
+// follow-up, so an "active queue" like Orders) and product_payments
+// (PAYMENT button charges — already paid, listed as a read-only ledger like
 // Tips, since there's no "handled" state for money that already cleared).
 async function loadAdminServiceInquiries() {
   const listEl = document.getElementById('admin-service-inquiries-list')
@@ -203,7 +203,7 @@ async function loadAdminServiceInquiries() {
 
   const paymentsHeading = document.createElement('p')
   paymentsHeading.style.cssText = 'font-size: 0.6rem; color: #e8b923; letter-spacing: 1px; text-transform: uppercase; margin: 0 0 0.5rem 0;'
-  paymentsHeading.textContent = `Reserve & Offer Payments (${(payments || []).length})`
+  paymentsHeading.textContent = `Service Payments (${(payments || []).length})`
   listEl.appendChild(paymentsHeading)
 
   if (!payments || payments.length === 0) {
@@ -218,7 +218,6 @@ async function loadAdminServiceInquiries() {
       item.innerHTML = `
         <div class="tip-row-meta">
           <strong style="color: #ccc;">${payment.product_title || 'Deleted product'}</strong>
-          <span class="inventory-status-badge status-checkout-set" style="margin-left: 0.4rem;">${payment.pricing_mode === 'reserve' ? 'Reserve' : 'Offer'}</span>
           ${payment.name || payment.email ? `<br>${[payment.name, payment.email].filter(Boolean).join(' — ')}` : ''}
           <br>${payment.created_at ? new Date(payment.created_at).toLocaleDateString() : ''}
         </div>
@@ -579,18 +578,17 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     : ''
   // Every service shows the same two thinner buttons regardless of pricing
   // mode — MESSAGE US (the existing quote-request inquiry, for pitching
-  // details/asking questions before paying anything) and PAYMENT (a flat
-  // $25 non-refundable deposit, applied toward the final price once scope
-  // is worked out over message). There's no "Make an Offer"/"Reserve"
-  // branching here anymore — pricing_mode stopped being a services UI
-  // switch once Payment became unconditional (see create-product-payment-
-  // session, which no longer requires pricing_mode === 'reserve' either).
+  // details/asking questions before paying anything) and PAYMENT (opens an
+  // amount-entry modal — no fixed price, nothing non-refundable; the admin
+  // tells the customer what to pay off-site, they type that amount in).
+  // There's no "Make an Offer"/"Reserve" branching here anymore —
+  // pricing_mode stopped being a services UI switch once Payment became
+  // unconditional (see create-product-payment-session).
   const buyButtonHTML = !showBuyControls ? '' : isService
     ? `<div style="display: flex; gap: 0.4rem; margin-top: 0.3rem;">
         <button class="service-message-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: transparent; color: ${isInert ? '#666' : '#00ffcc'}; border: 1px solid ${isInert ? '#444' : '#00ffcc'}; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">Message Us</button>
         <button class="service-payment-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">${isComingSoon ? 'Coming Soon' : 'Payment'}</button>
-      </div>
-      <p style="font-size: 0.5rem; color: #888; margin: 0.3rem 0 0 0; line-height: 1.4;">$25.00 — non-refundable, applied toward the final price once details are worked out.</p>`
+      </div>`
     : `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
         ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' :
           (pricingMode === 'free' ? 'Get It Free' :
@@ -1652,14 +1650,17 @@ function initOfferModal() {
 
 // Internal names kept as "reserve" (predates the 2026-09-13 services
 // redesign) even though the customer-facing copy now says "Payment" — this
-// is the flat $25 deposit confirm step, wired to the service product
-// page's PAYMENT button. "Reserve" in the new customer-facing sense (a
-// message/inquiry before paying anything) is openServiceInquiryModal below.
+// is the service product page's PAYMENT button, which collects a
+// customer-typed amount (the admin tells them what to pay, off-site — no
+// fixed deposit, nothing non-refundable) and starts checkout for exactly
+// that. "Reserve" in the sense of a message before paying anything is
+// openServiceInquiryModal below (the MESSAGE US button).
 let reserveProduct = null
 
 function openReserveModal(product) {
   reserveProduct = product
-  document.getElementById('reserve-subtitle').textContent = `"${product.title}" — $25.00, non-refundable, applied toward the final price once details are worked out.`
+  document.getElementById('reserve-subtitle').textContent = `Enter the amount you were instructed to pay for "${product.title}".`
+  document.getElementById('reserve-amount').value = ''
   document.getElementById('reserve-status').textContent = ''
   document.getElementById('reserve-modal').style.display = 'flex'
 }
@@ -1676,19 +1677,29 @@ function initReserveModal() {
   const cancelBtn = document.getElementById('reserve-cancel-btn')
   const confirmBtn = document.getElementById('reserve-confirm-btn')
   const statusEl = document.getElementById('reserve-status')
+  const amountInput = document.getElementById('reserve-amount')
 
   cancelBtn.addEventListener('click', closeReserveModal)
   modal.addEventListener('click', (e) => { if (e.target === modal) closeReserveModal() })
 
   confirmBtn.addEventListener('click', async () => {
     if (!reserveProduct) return
+    const amount = parseFloat(amountInput.value)
+    // $0.50 is Stripe's own minimum charge, not a business rule — there's
+    // no upper bound since the admin is the one telling the customer what
+    // to pay in the first place.
+    if (!amount || amount < 0.5) {
+      statusEl.textContent = 'Enter an amount of at least $0.50.'
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
     confirmBtn.disabled = true
     statusEl.textContent = 'Sending you to checkout...'
     statusEl.style.color = '#e8b923'
 
     try {
       const { data, error } = await supabase.functions.invoke('create-product-payment-session', {
-        body: { productId: reserveProduct.id }
+        body: { productId: reserveProduct.id, amountCents: Math.round(amount * 100) }
       })
       if (error) throw error
       if (!data?.url) throw new Error('Could not start checkout. Try again in a moment.')
