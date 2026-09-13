@@ -995,7 +995,13 @@ function updatePricingModeUI(prefix) {
     priceInput.disabled = false
   }
 
-  const hideForMode = isServices || pricingMode === 'free' || pricingMode === 'reserve'
+  // A standard-mode product priced at $0 is functionally the same as
+  // pricing_mode 'free' everywhere it matters — both trigger the
+  // storefront's free-download flow (see the isFree check in
+  // loadAdminInventory) — so both should hide the same now-irrelevant
+  // fields here too, not just an explicit 'free' selection.
+  const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (parseFloat(priceInput.value) || 0) === 0)
+  const hideForMode = isServices || isFree || pricingMode === 'reserve'
   inventoryGroup.style.display = hideForMode ? 'none' : 'block'
   stripeSection.style.display = hideForMode ? 'none' : 'block'
 
@@ -2191,6 +2197,7 @@ function initAdminPortal() {
 
   document.getElementById('upload-category').addEventListener('change', () => updatePricingModeUI('upload'))
   document.getElementById('upload-pricing-mode').addEventListener('change', () => updatePricingModeUI('upload'))
+  document.getElementById('upload-price').addEventListener('input', () => updatePricingModeUI('upload'))
   updatePricingModeUI('upload')
 
   wireSlugAutofill('upload-title', 'upload-slug')
@@ -2355,6 +2362,7 @@ function initAdminPortal() {
 
   document.getElementById('edit-category').addEventListener('change', () => updatePricingModeUI('edit'))
   document.getElementById('edit-pricing-mode').addEventListener('change', () => updatePricingModeUI('edit'))
+  document.getElementById('edit-price').addEventListener('input', () => updatePricingModeUI('edit'))
 
   const editGenerateStripeBtn = document.getElementById('edit-generate-stripe-btn')
   const editStripeStatus = document.getElementById('edit-stripe-status')
