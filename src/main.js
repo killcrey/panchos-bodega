@@ -3303,10 +3303,13 @@ function renderLandingSpotlight(el, products) {
 
   el.style.display = 'grid'
   el.style.gridTemplateColumns = `repeat(${products.length}, 1fr)`
-  el.innerHTML = products.map(p => {
+  el.innerHTML = products.map((p, idx) => {
     const image = productImages(p)[0]
+    // Alternates in pairs by position, not per-product config: 1st and 2nd
+    // boxes gold, 3rd and 4th red.
+    const colorClass = Math.floor(idx / 2) % 2 === 0 ? 'spotlight-gold' : 'spotlight-red'
     return `
-      <button type="button" class="landing-spotlight-box" data-product-id="${p.id}">
+      <button type="button" class="landing-spotlight-box ${colorClass}" data-product-id="${p.id}">
         ${image ? `<img src="${image}" alt="${p.title}">` : ''}
         <span class="landing-spotlight-title">${p.title}</span>
         <span class="landing-spotlight-cta">View Product</span>
