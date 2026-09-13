@@ -1141,7 +1141,11 @@ function formatPrintfulVariantMap(map) {
 
 let featuredFullResolver = null
 
-function openFeaturedFullModal(products) {
+// Reused for both Featured and Spotlight — same "pick one of these N to
+// bump" shape either way, just different copy per slot.
+function openFeaturedFullModal(products, { title, subtitle }) {
+  document.getElementById('featured-full-title').textContent = title
+  document.getElementById('featured-full-subtitle').textContent = subtitle
   const listEl = document.getElementById('featured-full-list')
   listEl.innerHTML = products.map(p => `
     <button type="button" class="admin-btn featured-full-pick-btn" data-id="${p.id}" style="display: block; width: 100%; margin-bottom: 0.5rem; text-align: left;">${p.title}</button>
@@ -1239,21 +1243,26 @@ function initPrintfulLookupModal() {
   document.getElementById('edit-printful-lookup-btn').addEventListener('click', () => openPrintfulLookupModal('edit-printful-variants'))
 }
 
-// Resolves to the id of the featured product the admin chose to bump, or
-// null if they cancelled (resolveLandingSlot falls back to the old hard
-// error in that case, so cancelling never silently proceeds).
-function pickFeaturedToReplace(products) {
+// Resolves to the id of the product the admin chose to bump, or null if
+// they cancelled (resolveLandingSlot falls back to the old hard error in
+// that case, so cancelling never silently proceeds). Shared by Featured and
+// Spotlight — same "pick one of N to replace" shape either way.
+function pickSlotToReplace(products, copy) {
   return new Promise((resolve) => {
     featuredFullResolver = resolve
-    openFeaturedFullModal(products)
+    openFeaturedFullModal(products, copy)
   })
 }
 
-// 'featured' holds up to this many products at once — the DB can't express
-// "at most N", so it's checked here (resolveLandingSlot) and mirrored at
-// render time (see landingFeatured in the landing-page section) capping how
-// many the carousel ever pulls in, so the two stay in sync.
-const MAX_FEATURED_PRODUCTS = 6
+// Featured and Spotlight each hold up to this many products at once — the
+// DB can't express "at most N", so each is checked here (resolveLandingSlot)
+// and mirrored at render time (landingFeatured/landingSpotlight in the
+// landing-page section) capping how many are ever pulled in, so the two
+// stay in sync. Keyed by slot value so resolveLandingSlot can look either
+// up generically instead of branching per slot name.
+const MULTI_SLOT_CAPS = { featured: 6, spotlight: 4 }
+const MAX_FEATURED_PRODUCTS = MULTI_SLOT_CAPS.featured
+const MAX_SPOTLIGHT_PRODUCTS = MULTI_SLOT_CAPS.spotlight
 
 // Validates the landing-page slot picked in an admin form against what's
 // already slotted. The two single-occupancy slots are enforced by a unique
@@ -1272,15 +1281,20 @@ async function resolveLandingSlot(selectId, productId) {
 
   const others = (slotted || []).filter(p => p.id !== productId)
 
-  if (slot === 'featured') {
-    if (others.length >= MAX_FEATURED_PRODUCTS) {
+  const cap = MULTI_SLOT_CAPS[slot]
+  if (cap) {
+    if (others.length >= cap) {
+      const slotLabel = slot === 'featured' ? 'Featured' : 'Spotlight'
       // Unlike the single-occupancy slots below, there's no one obvious
       // product to bump — ask which one to replace instead of just
       // erroring, since guessing (oldest? last in the list?) would surprise
       // the admin either way.
-      const toReplaceId = await pickFeaturedToReplace(others)
+      const toReplaceId = await pickSlotToReplace(others, {
+        title: `${slotLabel} Is Full`,
+        subtitle: `${slotLabel} only holds ${cap} at a time. Pick one to replace:`,
+      })
       if (!toReplaceId) {
-        throw new Error(`Already ${MAX_FEATURED_PRODUCTS} featured products (${others.map(p => p.title).join(', ')}). Clear one first.`)
+        throw new Error(`Already ${cap} ${slotLabel.toLowerCase()} products (${others.map(p => p.title).join(', ')}). Clear one first.`)
       }
       // .update() under RLS returns { error: null } even when zero rows
       // matched — chaining .select() and checking the result is the only
@@ -1291,7 +1305,7 @@ async function resolveLandingSlot(selectId, productId) {
         .eq('id', toReplaceId)
         .select()
       if (clearError) throw clearError
-      if (!cleared || cleared.length === 0) throw new Error('Failed to clear the replaced product\'s Featured slot — try again.')
+      if (!cleared || cleared.length === 0) throw new Error(`Failed to clear the replaced product's ${slotLabel} slot — try again.`)
     }
     return slot
   }
@@ -3275,6 +3289,37 @@ function renderLandingSideBox(el, product, label) {
   el.onclick = () => goToProduct(product)
 }
 
+// Renders however many Spotlight products are actually assigned (1-4) —
+// the column count is set to match, so a partial set still fills the row
+// evenly instead of leaving empty grid cells (a fixed 4-column grid would
+// do that with only 1-3 items).
+function renderLandingSpotlight(el, products) {
+  if (!el) return
+
+  if (products.length === 0) {
+    el.style.display = 'none'
+    return
+  }
+
+  el.style.display = 'grid'
+  el.style.gridTemplateColumns = `repeat(${products.length}, 1fr)`
+  el.innerHTML = products.map(p => {
+    const image = productImages(p)[0]
+    return `
+      <button type="button" class="landing-spotlight-box" data-product-id="${p.id}">
+        ${image ? `<img src="${image}" alt="${p.title}">` : ''}
+        <span class="landing-spotlight-title">${p.title}</span>
+        <span class="landing-spotlight-cta">View Product</span>
+      </button>
+    `
+  }).join('')
+
+  el.querySelectorAll('.landing-spotlight-box').forEach(box => {
+    const match = products.find(p => p.id === box.getAttribute('data-product-id'))
+    if (match) box.onclick = () => goToProduct(match)
+  })
+}
+
 function renderLandingPage(products) {
   const landing = document.getElementById('landing-view')
   if (!landing) return
@@ -3282,8 +3327,9 @@ function renderLandingPage(products) {
   landingFeatured = products.filter(p => p.landing_slot === 'featured').slice(0, MAX_FEATURED_PRODUCTS)
   const latestRelease = products.find(p => p.landing_slot === 'latest_release') || null
   const panchoPick = products.find(p => p.landing_slot === 'pancho_pick') || null
+  const landingSpotlight = products.filter(p => p.landing_slot === 'spotlight').slice(0, MAX_SPOTLIGHT_PRODUCTS)
 
-  const hasContent = landingFeatured.length > 0 || latestRelease || panchoPick
+  const hasContent = landingFeatured.length > 0 || latestRelease || panchoPick || landingSpotlight.length > 0
   landing.setAttribute('data-empty', hasContent ? 'false' : 'true')
   if (!hasContent) return
 
@@ -3332,6 +3378,7 @@ function renderLandingPage(products) {
 
   renderLandingSideBox(document.getElementById('landing-latest-release'), latestRelease, 'Latest Release')
   renderLandingSideBox(document.getElementById('landing-pancho-pick'), panchoPick, 'Panchos Pick')
+  renderLandingSpotlight(document.getElementById('landing-spotlight'), landingSpotlight)
 
   const shopNowBtn = document.getElementById('landing-shop-now')
   if (shopNowBtn) shopNowBtn.addEventListener('click', () => showStore('all'))
