@@ -1328,17 +1328,38 @@ function currentDigitalFileList(product) {
   return []
 }
 
+// audio-vault is a private bucket (see get-playback-url) — a plain public
+// URL to an image inside it 404s straight from Storage ("Bucket not
+// found"), which is what showed as a broken picture icon here. Chips render
+// immediately with no image, then each thumbnail's real short-lived signed
+// URL is fetched in the background and swapped in, the same signing
+// get-playback-url already does for track playback.
 function renderEditCurrentFilesPreview(product) {
   const previewEl = document.getElementById('edit-file-current-preview')
   const files = currentDigitalFileList(product)
-  previewEl.innerHTML = files.length === 0
-    ? '<p class="field-hint">No digital file attached.</p>'
-    : files.map(f => `
-        <div class="admin-file-chip">
-          ${isImageUrl(f.url) ? `<img src="${f.url}" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; margin-right: 0.4rem; vertical-align: middle;">` : ''}
-          <span class="admin-file-chip-name">${f.name}</span>
-        </div>
-      `).join('')
+  if (files.length === 0) {
+    previewEl.innerHTML = '<p class="field-hint">No digital file attached.</p>'
+    return
+  }
+  previewEl.innerHTML = files.map((f, idx) => `
+    <div class="admin-file-chip">
+      ${isImageUrl(f.url) ? `<img data-thumb-idx="${idx}" alt="" style="width: 22px; height: 22px; object-fit: cover; border-radius: 3px; margin-right: 0.4rem; vertical-align: middle; background: #333;">` : ''}
+      <span class="admin-file-chip-name">${f.name}</span>
+    </div>
+  `).join('')
+
+  files.forEach(async (f, idx) => {
+    if (!isImageUrl(f.url)) return
+    const img = previewEl.querySelector(`img[data-thumb-idx="${idx}"]`)
+    if (!img) return
+    try {
+      const { data, error } = await supabase.functions.invoke('get-playback-url', { body: { url: f.url } })
+      if (error || !data?.url) throw error || new Error('No signed URL returned.')
+      img.src = data.url
+    } catch (err) {
+      console.error('Failed to load digital file thumbnail:', err)
+    }
+  })
 }
 
 function renderEditImagePreview() {
