@@ -2015,7 +2015,6 @@ async function describeFunctionError(err) {
 
 async function generateStripeLink(titleInputId, priceInputId, urlInputId, newDigitalFiles, categoryInputId, sizesInputId, stripeProductIdInputId, printfulInputId, existingFileUrl, existingTracklistSnippets, existingDownloadFiles, statusEl, button) {
   const title = document.getElementById(titleInputId).value.trim()
-  const price = parseFloat(document.getElementById(priceInputId).value)
   const category = document.getElementById(categoryInputId).value
   const sizes = category === 'apparel' ? document.getElementById(sizesInputId).value.trim() : ''
   // Printful items never get a Payment Link — it collects a shipping
@@ -2023,22 +2022,49 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, newDig
   // used the shipping cost would land on us instead of the buyer.
   const isPrintful = canUsePrintful(category) && !!document.getElementById(printfulInputId).value.trim()
 
+  // categoryInputId is always `${prefix}-category` — reuse that prefix to
+  // reach the pricing-mode/offer-bounds fields without a new parameter.
+  const prefix = categoryInputId.replace('-category', '')
+  const pricingMode = document.getElementById(`${prefix}-pricing-mode`).value || 'standard'
+  // Offer Based has no fixed price — priceInputId points at the hidden,
+  // meaningless price field for this mode (it's never shown or set), so
+  // reading it here was tripping the $0/free-product guard below even
+  // with real $1–$20 offer bounds set. The bounds themselves are what's
+  // real; the buyer's actual charge is clamped from those server-side at
+  // checkout (create-checkout-session), never from a price recorded here.
+  const price = pricingMode === 'offer_based'
+    ? parseFloat(document.getElementById(`${prefix}-offer-min`).value)
+    : parseFloat(document.getElementById(priceInputId).value)
+  // A static Payment Link bakes in one fixed price, which can't represent
+  // a buyer-chosen offer — Offer Based is always purchased through the
+  // normal cart instead, so this only needs the bare Stripe Product
+  // (price_data.product at checkout references it, but never this link).
+  const skipPaymentLink = isPrintful || pricingMode === 'offer_based'
+
   if (!title) {
     statusEl.textContent = 'Enter a title before generating a link.'
     statusEl.style.color = '#ff4d4d'
     return
   }
 
-  if (price === 0) {
-    statusEl.textContent = 'Free products (price $0) don’t need a Stripe link — the storefront offers them as a free download instead.'
-    statusEl.style.color = '#e8b923'
-    return
-  }
+  if (pricingMode === 'offer_based') {
+    if (!price || price < 0.5) {
+      statusEl.textContent = 'Set a Minimum Offer of at least $0.50 before generating a checkout ID.'
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
+  } else {
+    if (price === 0) {
+      statusEl.textContent = 'Free products (price $0) don’t need a Stripe link — the storefront offers them as a free download instead.'
+      statusEl.style.color = '#e8b923'
+      return
+    }
 
-  if (!price || price < 0.5) {
-    statusEl.textContent = 'Stripe requires a price of at least $0.50 (or exactly $0 for a free download).'
-    statusEl.style.color = '#ff4d4d'
-    return
+    if (!price || price < 0.5) {
+      statusEl.textContent = 'Stripe requires a price of at least $0.50 (or exactly $0 for a free download).'
+      statusEl.style.color = '#ff4d4d'
+      return
+    }
   }
 
   button.disabled = true
@@ -2064,7 +2090,7 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, newDig
     }
 
     const { data, error } = await supabase.functions.invoke('create-stripe-link', {
-      body: { title, priceCents: Math.round(price * 100), filePaths, category, sizes, skipPaymentLink: isPrintful }
+      body: { title, priceCents: Math.round(price * 100), filePaths, category, sizes, skipPaymentLink }
     })
     if (error) throw error
 
@@ -2072,9 +2098,11 @@ async function generateStripeLink(titleInputId, priceInputId, urlInputId, newDig
     document.getElementById(stripeProductIdInputId).value = data.productId || ''
     statusEl.textContent = isPrintful
       ? 'Stripe product created — no payment link needed for a Printful item.'
-      : (filePaths.length > 0
-        ? 'Stripe link generated with download attached.'
-        : 'Stripe link generated (no digital file attached).')
+      : pricingMode === 'offer_based'
+        ? 'Checkout ID generated — buyers set their own price in the cart, so no fixed payment link was created.'
+        : (filePaths.length > 0
+          ? 'Stripe link generated with download attached.'
+          : 'Stripe link generated (no digital file attached).')
     statusEl.style.color = '#00ffcc'
   } catch (err) {
     statusEl.textContent = await describeFunctionError(err)
