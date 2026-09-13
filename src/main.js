@@ -1233,12 +1233,17 @@ function pickFeaturedToReplace(products) {
   })
 }
 
+// 'featured' holds up to this many products at once — the DB can't express
+// "at most N", so it's checked here (resolveLandingSlot) and mirrored at
+// render time (see landingFeatured in the landing-page section) capping how
+// many the carousel ever pulls in, so the two stay in sync.
+const MAX_FEATURED_PRODUCTS = 6
+
 // Validates the landing-page slot picked in an admin form against what's
-// already slotted. 'featured' holds up to three products, so it's capped
-// here (the DB can't express "at most 3"); the two single-occupancy slots
-// are enforced by a unique index, so the previous holder is demoted first
-// rather than letting the insert fail on a constraint the admin can't see.
-// productId is null when creating a new product.
+// already slotted. The two single-occupancy slots are enforced by a unique
+// index, so the previous holder is demoted first rather than letting the
+// insert fail on a constraint the admin can't see. productId is null when
+// creating a new product.
 async function resolveLandingSlot(selectId, productId) {
   const slot = document.getElementById(selectId).value || null
   if (!slot) return null
@@ -1252,14 +1257,14 @@ async function resolveLandingSlot(selectId, productId) {
   const others = (slotted || []).filter(p => p.id !== productId)
 
   if (slot === 'featured') {
-    if (others.length >= 3) {
+    if (others.length >= MAX_FEATURED_PRODUCTS) {
       // Unlike the single-occupancy slots below, there's no one obvious
-      // product to bump — ask which of the 3 to replace instead of just
+      // product to bump — ask which one to replace instead of just
       // erroring, since guessing (oldest? last in the list?) would surprise
       // the admin either way.
       const toReplaceId = await pickFeaturedToReplace(others)
       if (!toReplaceId) {
-        throw new Error(`Already 3 featured products (${others.map(p => p.title).join(', ')}). Clear one first.`)
+        throw new Error(`Already ${MAX_FEATURED_PRODUCTS} featured products (${others.map(p => p.title).join(', ')}). Clear one first.`)
       }
       // .update() under RLS returns { error: null } even when zero rows
       // matched — chaining .select() and checking the result is the only
@@ -3238,7 +3243,7 @@ function renderLandingPage(products) {
   const landing = document.getElementById('landing-view')
   if (!landing) return
 
-  landingFeatured = products.filter(p => p.landing_slot === 'featured').slice(0, 3)
+  landingFeatured = products.filter(p => p.landing_slot === 'featured').slice(0, MAX_FEATURED_PRODUCTS)
   const latestRelease = products.find(p => p.landing_slot === 'latest_release') || null
   const panchoPick = products.find(p => p.landing_slot === 'pancho_pick') || null
 
