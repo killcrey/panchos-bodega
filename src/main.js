@@ -753,7 +753,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     : `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
         ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' :
           (pricingMode === 'free' ? 'Get It Free' :
-           pricingMode === 'offer_based' ? 'Make an Offer' :
+           pricingMode === 'offer_based' ? 'Pay What You Want' :
            (isFree ? 'Get It Free' : 'Add to Cart')))}
       </button>`
 
