@@ -2838,7 +2838,16 @@ async function loadBodega() {
   }
 
   // FETCH DATA
-  const { data: products, error } = await supabase.from('products').select('*').eq('published', true)
+  // Explicit column list, not select('*') — stripe_url and stripe_product_id
+  // are admin-only (only ever read in the edit modal/inventory list, never
+  // by any storefront rendering code) and this is a public, unauthenticated
+  // query. stripe_url in particular is a live, permanently price-frozen
+  // Stripe Payment Link once one's been generated for a product — leaving
+  // it in a public API response makes it discoverable by anyone, with no
+  // relationship to the product's current (possibly since-changed) price.
+  const { data: products, error } = await supabase.from('products').select(
+    'id, title, type, price_cents, cover_art_url, image_2_url, image_3_url, gallery_images, description, sizes, audio_preview_url, tracklist_snippets, download_files, category, published, coming_soon, inventory_count, weight_oz, domestic_shipping_cents, international_shipping_cents, printful_variant_map, landing_slot, slug, pricing_mode, offer_min_cents, offer_max_cents, created_at'
+  ).eq('published', true)
 
   if (error) {
     console.error('Database connection error:', error)

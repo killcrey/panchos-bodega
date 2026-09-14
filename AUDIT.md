@@ -1,0 +1,282 @@
+# Panchos Bodega — Production Audit
+
+Read-only audit per `BODEGA_AUDIT_PROMPT.md` (file not found in the repo at
+audit time — instructions were supplied in full in the requesting message
+and followed as given). Findings are appended per pass, never overwritten.
+
+---
+
+## Pass 1 — Stripe payment integrity
+
+### Files in the checkout → order path
+
+| File | Role |
+|---|---|
+| `src/cart.js` | Cart state (localStorage) — quantity/size/`offerAmountCents` per line |
+| `src/main.js` (~L1870-2200) | Checkout button handlers; two call sites invoke `create-checkout-session` (digital-only cart, and shipping cart after `get-shipping-rates`) |
+| `supabase/functions/get-shipping-rates/index.ts` | Quotes Shippo + Printful rates before checkout (not deep-traced this pass — no order/price write) |
+| `supabase/functions/create-checkout-session/index.ts` | **Authority boundary.** Re-validates price/inventory/shipping server-side, builds the Stripe Checkout Session, packs order-item data into `session.metadata`, returns `session.url` |
+| Stripe Checkout (hosted, external) | Customer pays |
+| `supabase/functions/stripe-webhook/index.ts` | **Authority boundary.** Verifies signature, decrements inventory, writes `orders`/`order_items`, purchases Shippo label, submits Printful order, sends confirmation email. Contains `purchaseLabelForOrder`/`submitPrintfulOrder` as inline helpers (not separate files) |
+| `success.html` / `success.js` | Post-redirect page. Calls `secure-download` to sign download URLs. **Does not write to the database** (confirmed by grep — no `.insert`/`.update`/`.upsert`/`.delete` in `secure-download/index.ts` either) — order creation is entirely webhook-driven and independent of whether this page ever loads |
+| `supabase/functions/purchase-shipping-label/index.ts` | Separate function, presumably the admin's manual retry path for a failed label (not deep-traced this pass) |
+
+Tables involved: `products`, `orders`, `order_items`, `tips`, `product_payments`, `site_settings`.
+
+---
+
+### [CRITICAL] `decrement_inventory` runs on every webhook delivery with no idempotency guard, and can't have one
+
+- **Confidence:** CONFIRMED
+- **Location:** `supabase/functions/stripe-webhook/index.ts:580-596`
+- **What happens:** Inside the `checkout.session.completed`/`async_payment_succeeded` handler, the per-line-item loop calls `await supabase.rpc('decrement_inventory', { p_stripe_product_id: product.id, p_quantity: quantity })` unconditionally, before any duplicate-delivery check exists in the function (that check, for the `orders` table, doesn't happen until line 606+, and doesn't gate this loop at all). Stripe explicitly documents that webhook events can be delivered more than once (retries on timeout/non-2xx, and occasionally even without one). Every redelivery of the same event re-runs this loop and calls `decrement_inventory` again for the same real sale. The call site passes only a product id and a quantity — no session id, event id, or any other idempotency key — so **no implementation of `decrement_inventory` could make this call-site idempotent**; the information needed to detect "already processed" isn't being passed in.
+- **How to reproduce:** Trigger a real `checkout.session.completed` event (test mode), let it process, then resend the identical event (Stripe CLI: `stripe events resend <id>`, or the Dashboard's "resend" button, or `stripe trigger checkout.session.completed` twice with the same session forged). Compare `products.inventory_count` for the purchased item before and after the second delivery — it will drop again.
+- **Blast radius:** Every tracked-inventory product, every redelivered event. Silently understates real stock, which can incorrectly show "Sold Out" while stock still exists (lost sales) — CONFIRMED as a certainty on any redelivery, not a rare race.
+- **Suggested fix:** Give `decrement_inventory` an idempotency key (the Stripe session id or event id) and have it check-and-record atomically in the same transaction/function (e.g. an `insert ... on conflict do nothing` into a small ledger table keyed by `(stripe_session_id, product_id)`, only decrementing if the insert actually added a row), or gate the entire per-line-item loop behind the same existing-order check the code already does for the `orders` table (move that check earlier and skip the whole loop, not just the `orders` insert, when the session was already processed).
+
+### [MEDIUM] The `decrement_inventory` RPC's result/error is never checked
+
+- **Confidence:** CONFIRMED
+- **Location:** `supabase/functions/stripe-webhook/index.ts:586-589`
+- **What happens:** `await supabase.rpc(...)` discards the `{ data, error }` result entirely. `supabase-js` does not throw on an RPC-level error by default — it returns it in `.error`. If the function doesn't exist, has a different signature, or hits an RLS/permission error, this fails completely silently: no log line, no thrown error, nothing for the outer `catch` (line 597) to catch. Compounding this: **`decrement_inventory` is not defined in any tracked migration** (`grep -rl "decrement_inventory" supabase/migrations/` returns nothing, and `products.inventory_count` itself doesn't appear in any migration either) — it must have been created directly against the database outside the migration history this project otherwise follows, which means its actual current implementation can't be verified from the repo at all.
+- **How to reproduce:** Temporarily rename/break the RPC in a test project, run a real webhook event through, and confirm nothing in the Edge Function logs indicates a problem.
+- **Blast radius:** If this RPC is silently failing in production right now (unverifiable from code), inventory counts have been wrong since whenever that started, with no alert.
+- **Suggested fix:** Check and log `error` from the RPC call. Separately, get `decrement_inventory`'s actual current definition into a tracked migration (`pg_dump`-style extraction of the function is fine) so its atomicity/behavior can be reviewed and isn't just tribal knowledge sitting in the live database.
+
+### [CRITICAL] Any failure while writing the order is swallowed, and the webhook always returns 200
+
+- **Confidence:** CONFIRMED
+- **Location:** `supabase/functions/stripe-webhook/index.ts:436-748` (whole handler); specifically the `catch` blocks at lines 523, 565, 597, 710, and the unconditional final `return` at 744-747
+- **What happens:** There is no top-level try/catch around the handler — instead, every internal step (tip insert, product-payment insert, line-item/inventory loop, order/order_items insert + label/Printful submission) has its own inner `try { ... } catch (err) { console.error(...) }` that logs and swallows. No matter which of these fails — a transient Supabase outage, an RLS misconfiguration, a network blip to Shippo/Printful, a JSON.parse failure on oversized metadata (see the metadata-length finding below) — execution falls through to the same final `return new Response(JSON.stringify({ received: true }), { status: 200 })`. Stripe treats a 200 as "delivered, don't retry." A transient failure during order creation therefore permanently loses that order: the customer is charged, no `orders` row exists, no fulfillment happens, and nothing in Supabase or the webhook's own response indicates anything went wrong. The only trace is a `console.error` line in Supabase's Edge Function logs, which nothing reads or alerts on.
+- **How to reproduce:** In test mode, temporarily point the Supabase URL/key used by the webhook at an unreachable host (or revoke the service-role key) for one request, fire `checkout.session.completed`, and confirm: (a) the webhook still returns 200, (b) no `orders` row is created, (c) Stripe's Dashboard shows the event as successfully delivered with no retry.
+- **Blast radius:** Any customer whose payment lands during a transient infrastructure hiccup on either side (Supabase or the third-party APIs called synchronously inside the same handler — see Pass 3 for the fulfillment-specific angle). Money taken, nothing delivered, no admin visibility, and — because Stripe was told 200 — no path back to retry.
+- **Suggested fix:** Separate "did we durably record enough to reconstruct this order" from "did every downstream side effect succeed." At minimum, return a non-2xx when the `orders` insert itself fails (so Stripe retries the whole event, which is safe once the inventory-decrement and order-insert idempotency findings above are fixed) instead of catching that specific failure and returning 200. Side effects that are meant to be fire-and-forget with manual retry (label purchase, Printful submission) can keep their current "log the failure into the order row" pattern, since those already have `label_status`/`printful_order_status` columns to reflect it — but the order row itself needs to exist for that pattern to work at all.
+
+### [HIGH] Order-confirmation email dedup is a non-atomic check-then-insert; the `orders` row itself is protected by a real constraint, the email isn't
+
+- **Confidence:** CONFIRMED (the race condition is confirmed by reading the code; whether it has actually fired in production is not verifiable from code — that part is SUSPECTED)
+- **Location:** `supabase/functions/stripe-webhook/index.ts:606-741`
+- **What happens:** Duplicate-delivery detection for a cart order is `SELECT ... WHERE stripe_session_id = ? THEN INSERT` (lines 612-619), not an atomic upsert. `orders.stripe_session_id` does have a real `unique` constraint (`supabase/migrations/20260821050724_create_orders_table.sql:7`), so two concurrent deliveries can't both successfully insert an `orders` row — but the code doesn't special-case that constraint violation the way it does for `tips`/`product_payments` (both explicitly check `insertError.code === '23505'` and return early; the orders path at line 654 just does `if (orderError) throw orderError`, caught generically by the same block's `catch` at line 710-712). Meanwhile `isDuplicateDelivery` is only ever set `true` inside the `if (existingOrder)` branch of the *pre-insert* SELECT — never as a result of the insert itself failing. So under genuinely concurrent redelivery (both requests' SELECT lands before either INSERT commits), the first request's insert succeeds and fully fulfills (order, items, label, Printful); the second request's insert fails on the unique constraint, is logged and swallowed, but `isDuplicateDelivery` is still `false` for that request — so it falls through to line 715 and sends a **second** order-confirmation email (and a second pair of `addContactToAudience` calls) for an order that, underneath, was correctly only created once.
+- **How to reproduce:** Fire the identical `checkout.session.completed` event twice at the same endpoint concurrently (not sequentially — e.g. two parallel `curl` requests carrying the same signed payload within the same replay-tolerance window) and check the customer's inbox / Resend logs for two confirmation emails against one `orders` row.
+- **Blast radius:** Customer-facing confusion (two receipts for one purchase) in a narrow but real concurrency window; no double-order, double-label, or double-Printful-submission, since those are downstream of the same protected insert.
+- **Suggested fix:** Set `isDuplicateDelivery = true` in the `catch` block specifically when the caught error's `code === '23505'` (mirroring the tips/product_payments pattern exactly), so a losing-the-race request recognizes itself as a duplicate after the fact and skips the email the same way an early-detected duplicate does.
+
+### [LOW] Per-item Stripe metadata can exceed Stripe's 500-character value cap for a long enough title/size/category combination
+
+- **Confidence:** SUSPECTED
+- **Location:** `supabase/functions/create-checkout-session/index.ts:170-174`; consumed at `supabase/functions/stripe-webhook/index.ts:624-627`
+- **What happens:** Each cart line is packed as `metadata[`item_${i}`] = JSON.stringify(orderItem)` — the code's own comment acknowledges awareness of Stripe's ~50-metadata-key limit, but Stripe also caps each individual metadata *value* at 500 characters, which isn't addressed. A product with a long title (this codebase has several 60-90+ character titles already, e.g. "The Invisible Panchos LAYERS Collectors Cup (limited to 10)") combined with a long size string could plausibly cross 500 characters once JSON-serialized with the other fields. If it does, `stripe.checkout.sessions.create()` itself would reject the request (caught by `create-checkout-session`'s own try/catch, returned as a 400 to the client before any charge happens — so this fails safely, not silently, pre-payment). Separately, on the webhook side, `JSON.parse(raw)` at webhook-processing time (line 626) has no try/catch of its own around just that call — a malformed/truncated value there would throw and be caught by the *outer* catch at line 710, which would abandon the entire order for that session (not just one line item).
+- **How to reproduce:** Create a test product with a title long enough that `JSON.stringify({id, title, category, size, quantity, unitAmountCents, weightOz, printfulSyncVariantId})` exceeds 500 characters, add it to a cart with a long size string, and attempt checkout; confirm whether Stripe rejects session creation and what the customer actually sees.
+- **Blast radius:** Narrow — only reachable with unusually long product data — but would present as "checkout is broken" for that specific product with no obvious cause from the admin side.
+- **Suggested fix:** Either cap/truncate the fields going into metadata (title especially) to a known-safe length, or move the per-item payload out of Stripe metadata entirely (e.g. write a pending-order row on session creation, keyed by session id, and have the webhook read from it instead of round-tripping cart data through Stripe's metadata size limits).
+
+### Signature verification — no finding
+
+`supabase/functions/stripe-webhook/index.ts:437-452` reads the raw request body via `await req.text()` and passes that exact string (not a parsed/re-serialized version) to `stripe.webhooks.constructEventAsync(body, signature, STRIPE_WEBHOOK_SECRET, undefined, cryptoProvider)`, rejecting with a 400 on failure before any event handling runs. This is correct.
+
+### Price authority — no finding
+
+Traced every value that ends up in a Stripe `price_data.unit_amount` or `shipping_options` in `create-checkout-session/index.ts`:
+- Base price always read from `products.price_cents` server-side (line 139), never from the client's cart snapshot.
+- Offer Based amounts are clamped to `products.offer_min_cents`/`offer_max_cents` server-side (lines 140-146) regardless of what the client requested.
+- The oversized-size upcharge is re-derived server-side from `item.size` against a server-side constant (lines 60-69, 147), never trusted from the client.
+- Shipping cost is re-fetched from Shippo (line 216) and re-quoted from Printful (line 236), matched by rate id — never the client-sent amount.
+Nothing client-supplied reaches the actual charge amount.
+
+### Event coverage — confirmed gap, no in-repo handling for refunds/disputes/failed async payments
+
+- **Confidence:** CONFIRMED (in-repo gap); whether these event types are even subscribed in the Stripe Dashboard is unverifiable from code (noted as a pre-existing known limitation in this project's own `CLAUDE.md`)
+- **Location:** `supabase/functions/stripe-webhook/index.ts:462` — the only event types checked anywhere in the file are `checkout.session.completed` and `checkout.session.async_payment_succeeded`. `grep -rn "charge.refunded|charge.dispute|payment_intent.payment_failed|async_payment_failed" supabase/functions/ --include="*.ts"` across the whole functions directory turns up nothing but comments.
+- **What happens:** A refund issued from the Stripe Dashboard has zero effect in Supabase — the `orders` row stays as a live paid order forever, `inventory_count` is never restored, and nothing flags it for the admin. A dispute/chargeback is equally invisible. `checkout.session.async_payment_failed` is also unhandled, though that one is benign by construction (no order is ever created until `payment_status === 'paid'` is confirmed, so a failed delayed payment simply produces no record, which is correct).
+- **Blast radius:** Every refund and dispute, indefinitely. The admin's inventory and order views have no way to reflect "this money came back" — a customer support / accounting split-brain that only gets discovered by cross-referencing the Stripe Dashboard by hand.
+- **Suggested fix:** Subscribe to and handle `charge.refunded` (mark the order refunded, consider restocking) and `charge.dispute.created`/`.closed` (flag the order for admin attention) at minimum.
+
+---
+
+## Pass 2 — Supabase data exposure
+
+### Table enumeration & RLS summary
+
+Origins: table-creation SQL grepped from `supabase/migrations/*.sql`; where a table isn't created in any tracked migration (`products`, `email_captures`), its RLS state below is reconstructed from the migrations that `alter`/`create policy` against it — same caveat as Pass 1's `decrement_inventory` finding: these predate the tracked migration history entirely.
+
+| Table | RLS enabled | Anon access | Authenticated access | PII / money-relevant? |
+|---|---|---|---|---|
+| `products` | Yes | `select` where `published = true` (`20260821032802`) | Full CRUD via a pre-existing **"Admin Full Access"** policy — referenced by two later migrations but its actual `create policy` statement is not present in any tracked migration, so its exact `using`/`with check` clause can't be read from the repo | Prices, publish state — money-adjacent |
+| `orders` | Yes | None | `for all using (true)` (`20260821050724`) — blanket, not scoped to any owner column (there is none) | **Yes** — name, email, physical address |
+| `order_items` | Yes | None | `for all using (true)` (`20260821060000`) | Line-item detail tied to the above |
+| `tips` | Yes | None | `for all using (true)` (`20260825140000`) | **Yes** — email, name, message |
+| `product_payments` | Yes | None | `for all using (true)` (`20260909095648`) | **Yes** — email, name, amount |
+| `service_inquiries` | Yes | None | `for all using (true)` (`20260909090808`) | **Yes** — name, email, phone, budget, message |
+| `email_captures` | Yes | None | `for all using (true)` (`20260906233000`) | **Yes** — real customer emails |
+| `site_settings` | Yes | None | `for all using (true)` (`20260907010000`) | No PII; defacement-only risk |
+| `game_signup_sync_state` | Yes | None | **No policy at all** — correctly deny-by-default; only the service role (bypasses RLS) can touch it | No |
+
+Every table above with any `authenticated` policy uses the same shape: `to authenticated using (true)` (or, for `products`, is asserted to). None of them scope by a per-user ownership column — there isn't one anywhere in this schema, because the app's entire model is "authenticated == the one admin." See the finding below for why that assumption is the whole story.
+
+### [CRITICAL] Every "admin-only" table is only as protected as one Supabase Auth toggle, and that toggle is committed as "open"
+
+- **Confidence:** SUSPECTED (the config value is CONFIRMED as committed; whether it reflects the live hosted project's actual Auth setting is not verifiable from the repo — see reproduction steps)
+- **Location:** `supabase/config.toml` — `[auth] enable_signup = true` and `[auth.email] enable_signup = true` with `enable_confirmations = false`; every RLS policy listed in the table above as `to authenticated using (true)`; the reasoning is stated explicitly in the comment at `supabase/migrations/20260821031901_lock_down_products_rls.sql:13-14`: *"There is no public sign-up flow anywhere in this app, so 'authenticated' can only ever mean a logged-in admin."*
+- **What happens:** That comment describes the app's own UI (no signup form is rendered anywhere), not what Supabase Auth itself will accept. The anon key is embedded in the client bundle and trivially extractable by anyone (confirmed in this same pass — see the bundle-secrets check below). If the live project's Auth settings match what's committed here, **anyone on the internet can call Supabase Auth's `signUp` endpoint directly with that anon key**, receive a real `authenticated`-role JWT immediately (no admin approval, and `enable_confirmations = false` means no email verification step either), and that JWT satisfies every policy in the table above — none of them check *who* the authenticated user is, only *that* they're authenticated. Concretely, a self-signed-up "user" who was never near the real admin login screen would get: full read of `orders`/`tips`/`product_payments`/`service_inquiries`/`email_captures` (all real customer PII, unscoped — no per-row filtering, so it's a full table dump, not something requiring ID-guessing), and — via whatever `products`' actual "Admin Full Access" policy turns out to allow — likely full write access to `products` (change prices to $0, unpublish/delete listings, fabricate new ones). It would also pass the internal `.auth.getUser()` checks inside `create-stripe-link`, `printful-variant-lookup`, and `purchase-shipping-label` (`supabase/functions/purchase-shipping-label/index.ts:34-45`) — those checks correctly confirm "this is a real logged-in session," but have no way to additionally confirm "and it's specifically the real admin," so a self-signed-up account would pass them too, including triggering a real (paid) Shippo label purchase for an order id read off the now-exposed `orders` table.
+- **How to reproduce:** Do **not** call `supabase.auth.signUp()` against the live project to test this (that would create a real row in `auth.users` on production — out of scope for a read-only audit). Instead: open the Supabase Dashboard for this project → Authentication → Sign In / Providers → Email, and check whether "Allow new users to sign up" is enabled. That single toggle is the entire finding.
+- **Blast radius:** If the toggle is on: every real customer's name, email, phone, physical address, and purchase/tip/inquiry history that has ever gone through this store, readable by anyone who bothers to sign up for a throwaway account — plus write access to the product catalog and the ability to trigger real spend (Shippo labels) via functions that believe "authenticated" is a sufficient admin check.
+- **Suggested fix:** In the Dashboard, disable public sign-ups for this project (Supabase supports invite-only / admin-created users, which is all this app actually needs — there is and should remain exactly one admin account). Separately, don't rely on "authenticated" as a stand-in for "admin" anywhere going forward — either check against a specific allow-listed admin user id/email in a `security definer` function used by policies, or accept the invite-only setting as the sole control and document that every `to authenticated using (true)` policy is deliberately depending on it (which is what `20260821031901`'s comment already half-does, but the assumption needs to be true at the platform level, not just true of this app's own UI).
+
+### `products`' write policy can't be fully audited from the repo
+
+- **Confidence:** SUSPECTED
+- **Location:** Referenced (not defined) at `supabase/migrations/20260821032445_dedupe_products_rls_policies.sql:3` and `20260821032802_restrict_public_reads_to_published.sql:5` as "Admin Full Access" / "cmd *"
+- **What happens:** This policy predates the tracked migration history — there's no `create policy` statement for it anywhere in `supabase/migrations/`. Every other write-capable policy in this schema that *is* visible reads `using (true) with check (true)`, so that's the reasonable assumption here too, but it's an assumption, not something read from source.
+- **How to reproduce:** In the Dashboard's Table Editor → `products` → RLS policies (or `select * from pg_policies where tablename = 'products'` from the SQL editor), read the actual policy definition.
+- **Blast radius:** Same as the finding above if the assumption holds — full product CRUD for anyone who is `authenticated`.
+- **Suggested fix:** Same as above; additionally, get this policy's real definition into a tracked migration so it isn't relying on institutional memory of what Supabase Studio auto-generated once.
+
+### Service-role key usage — no finding
+
+`grep -rl "SERVICE_ROLE_KEY" supabase/functions/` shows it used only inside Deno edge functions (`create-checkout-session`, `create-product-payment-session`, `free-download`, `get-playback-url`, `get-shipping-rates`, `purchase-shipping-label`, `secure-download`, `stripe-webhook`, `submit-service-inquiry`, `sync-game-signups`), read via `Deno.env.get(...)` — never in `src/`, `index.html`, `success.html`/`.js`, or committed to `netlify.toml` (which only mentions it in a comment warning against ever doing so). No client-reachable path exposes it.
+
+### Client bundle secret scan — no finding
+
+Grepped `dist/` (the actual built output, not source) for every server-side secret name used anywhere in the functions directory (`SERVICE_ROLE`, `STRIPE_SECRET`, `PRINTFUL_API_KEY`, `SHIPPO_API_KEY`, `RESEND_API_KEY`, `RESEND_CONTACTS_API_KEY`, `UNSUBSCRIBE_SECRET`) and for raw Stripe secret-key patterns (`sk_live_*`, `sk_test_*`) — zero matches. The only keys present in `dist/assets/*.js` are the three intentionally-public ones: the Google Maps key, the Stripe *publishable* key, and the Supabase anon/publishable key — matching exactly what `netlify.toml`'s `SECRETS_SCAN_OMIT_KEYS` names and this project's own documented reasoning for why each is safe to ship (Maps key is referrer-restricted, Stripe key is publishable by design, Supabase key is RLS-protected — which loops back to the finding above being the thing actually worth fixing, since it's the one place that protection currently depends on an assumption rather than a hard boundary).
+
+### Storage buckets — matches prior documented state, no new finding
+
+`bodega-images` (public, product photos — intentional) and `audio-vault` (private since an earlier fix, served only via signed URLs from `get-playback-url`/`secure-download`/`free-download`) — consistent with `CLAUDE.md`'s existing documentation of this; not re-verified further this pass since it was already confirmed live in a prior session.
+
+### [LOW] Every edge function returns raw internal error messages to the caller
+
+- **Confidence:** CONFIRMED
+- **Location:** Pattern repeats across essentially every function's `catch` block, e.g. `create-checkout-session/index.ts:305-309`, `stripe-webhook` (n/a, never returns non-200 with detail), `purchase-shipping-label/index.ts:161-165` — `JSON.stringify({ error: error.message })` sent straight back to whoever called the function, with no distinction between an intentional user-facing message (`throw new Error('Select a size for "X".')`) and an incidental one (a raw driver/DB error string, a third-party API's raw error body).
+- **What happens:** Most `throw`s in this codebase are already deliberately-worded user-facing messages, so this is low-severity in practice — but any code path that lets an unexpected exception (a Postgres error, a malformed third-party response) bubble up to the generic catch will hand the caller that raw internal text.
+- **How to reproduce:** Trigger any unhandled internal error (e.g. temporarily break a DB connection string) and observe the response body.
+- **Blast radius:** Minor information disclosure at most (e.g. table/column names in a Postgres error) — no path found this pass where it exposes something more sensitive than that.
+- **Suggested fix:** Not urgent. If ever hardened, distinguish "known, user-facing" errors (throw a tagged error type) from anything else, and give the latter a generic message while still logging the real one server-side.
+
+### Repo-completeness caveat (extends the Pass 1 note on `decrement_inventory`)
+
+`products` and `email_captures` are also not created in any tracked migration — same as `decrement_inventory`, they exist in the live database from before this migration history started, or were created directly against it out-of-band. This isn't a vulnerability by itself, but it means several of this pass's "SUSPECTED" findings (the exact `products` write policy, the live Auth signup setting) are unverifiable from the repo not by coincidence — this project's migration history is known to be incomplete for exactly the kind of object this pass needs to inspect.
+
+---
+
+## Pass 3 — Fulfillment failure paths
+
+### [CRITICAL] Any product that ever had a Stripe Payment Link generated has a permanent, price-frozen, publicly-leaked alternate checkout
+
+- **Confidence:** CONFIRMED
+- **Location:** `supabase/functions/create-stripe-link/index.ts:88-96` (Payment Link creation, price-frozen) + `src/main.js:2841` (public storefront query) + `products.stripe_url` column
+- **What happens:** `create-stripe-link` (the admin's "Generate Checkout ID" action, still the live path for giving any non-Printful, non-skipped product a working Payment Link) creates a real `stripe.prices.create({ unit_amount: priceCents, ... })` and binds a `stripe.paymentLinks.create` to that exact Price object — a **permanent snapshot**, unlike the cart's own `create-checkout-session`, which reads `products.price_cents` live on every checkout. The resulting URL is saved to `products.stripe_url`. Separately, the storefront's own public product query is `supabase.from('products').select('*').eq('published', true)` (`src/main.js:2841`) — a bare `select('*')`, which puts every column, `stripe_url` included, into the public REST response for every published product, regardless of whether the storefront UI happens to render that field. Concretely: generate a Payment Link at $20, later raise the real price to $40 in the admin (which correctly doesn't require "regenerating the Checkout ID" — by design, per this project's own docs) — the $20 link is still live, still bound to the old $20 Price object, and its URL is sitting in the public API response for anyone to find by just calling the same endpoint the storefront already calls with the public anon key. **This isn't theoretical for this store**: earlier in this same session, a direct read of `THE INVISIBLE PANCHOS- LAYERS (DOWNLOAD)` showed a real, populated `stripe_url` (`https://buy.stripe.com/eVqeVc3DF3hM4IScdK3ZK0h`) — a live product with this exposure already in place. Whether that specific link's frozen price still matches the current price wasn't re-checked this pass (would require a live Stripe lookup, out of scope for a read-only pass), but the mechanism that would let it drift is confirmed.
+- **How to reproduce:** Query `https://<project>.supabase.co/rest/v1/products?select=title,price_cents,stripe_url&published=eq.true` with the public anon key (the same one already sitting in the client bundle) and see which rows return a non-null `stripe_url`; compare each against that product's current `price_cents` and, in the Stripe Dashboard, the frozen amount on the linked Price object.
+- **Blast radius:** Direct revenue loss on any product where the live price has since been raised above whatever a leaked link was frozen at — and it's not really "leaked" in the sense of needing to be found through a mistake; it's returned in a normal, unauthenticated API response by design.
+- **Suggested fix:** Stop `select('*')` on the public product query — select an explicit column list that excludes `stripe_url` (and any other admin-only field that doesn't need to leave the server). Separately, decide whether Payment Links are actually still a feature this store uses going forward; if not, stop generating them (always `skipPaymentLink`) and deactivate any existing ones in Stripe. If they are still wanted, `stripe.paymentLinks.update(id, { active: false })` (or deactivate the Price) whenever a product's price changes, so a stale link stops working instead of quietly staying valid.
+- **Status: FIXED (2026-09-14).** `src/main.js`'s public storefront query now uses an explicit column list omitting `stripe_url` and `stripe_product_id` (confirmed via `grep` that neither is read by any storefront rendering code, only the admin edit-modal/inventory list). Verified live: the same query shape with the new column list no longer returns either field, and the storefront (grid, a product page) still renders all real products correctly. The Payment-Link *price-freezing* mechanism itself, and the missing `orders` row for a Payment Link purchase, are unchanged by this fix — this closed the *discoverability* of an existing link, not the underlying "should Payment Links exist at all" question, which is still open per the suggested fix above.
+
+### [HIGH] Printful order-submission failures have no retry path at all — Shippo labels do
+
+- **Confidence:** CONFIRMED
+- **Location:** `supabase/functions/stripe-webhook/index.ts:124-183` (`submitPrintfulOrder`, sets `printful_order_status: 'failed'` on any error, nothing else); contrast with `supabase/functions/purchase-shipping-label/index.ts` (a full admin-triggered retry endpoint for Shippo) and `src/main.js:401-403` (renders a "Retry Label"/"Buy Label" button for Shippo failures)
+- **What happens:** A failed Printful submission (timeout, validation error, Printful API outage) is visible to the admin — `main.js:378-399` does render a "Printful Failed" badge with the stored error text, so this isn't silent. But there is no button, no edge function, and no code path anywhere in the repo that resubmits it. `ls supabase/functions/` has no `retry-printful-order` or equivalent. The only recovery is the admin manually re-creating the order directly in Printful's own dashboard, by hand, using whatever address/item details they can piece together from the Supabase `orders`/`order_items` rows.
+- **How to reproduce:** In test mode, point `PRINTFUL_API_KEY` at an invalid value for one webhook delivery (or use a cart item whose `printful_variant_map` has since gone stale) and confirm: the order row gets `printful_order_status = 'failed'`, the admin UI shows it, and no UI control exists to resubmit.
+- **Blast radius:** Every Printful-fulfilled order that fails on first attempt. Money was already collected; physical fulfillment now depends entirely on the admin noticing the badge and manually intervening outside this app.
+- **Suggested fix:** Add a `retry-printful-order` function mirroring `purchase-shipping-label`'s shape (admin-authenticated, re-reads the order, resubmits with the same recipient/items, updates the same status columns) and a matching "Retry Printful Order" button next to the existing "Retry Label" one.
+
+### [MEDIUM] No way to correct a bad shipping address after payment — only to retry the same one
+
+- **Confidence:** CONFIRMED
+- **Location:** `src/main.js` — no `shipping_street1`/`shipping_name`/etc. field is ever rendered as an editable input anywhere (`grep -in "edit.*order\|order.*edit"` across the file turns up nothing); `supabase/functions/purchase-shipping-label/index.ts:86-94` rebuilds `address_to` straight from the stored `order.shipping_*` columns, unchanged, on every retry
+- **What happens:** If Shippo or Printful reject an address as undeliverable (bad street, nonexistent zip, etc.), the failure is visible (per the finding above) and, for Shippo specifically, retryable — but retrying re-sends the identical address, so a genuinely bad address just fails the same way every time. There's no admin-facing way to correct it short of editing the row directly in Supabase's own Table Editor (outside this app) or contacting the customer and starting some other, undocumented side process.
+- **How to reproduce:** Trigger a label purchase against a Shippo-rejected test address (Shippo's test mode has known-undeliverable test addresses for exactly this) and confirm the only admin-facing option is "Retry Label" with no way to change what's being retried.
+- **Blast radius:** Any order with a typo'd or otherwise bad address — already paid for, now stuck until someone manually intervenes in the database directly.
+- **Suggested fix:** A minimal address-edit form in the admin's order detail view, writing to the same `shipping_*` columns `purchase-shipping-label` already reads from — no new plumbing needed beyond the form itself.
+
+### [CRITICAL] A static Stripe Payment Link purchase leaves no `orders`/`order_items` row at all — confirmed by the webhook's own code comment
+
+- **Confidence:** CONFIRMED
+- **Location:** `supabase/functions/stripe-webhook/index.ts:603-606` (comment) and `:607` (the `if (session.metadata?.item_count)` gate that the entire order-creation, label-purchase, and Printful-submission block lives inside)
+- **What happens:** The code's own comment states this directly: *"Only the cart checkout (create-checkout-session) tags its sessions with item_count — a static Payment Link purchase (music, art, the old manual apparel link) has none, and doesn't get an order/label record."* Everything from order creation through Shippo label purchase through Printful submission is gated on `metadata.item_count` being present — a static Payment Link session has no such metadata, so none of it runs. Inventory *is* still decremented (that loop, per the Pass 1 finding, isn't gated by `item_count` at all) and a confirmation email is still sent — but there is categorically no row in `orders` or `order_items` for this sale, ever. For a digital product this means no download-link record beyond the one email sent at purchase time; for anything with a shipping component, this is worse — the comment explicitly includes "the old manual apparel link" as a real path this code anticipates, and for that path **no shipping label is ever purchased and no Printful order is ever submitted**, because that logic only exists inside the same `item_count`-gated block.
+- **How to reproduce:** Generate a Payment Link for a real product via the admin's "Generate Checkout ID" flow (test mode), complete a purchase through it, and confirm no corresponding row appears in `orders`.
+- **Blast radius:** Every sale that ever goes through a static Payment Link instead of the cart. Combined with the first finding in this pass (those links are publicly discoverable and price-frozen), this is the same surface twice over: a link that's both easy to stumble into and, once used, invisible to the store's own order records.
+- **Suggested fix:** If Payment Links are meant to stay a supported purchase path, give `stripe-webhook` a second branch for sessions with a Payment-Link-shaped `payment_link` field but no `item_count`, and write a minimal order record from the session's own line items (same `stripe.checkout.sessions.listLineItems` call already made a few lines above). If they're not meant to be a real purchase path going forward (which matches this project's own "never handed to customers" framing elsewhere), the fix is the one already suggested above: stop generating live ones, or deactivate them immediately after generation.
+
+### External API calls have no timeout anywhere in the fulfillment path
+
+- **Confidence:** CONFIRMED (absence of timeout handling); the practical consequence (hung function, burned retry window) is SUSPECTED pending a live check
+- **Location:** every `fetch()` call in `supabase/functions/stripe-webhook/index.ts` (Shippo label purchase, Printful order submission, Resend sends) and `supabase/functions/create-checkout-session/index.ts`/`purchase-shipping-label/index.ts` (Shippo rate/label, Printful rate) — `grep -n "AbortController|signal:|timeout" ` across all of these returns nothing
+- **What happens:** No `fetch()` call to Shippo, Printful, or Resend anywhere in this codebase sets a timeout or an `AbortController` signal. Each of `purchaseLabelForOrder` and `submitPrintfulOrder` is also `await`ed sequentially inside the webhook handler (`stripe-webhook/index.ts:687-708` — Shippo first, then Printful, not in parallel), so a hang in either one blocks the other and the whole handler. If a third-party endpoint hangs long enough to hit the Edge Function platform's own execution ceiling, the function gets killed rather than returning its usual (always-200, per Pass 1) response — which is the one scenario in this codebase where Stripe *would* actually receive something other than 200 and retry the event. That retry would then re-run the entire handler from the top, including the Pass 1 finding's unconditional `decrement_inventory` call, on the same real sale a second time.
+- **How to reproduce:** Point one of the outbound URLs at a non-responding host (or a deliberately slow endpoint) in a test environment and time how long the function takes to fail, and what Stripe's Dashboard records for that delivery attempt.
+- **Blast radius:** Rare (requires a genuinely hung third party, not just a slow-but-responding one), but when it happens, it's the direct trigger for Pass 1's inventory-double-decrement finding, not just an isolated slowness issue.
+- **Suggested fix:** Wrap each outbound `fetch` in a reasonable timeout (an `AbortController` with a 10-15s limit is standard for label/rate APIs), and let the two fulfillment calls (`purchaseLabelForOrder`, `submitPrintfulOrder`) run concurrently via `Promise.all` where an order actually needs both, so a hang in one doesn't extend the other's exposure window.
+
+---
+
+## Pass 4 — Races, replays, and client state
+
+### [HIGH] Inventory is checked at checkout-session creation and decremented at payment confirmation — two concurrent buyers of the last unit can both win
+
+- **Confidence:** CONFIRMED (the design gap); whether `decrement_inventory` itself is additionally non-atomic on top of this is SUSPECTED (same unverifiable-function caveat as Pass 1/2 — it isn't in any tracked migration)
+- **Location:** `supabase/functions/create-checkout-session/index.ts:102-104` (the only stock check, at session-creation time) vs. `supabase/functions/stripe-webhook/index.ts:586-589` (the only decrement, at payment-confirmation time — which can be minutes later, however long the customer spends on Stripe's hosted page)
+- **What happens:** `create-checkout-session` checks `product.inventory_count < quantity` once, when the Checkout Session is created — before the customer has paid anything. The actual decrement doesn't happen until the webhook fires after payment. Between those two moments there is an arbitrary window (as long as the customer takes to fill out Stripe's payment form) during which a second buyer can call `create-checkout-session` for the same product, see the same still-undecremented `inventory_count`, and also pass the check. If both then complete payment, both webhooks run and both decrement — for a product with 1 unit in stock, both buyers are charged and both are treated as a valid, fulfillable order for stock that only existed once. This is a structural gap in *when* availability is validated versus *when* it's committed, independent of whatever `decrement_inventory`'s own SQL does internally.
+- **How to reproduce:** Seed a test product with `inventory_count = 1`. Open two checkout sessions for it (two browser sessions/incognito windows) before completing either. Confirm both sessions are created successfully. Complete both payments (test mode) and confirm two `order_items` rows reference the same product with combined quantity exceeding 1.
+- **Blast radius:** Any tracked-inventory product with genuinely concurrent demand for its last unit(s) — most likely for a limited/small-batch item, which is exactly the kind of product where this actually matters to the business (a "limited to 10" drop is the highest-risk case, not a random long-tail item).
+- **Suggested fix:** Move the authoritative check to the same place as the decrement — either have the webhook refuse to fulfill (and flag for a refund) when a post-hoc check finds stock already exhausted, or (better) reserve stock at session-creation time with a short-lived hold that's released if the session expires unpaid, so the check and the eventual commit are against the same reservation rather than two independent reads of `inventory_count`.
+
+### Double-click on checkout — no finding
+
+Both checkout entry points (`src/main.js:1966-1967` for the digital-only cart button, `:2142` for the post-shipping "Continue" button) disable the clicked button synchronously before the `await supabase.functions.invoke('create-checkout-session', ...)` call, and only re-enable it in the `catch` branch — a successful call navigates away via `window.location.href` before the user could click again. A determined user opening two separate tabs to the same cart could still create two independent Checkout Sessions, but that's two real, independently-priced sessions — completing both is two genuine separate purchases, not a duplication bug, and each is processed exactly once by the (already-covered-in-Pass-1) webhook logic.
+
+### Success page — confirmed not driven by any client-side write; leaked/shared `session_id` grants indefinite repeat access
+
+- **Confidence:** CONFIRMED
+- **Location:** `success.js:44-59` (calls `secure-download` with the URL's `session_id`, no DB write — already confirmed in Pass 1 via `grep` for `.insert`/`.update` in `secure-download/index.ts` returning nothing) and `supabase/functions/secure-download/index.ts:15-31` (accepts any `session_id`, verifies only `payment_status === 'paid'` via a live Stripe lookup — no concept of "whose" session this is beyond that)
+- **What happens:** The success page and `secure-download` are correctly not a race risk against the webhook — order creation is 100% webhook-driven, confirmed again this pass. But `session_id` functions as a bearer capability token with no expiry on the *lookup* itself (only the signed download URLs it hands back are time-limited, 60 minutes) and no binding to a specific browser/device/customer beyond "whoever has this string." Stripe session ids don't expire from the API's lookup perspective for a meaningful period, so anyone who obtains a real `session_id` (shared intentionally, screen-shared, logged by a browser history sync, a corporate proxy, etc.) can call `secure-download` again at any later time and mint a fresh signed download link — repeatedly, indefinitely.
+- **How to reproduce:** Complete a real purchase (test mode), copy the `session_id` from the success URL, and call `secure-download` with it again after closing the browser entirely — confirm it still succeeds and returns working links.
+- **Blast radius:** For a paid digital product, this is a real (if requires deliberate sharing) revenue-adjacent gap — one buyer's receipt link, if shared, lets an unlimited number of other people re-derive fresh download links forever. For a free ($0) product this is a non-issue (nothing being protected).
+- **Suggested fix:** Not urgent for a no-login storefront (this is a common trade-off, not a mistake), but if it matters for higher-value digital goods, consider capping the number of times `secure-download` will re-issue links for a given session, or the total time window after original purchase during which it will.
+
+### Cart / stale client state — price and product-existence are correctly re-validated live; size *value* is not
+
+- **Confidence:** CONFIRMED
+- **Location:** `supabase/functions/create-checkout-session/index.ts:87-107`
+- **What happens:** Price (`price_cents`, `offer_min_cents`/`offer_max_cents`), product existence, and `published` status are all re-read live at checkout time (lines 87-99) — a cart item added days ago against an old price, a since-unpublished product, or offer bounds that have since changed cannot check out stale; each is correctly re-validated or rejected with a clear error. The one gap: `if (product.sizes && !item.size) throw ...` (line 105-107) checks only that *some* size string was provided when the product has sizes configured — it never checks that `item.size` is actually one of the values in `product.sizes` (the admin's comma-separated list). A stale cart (or a client-modified request) can submit any arbitrary string as the size for a non-Printful physical item, and it will be accepted, priced (the oversized-size upcharge check at least keys off an explicit allow-list, `UPCHARGE_SIZES`, so a nonsense size just means no upcharge — not a money-loss path), and stored on `order_items.size` as-is. (Printful items *are* protected here, incidentally — `product.printful_variant_map[key]` lookup at line 116 fails closed for any size not actually configured.)
+- **How to reproduce:** Add a non-Printful apparel item to the cart, then call `create-checkout-session` directly with `size: "not-a-real-size"` for that line — confirm it succeeds rather than being rejected.
+- **Blast radius:** Fulfillment confusion (an order with a nonsense/garbage size value for the admin to puzzle over when packing it) rather than money loss.
+- **Suggested fix:** Validate `item.size` against `product.sizes.split(',').map(s => s.trim())` the same way the client already presents the choices, and reject if it isn't a match — mirroring the Printful branch's fail-closed behavior.
+
+---
+
+## Pass 5 — Runtime confirmation
+
+Two structural facts blocked most of this pass from running as originally scoped ("use Stripe test mode only"), and both are worth stating plainly rather than working around:
+
+1. **This deployment only has a LIVE Stripe secret key and a LIVE webhook signing secret — there is no test-mode key configured anywhere in the project.** `stripe trigger` / the Stripe CLI's test-mode events are signed with a *test*-mode webhook secret, which would fail signature verification against the deployed `stripe-webhook` function (which only has the *live* secret) — so a genuine test-mode event can't reach the real function at all. The only way to exercise the live function's `checkout.session.completed` branch for real is an actual live payment, which the standing rule for this project (and plain common sense for an audit) says never to do. This means the webhook-side findings from Passes 1 and 4 — `decrement_inventory`'s idempotency, the order-dedup race — cannot be safely runtime-confirmed against this deployment without either (a) temporarily standing up a test-mode Stripe key + webhook secret for this specific purpose, or (b) accepting the risk of exercising it live.
+2. **Direct read-only schema introspection needs Docker.** `npx supabase db dump --linked` (schema-only, no data — confirmed via `--dry-run` that it does not pull any table rows) would have resolved the `decrement_inventory` definition and the real `products` "Admin Full Access" policy question directly from the live database, safely. It requires a local Docker Postgres image to normalize output; Docker isn't running in this environment, so the command failed before touching anything.
+
+Nothing in this section involved writing to the database, calling a live API beyond what's noted, or completing any charge.
+
+### What was attempted
+
+- `npx supabase db dump --linked --dry-run` — succeeded in printing the underlying `pg_dump` command (confirmed schema-only, `--exclude-schema` for internal schemas, no data flag set) but the real dump failed for the Docker reason above.
+- No Supabase RPC calls, no new rows, no Stripe sessions were created this pass — every remaining SUSPECTED finding needs either a live action this pass wasn't pre-authorized for (a real signup attempt against Auth, a live RPC call to `decrement_inventory`, even a harmless one) or infrastructure this environment doesn't have (Docker, a test-mode Stripe key).
+
+### What would resolve each remaining SUSPECTED finding, fastest path first
+
+1. **Self-signup (the Pass 2 CRITICAL finding) — one Dashboard click to check.** Supabase Dashboard → Authentication → Sign In / Providers → Email → check whether "Allow new users to sign up" is on. This alone confirms or clears the single biggest finding in the whole audit. (I did not call the project's public `/auth/v1/settings` endpoint, which would likely also answer this read-only — didn't want to assume that's in scope without asking first.)
+2. **`decrement_inventory`'s real definition and the `products` write policy — one query, run by you in the Supabase SQL Editor:**
+   ```sql
+   select proname, prosrc from pg_proc where proname = 'decrement_inventory';
+   select policyname, roles, cmd, qual, with_check from pg_policies where tablename = 'products';
+   ```
+   Paste the result back and I'll fold a CONFIRMED/refuted verdict into this file.
+3. **Webhook idempotency (`decrement_inventory` re-run, the order-dedup race) — needs a test-mode key.** If you want this actually exercised rather than left as a code-level finding, the lowest-risk path is: temporarily add a **test**-mode `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET` pair to a *duplicate* of the webhook function (or a temporary second webhook endpoint in the Stripe Dashboard pointed at the same code), run `stripe trigger checkout.session.completed` twice against that, diff the database, then remove it. I did not do this unprompted since it means touching live configuration, not just reading it.
+
+---
+
+## Prioritized fix list
+
+1. ~~**Stop the public product query from leaking `stripe_url`** (Pass 3).~~ **FIXED 2026-09-14** — see the finding above.
+2. **Check the Supabase Auth signup setting** (Pass 2). Not a code change — a Dashboard toggle — but it's the finding that, if true, makes nearly every other RLS-based protection in this app decorative. Do this before anything else on this list conceptually, even though it's listed second; it's a checkbox, not an engineering task.
+3. **Decide the fate of Stripe Payment Links** (Pass 3). Either commit to them (fix the missing `orders` row + price drift) or kill them (always `skipPaymentLink`, deactivate existing ones in Stripe). Leaving them half-supported is what produced both Pass 3 CRITICAL findings.
+4. **Fix the inventory idempotency/race pair** (Pass 1 + Pass 4). These are two angles on one theme — decrement is neither idempotent against redelivery nor safe against two concurrent buyers of the last unit. Worth fixing together since the right fix (a reservation/ledger keyed by session id) addresses both at once.
+5. **Add refund/dispute handling and a Printful retry path** (Pass 1 + Pass 3). Lower urgency than the above but real operational gaps — money can come back with no trace, and a failed Printful order has no recovery button.
+6. **The smaller items** (metadata-length edge case, non-atomic email-dedup race, size-value validation, missing fetch timeouts, raw error messages) — worth cleaning up but none of them lose money or expose data on their own.
+
+Pick whichever you want to start with — for anything you choose, I'll write a failing test first, then the fix, per your instructions.
