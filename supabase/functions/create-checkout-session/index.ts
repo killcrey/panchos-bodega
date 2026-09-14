@@ -82,6 +82,21 @@ function isUpchargeSize(size: string | null | undefined): boolean {
   return !!size && UPCHARGE_SIZES.has(size.trim().toUpperCase())
 }
 
+// Audit finding (AUDIT.md Pass 1 LOW): each cart line is packed as
+// JSON.stringify(orderItem) into its own Stripe metadata value, and Stripe
+// caps every metadata value at 500 characters — title has no length limit
+// anywhere in the admin form, and this codebase already has real titles
+// 60-90+ characters long. Truncating here (well before that cap — 200/40
+// leaves ~90 chars of margin even in a worst-case combination of every
+// other field, verified by hand) keeps checkout working instead of Stripe
+// rejecting session creation outright for a product with a long enough
+// title/size. This only affects the order_items.product_title *snapshot*;
+// the real title is still `products.title`, looked up by the id stored
+// right alongside it.
+function truncateForMetadata(value: string, maxLen: number): string {
+  return value.length > maxLen ? `${value.slice(0, maxLen - 1)}…` : value
+}
+
     // Re-validate every line against the database instead of trusting
     // whatever price/availability the client sent back — the client only
     // ever picks a product id, size, and quantity.
@@ -180,9 +195,9 @@ function isUpchargeSize(size: string | null | undefined): boolean {
 
       orderItems.push({
         id: product.id,
-        title: product.title,
+        title: truncateForMetadata(product.title, 200),
         category: product.category || null,
-        size: item.size || null,
+        size: item.size ? truncateForMetadata(item.size, 40) : null,
         quantity,
         unitAmountCents,
         weightOz: product.weight_oz != null ? product.weight_oz : null,
