@@ -2,14 +2,34 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import Stripe from "https://esm.sh/stripe@11.1.0?target=deno"
 
+// timeout (ms) — audit finding (AUDIT.md Pass 3): no call anywhere in this
+// file had one, so a hung Stripe/Shippo/Printful/Resend endpoint could
+// block this handler indefinitely, right up to the Edge Function
+// platform's own execution ceiling — the one scenario where Stripe would
+// actually get something other than the always-200 response and retry the
+// event, re-running everything (including the now-idempotency-guarded
+// inventory decrement) a second time for no reason.
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
   apiVersion: '2022-11-15',
   httpClient: Stripe.createFetchHttpClient(),
+  timeout: 15000,
 })
 
 // Deno doesn't have Node's synchronous crypto APIs, so signature
 // verification has to go through Stripe's async + Web Crypto path.
 const cryptoProvider = Stripe.createSubtleCryptoProvider()
+
+// Every raw fetch() to Shippo/Printful/Resend below goes through this —
+// see the timeout comment above the Stripe client construction.
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 // Mirrors the same helper in free-download/index.ts and
 // sync-game-signups/index.ts — every real purchase (cart order or the older
@@ -30,7 +50,7 @@ async function addContactToAudience(email: string, audienceIdEnvVar: string = 'R
   if (!resendKey || !audienceId) return
 
   try {
-    const res = await fetch(`https://api.resend.com/audiences/${audienceId}/contacts`, {
+    const res = await fetchWithTimeout(`https://api.resend.com/audiences/${audienceId}/contacts`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${resendKey}`,
@@ -88,7 +108,7 @@ async function purchaseLabelForOrder(
   }
 
   try {
-    const res = await fetch('https://api.goshippo.com/transactions/', {
+    const res = await fetchWithTimeout('https://api.goshippo.com/transactions/', {
       method: 'POST',
       headers: {
         'Authorization': `ShippoToken ${shippoKey}`,
@@ -143,7 +163,7 @@ async function submitPrintfulOrder(
   }
 
   try {
-    const res = await fetch('https://api.printful.com/orders', {
+    const res = await fetchWithTimeout('https://api.printful.com/orders', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${printfulKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -311,7 +331,7 @@ async function sendOrderConfirmationEmail(
   `
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    await fetchWithTimeout('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${resendKey}`,
@@ -360,7 +380,7 @@ async function sendTipThankYouEmail(email: string, amountCents: number, name: st
   `
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    await fetchWithTimeout('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${resendKey}`,
@@ -411,7 +431,7 @@ async function sendProductPaymentEmail(email: string, amountCents: number, produ
   `
 
   try {
-    await fetch('https://api.resend.com/emails', {
+    await fetchWithTimeout('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${resendKey}`,

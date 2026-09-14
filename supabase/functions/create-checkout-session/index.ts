@@ -9,6 +9,19 @@ const corsHeaders = {
 
 const SITE_URL = 'https://bodega.theinvisiblepanchos.com'
 
+// Audit finding (AUDIT.md Pass 3): no external call in this function had a
+// timeout, so a hung Shippo/Printful rate-quote request could block
+// checkout indefinitely instead of failing cleanly.
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -38,6 +51,7 @@ serve(async (req) => {
     const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') as string, {
       apiVersion: '2022-11-15',
       httpClient: Stripe.createFetchHttpClient(),
+      timeout: 15000,
     })
 
     // California (and most states) don't tax digital goods delivered purely
@@ -102,8 +116,17 @@ function isUpchargeSize(size: string | null | undefined): boolean {
       if (product.inventory_count != null && product.inventory_count < quantity) {
         throw new Error(`Only ${product.inventory_count} of "${product.title}" left in stock.`)
       }
-      if (product.sizes && !item.size) {
-        throw new Error(`Select a size for "${product.title}".`)
+      // Audit finding (AUDIT.md Pass 4): this used to only check that *some*
+      // size string was provided, never that it was actually one of the
+      // admin's configured sizes — a stale cart or a modified request could
+      // submit any arbitrary string, which got accepted and stored as-is.
+      // (Printful items are validated separately below, via the
+      // printful_variant_map lookup, which already fails closed.)
+      if (product.sizes) {
+        const validSizes = product.sizes.split(',').map((s: string) => s.trim()).filter(Boolean)
+        if (!item.size || !validSizes.includes(item.size)) {
+          throw new Error(`Select a valid size for "${product.title}".`)
+        }
       }
 
       // Two shipping paths: self-fulfilled (weight_oz set, shipped by us via
@@ -213,7 +236,7 @@ function isUpchargeSize(size: string | null | undefined): boolean {
 
         // Re-fetch the rate server-side instead of trusting whatever amount
         // the client sends back — the client only ever picks a rate ID.
-        const rateRes = await fetch(`https://api.goshippo.com/rates/${shippoRateId}`, {
+        const rateRes = await fetchWithTimeout(`https://api.goshippo.com/rates/${shippoRateId}`, {
           headers: { 'Authorization': `ShippoToken ${shippoKey}` },
         })
         const rate = await rateRes.json()
@@ -233,7 +256,7 @@ function isUpchargeSize(size: string | null | undefined): boolean {
         // actual cart's Printful items (by catalog variant id — confirmed
         // that's what this endpoint requires, not the sync variant id) and
         // match by id, instead of trusting the client-sent amount.
-        const pfRateRes = await fetch('https://api.printful.com/shipping/rates', {
+        const pfRateRes = await fetchWithTimeout('https://api.printful.com/shipping/rates', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${printfulKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({

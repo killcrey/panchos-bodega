@@ -6,6 +6,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Audit finding (AUDIT.md Pass 3): applied here from the start rather than
+// added later — the Printful call below has a timeout.
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Mirrors purchase-shipping-label's own resubmission — a failed Printful
 // order (timeout, validation error, Printful API outage during the
 // original webhook delivery) had no way to be retried at all before this;
@@ -64,7 +76,7 @@ serve(async (req) => {
       throw new Error('Printful is not configured yet.')
     }
 
-    const res = await fetch('https://api.printful.com/orders', {
+    const res = await fetchWithTimeout('https://api.printful.com/orders', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${printfulKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({

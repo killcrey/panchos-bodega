@@ -61,6 +61,7 @@ Tables involved: `products`, `orders`, `order_items`, `tips`, `product_payments`
 - **How to reproduce:** Fire the identical `checkout.session.completed` event twice at the same endpoint concurrently (not sequentially — e.g. two parallel `curl` requests carrying the same signed payload within the same replay-tolerance window) and check the customer's inbox / Resend logs for two confirmation emails against one `orders` row.
 - **Blast radius:** Customer-facing confusion (two receipts for one purchase) in a narrow but real concurrency window; no double-order, double-label, or double-Printful-submission, since those are downstream of the same protected insert.
 - **Suggested fix:** Set `isDuplicateDelivery = true` in the `catch` block specifically when the caught error's `code === '23505'` (mirroring the tips/product_payments pattern exactly), so a losing-the-race request recognizes itself as a duplicate after the fact and skips the email the same way an early-detected duplicate does.
+- **Status: FIXED (2026-09-14), superseded rather than patched.** The Pass 1 CRITICAL fix (`processed_webhook_sessions`, an atomic ledger insert gating the entire branch before the line-items loop even runs) replaced this racy check-then-insert entirely — `isDuplicateDelivery` and the pre-insert `SELECT` were removed, not patched. A losing-the-race delivery now gets a clean `23505` from the ledger and returns before reaching the email code at all, for the same reason it now also can't double-decrement inventory.
 
 ### [LOW] Per-item Stripe metadata can exceed Stripe's 500-character value cap for a long enough title/size/category combination
 
@@ -209,6 +210,7 @@ Grepped `dist/` (the actual built output, not source) for every server-side secr
 - **How to reproduce:** Point one of the outbound URLs at a non-responding host (or a deliberately slow endpoint) in a test environment and time how long the function takes to fail, and what Stripe's Dashboard records for that delivery attempt.
 - **Blast radius:** Rare (requires a genuinely hung third party, not just a slow-but-responding one), but when it happens, it's the direct trigger for Pass 1's inventory-double-decrement finding, not just an isolated slowness issue.
 - **Suggested fix:** Wrap each outbound `fetch` in a reasonable timeout (an `AbortController` with a 10-15s limit is standard for label/rate APIs), and let the two fulfillment calls (`purchaseLabelForOrder`, `submitPrintfulOrder`) run concurrently via `Promise.all` where an order actually needs both, so a hang in one doesn't extend the other's exposure window.
+- **Status: MOSTLY FIXED (2026-09-14).** Every raw `fetch()` in `stripe-webhook`, `create-checkout-session`, `purchase-shipping-label`, and the new `retry-printful-order` now goes through a 15s-timeout `fetchWithTimeout` wrapper, and every `new Stripe(...)` client in those files sets the SDK's own `timeout: 15000`. **Did not** implement the `Promise.all` concurrency suggestion for `purchaseLabelForOrder`/`submitPrintfulOrder` running in parallel — left sequential, since that's a smaller optimization on top of the main fix (bounding each call), not required to close the finding. Verified live: a full real (uncharged, expired) session creation still succeeds end-to-end with the new timeouts in place.
 
 ---
 
@@ -245,6 +247,7 @@ Both checkout entry points (`src/main.js:1966-1967` for the digital-only cart bu
 - **How to reproduce:** Add a non-Printful apparel item to the cart, then call `create-checkout-session` directly with `size: "not-a-real-size"` for that line — confirm it succeeds rather than being rejected.
 - **Blast radius:** Fulfillment confusion (an order with a nonsense/garbage size value for the admin to puzzle over when packing it) rather than money loss.
 - **Suggested fix:** Validate `item.size` against `product.sizes.split(',').map(s => s.trim())` the same way the client already presents the choices, and reject if it isn't a match — mirroring the Printful branch's fail-closed behavior.
+- **Status: FIXED (2026-09-14).** Exactly that. Verified live against a real apparel product: an invalid size string is now rejected with a clear error; a real configured size (`"M"`) still passes through correctly.
 
 ---
 
@@ -282,6 +285,6 @@ Nothing in this section involved writing to the database, calling a live API bey
 3. **Decide the fate of Stripe Payment Links** (Pass 3). Either commit to them (fix the missing `orders` row + price drift) or kill them (always `skipPaymentLink`, deactivate existing ones in Stripe). Leaving them half-supported is what produced both Pass 3 CRITICAL findings.
 4. ~~**Fix the inventory idempotency/race pair**~~ **FIXED / PARTIALLY FIXED 2026-09-14** — redelivery idempotency is fully closed; the concurrent-last-unit race is mitigated (atomic decrement, oversold flag) but not eliminated — that still needs a real reservation system, called out explicitly rather than left implicit.
 5. ~~**Add refund/dispute handling and a Printful retry path**~~ **FIXED 2026-09-14** — Printful retry is fully working; refund/dispute handling is coded and verified read-only, but **needs the Stripe Dashboard's webhook endpoint subscribed to the new event types before it does anything** (see the finding above — this is a manual step, not something further code can close).
-6. **The smaller items** (metadata-length edge case, non-atomic email-dedup race, size-value validation, missing fetch timeouts, raw error messages) — worth cleaning up but none of them lose money or expose data on their own.
+6. **The smaller items**: ~~size-value validation~~, ~~missing fetch timeouts~~, and ~~the non-atomic email-dedup race~~ (Pass 4 — this one turned out already fixed as a side effect of item 4's ledger gate, which replaced the old racy `orders`-existence check entirely rather than patching it) are **FIXED**. Still open: the metadata-length edge case and raw error messages — neither loses money or exposes data on its own.
 
 Pick whichever you want to start with — for anything you choose, I'll write a failing test first, then the fix, per your instructions.

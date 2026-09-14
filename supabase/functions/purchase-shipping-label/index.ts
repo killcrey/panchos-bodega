@@ -25,6 +25,17 @@ const DEFAULT_PARCEL_DIMENSIONS = {
   distance_unit: 'in',
 }
 
+// Audit finding (AUDIT.md Pass 3): neither Shippo call below had a timeout.
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...options, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -75,7 +86,7 @@ serve(async (req) => {
       throw new Error('This order has no package weight on file — cannot re-quote a rate.')
     }
 
-    const shipmentRes = await fetch('https://api.goshippo.com/shipments/', {
+    const shipmentRes = await fetchWithTimeout('https://api.goshippo.com/shipments/', {
       method: 'POST',
       headers: {
         'Authorization': `ShippoToken ${shippoKey}`,
@@ -119,7 +130,7 @@ serve(async (req) => {
     const sorted = [...rates].sort((a: any, b: any) => parseFloat(a.amount) - parseFloat(b.amount))
     const chosenRate = matching || sorted[0]
 
-    const txnRes = await fetch('https://api.goshippo.com/transactions/', {
+    const txnRes = await fetchWithTimeout('https://api.goshippo.com/transactions/', {
       method: 'POST',
       headers: {
         'Authorization': `ShippoToken ${shippoKey}`,
