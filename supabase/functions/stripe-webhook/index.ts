@@ -566,6 +566,13 @@ serve(async (req) => {
         }
       } catch (err) {
         console.error('Failed to record tip for session', session.id, err)
+        // Genuine failure (not the 23505 case above, which already
+        // returned) — ask Stripe to retry rather than silently telling it
+        // this tip was recorded when it wasn't (AUDIT.md Pass 1 CRITICAL).
+        // Safe to retry: the insert is guarded by tips' own unique
+        // constraint on stripe_session_id, so a retry either succeeds for
+        // real or cleanly re-hits the 23505 branch above.
+        return new Response(JSON.stringify({ received: false, error: 'tip recording failed' }), { status: 500 })
       }
 
       return new Response(JSON.stringify({ received: true }), { status: 200 })
@@ -608,6 +615,10 @@ serve(async (req) => {
         }
       } catch (err) {
         console.error('Failed to record product payment for session', session.id, err)
+        // Same reasoning as the tip branch above (AUDIT.md Pass 1
+        // CRITICAL) — a genuine failure here is safe to let Stripe retry,
+        // guarded by product_payments' own unique constraint.
+        return new Response(JSON.stringify({ received: false, error: 'product payment recording failed' }), { status: 500 })
       }
 
       return new Response(JSON.stringify({ received: true }), { status: 200 })
@@ -624,19 +635,51 @@ serve(async (req) => {
     // shapes: a losing/duplicate delivery gets a clean unique-constraint
     // violation here and returns immediately, before decrementing anything
     // or sending an email a second time.
+    //
+    // isRetryRecovery (AUDIT.md Pass 1 CRITICAL — "any failure while
+    // writing the order is swallowed, and the webhook always returns
+    // 200"): the order-write block below now returns 500 on a genuine
+    // failure instead of swallowing it, so Stripe retries the event. But a
+    // naive retry would just land back here, hit this same 23505, and
+    // return 200 without ever writing the order — the ledger row already
+    // exists from the failed first attempt. So a duplicate ledger hit for
+    // a cart-order session (one with item_count) checks whether a matching
+    // `orders` row actually got written; if not, this is that recovery
+    // case — skip decrementing inventory again (already done on the first
+    // attempt, and decrement_inventory has no idempotency key of its own)
+    // but still retry writing the order.
+    let isRetryRecovery = false
+
     const { error: ledgerError } = await supabase
       .from('processed_webhook_sessions')
       .insert({ stripe_session_id: session.id })
 
     if (ledgerError) {
-      if (ledgerError.code === '23505') {
+      if (ledgerError.code !== '23505') {
+        // A genuine failure to record this delivery, not a duplicate — ask
+        // Stripe to retry rather than silently treating an unrecorded session
+        // as handled. Nothing below has run yet, so retrying is safe.
+        console.error('Failed to record processed session', session.id, ledgerError)
+        return new Response(JSON.stringify({ received: false, error: 'ledger write failed' }), { status: 500 })
+      }
+
+      if (session.metadata?.item_count) {
+        const { data: existingOrder } = await supabase
+          .from('orders')
+          .select('id')
+          .eq('stripe_session_id', session.id)
+          .maybeSingle()
+
+        if (existingOrder) {
+          return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 })
+        }
+        isRetryRecovery = true
+      } else {
+        // No `orders` row is ever written for a static Payment Link
+        // session, so there's nothing to recover here — this is a plain
+        // duplicate delivery.
         return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 })
       }
-      // A genuine failure to record this delivery, not a duplicate — ask
-      // Stripe to retry rather than silently treating an unrecorded session
-      // as handled. Nothing below has run yet, so retrying is safe.
-      console.error('Failed to record processed session', session.id, ledgerError)
-      return new Response(JSON.stringify({ received: false, error: 'ledger write failed' }), { status: 500 })
     }
 
     const lineRows: { title: string; quantity: number; amount: number }[] = []
@@ -660,7 +703,7 @@ serve(async (req) => {
         const product = item.price?.product as { id: string; name?: string; metadata?: Record<string, string> } | undefined
         const quantity = item.quantity ?? 1
 
-        if (product?.id) {
+        if (!isRetryRecovery && product?.id) {
           const { data: decremented, error: decrementError } = await supabase.rpc('decrement_inventory', {
             p_stripe_product_id: product.id,
             p_quantity: quantity
@@ -784,6 +827,11 @@ serve(async (req) => {
         }
       } catch (err) {
         console.error('Failed to create order / purchase label for session', session.id, err)
+        // Genuine failure writing the order — return non-2xx so Stripe
+        // retries the whole event (AUDIT.md Pass 1 CRITICAL). The retry
+        // lands on the isRetryRecovery path above, which skips
+        // decrementing inventory again and retries just this block.
+        return new Response(JSON.stringify({ received: false, error: 'order write failed' }), { status: 500 })
       }
     }
 
