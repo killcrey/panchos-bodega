@@ -394,9 +394,11 @@ async function loadAdminOrders() {
         ${hasShippoLabel && order.label_status === 'failed' && order.label_error ? `<br><strong>Label Error:</strong> ${order.label_error}` : ''}
         ${hasPrintful && order.printful_order_status === 'failed' && order.printful_order_error ? `<br><strong>Printful Error:</strong> ${order.printful_order_error}` : ''}
         ${hasPrintful && order.printful_order_id ? `<br><strong>Printful Order:</strong> #${order.printful_order_id}` : ''}
+        ${order.oversold_items ? `<br><strong style="color: #ff4d4d;">Oversold:</strong> ${order.oversold_items} — paid for, but stock was already gone by the time this cleared. Handle manually (refund or backorder).` : ''}
       </div>
       ${hasShippoLabel ? `<span class="order-status-badge status-${order.label_status}">${statusLabel}</span>` : ''}
       ${hasPrintful ? `<span class="order-status-badge status-${order.printful_order_status}">${printfulStatusLabel}</span>` : ''}
+      ${order.oversold_items ? `<span class="order-status-badge status-warning">Oversold</span>` : ''}
       <div class="order-item-actions">
         ${hasShippoLabel ? (order.label_status === 'purchased'
           ? `<a href="${order.label_url}" target="_blank" rel="noopener noreferrer">Print Label</a>`

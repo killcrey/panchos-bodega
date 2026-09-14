@@ -569,8 +569,42 @@ serve(async (req) => {
       return new Response(JSON.stringify({ received: true }), { status: 200 })
     }
 
+    // Idempotency gate for everything below (AUDIT.md Pass 1 CRITICAL /
+    // Pass 4 HIGH): Stripe can and does redeliver the same event, and the
+    // tip/productPayment branches above only ever protected their own
+    // tables. This general-purchase branch previously had no gate at all in
+    // front of the inventory decrement, and only a racy check-then-insert
+    // in front of `orders` — which also never protected a static Payment
+    // Link purchase, since that path never gets an `orders` row regardless.
+    // One atomic insert into a dedicated ledger, done first, covers both
+    // shapes: a losing/duplicate delivery gets a clean unique-constraint
+    // violation here and returns immediately, before decrementing anything
+    // or sending an email a second time.
+    const { error: ledgerError } = await supabase
+      .from('processed_webhook_sessions')
+      .insert({ stripe_session_id: session.id })
+
+    if (ledgerError) {
+      if (ledgerError.code === '23505') {
+        return new Response(JSON.stringify({ received: true, duplicate: true }), { status: 200 })
+      }
+      // A genuine failure to record this delivery, not a duplicate — ask
+      // Stripe to retry rather than silently treating an unrecorded session
+      // as handled. Nothing below has run yet, so retrying is safe.
+      console.error('Failed to record processed session', session.id, ledgerError)
+      return new Response(JSON.stringify({ received: false, error: 'ledger write failed' }), { status: 500 })
+    }
+
     const lineRows: { title: string; quantity: number; amount: number }[] = []
     const downloadBlocks: { title: string; files: { name: string; url: string }[] }[] = []
+    // Populated when decrement_inventory reports 0 decremented for a
+    // tracked-inventory line — the buyer already paid, but stock was
+    // exhausted by another order in the gap between this session being
+    // created and payment clearing (see AUDIT.md Pass 4; a full fix needs a
+    // stock-reservation system, which this isn't). Recorded on the order
+    // below so the admin actually sees it instead of it only reaching a log
+    // line nothing reads.
+    const oversoldTitles: string[] = []
 
     try {
       const lineItems = await stripe.checkout.sessions.listLineItems(session.id, {
@@ -583,10 +617,16 @@ serve(async (req) => {
         const quantity = item.quantity ?? 1
 
         if (product?.id) {
-          await supabase.rpc('decrement_inventory', {
+          const { data: decremented, error: decrementError } = await supabase.rpc('decrement_inventory', {
             p_stripe_product_id: product.id,
             p_quantity: quantity
           })
+          if (decrementError) {
+            console.error(`decrement_inventory failed for ${product.id} on session ${session.id}:`, decrementError)
+          } else if (decremented === 0) {
+            console.error(`Oversold: ${product?.name || product.id} on session ${session.id} — no tracked stock left.`)
+            oversoldTitles.push(product?.name || product.id)
+          }
         }
 
         lineRows.push({ title: product?.name || 'Item', quantity, amount: item.amount_total ?? 0 })
@@ -602,117 +642,108 @@ serve(async (req) => {
 
     // Only the cart checkout (create-checkout-session) tags its sessions
     // with item_count — a static Payment Link purchase (music, art, the old
-    // manual apparel link) has none, and doesn't get an order/label record.
-    let isDuplicateDelivery = false
+    // manual apparel link) has none, and doesn't get an order/label record
+    // (a separate, still-open finding — see AUDIT.md Pass 3). The ledger
+    // insert above already guarantees this function only ever reaches this
+    // point once per session, so there's no longer a need to separately
+    // check for an existing order first.
     if (session.metadata?.item_count) {
       try {
-        // Stripe can resend the same event; stripe_session_id is unique, so
-        // a duplicate delivery just no-ops instead of double-buying a label
-        // or double-recording the order.
-        const { data: existingOrder } = await supabase
+        const metadata = session.metadata
+        const itemCount = parseInt(metadata.item_count, 10) || 0
+        const cartItems = []
+        for (let i = 0; i < itemCount; i++) {
+          const raw = metadata[`item_${i}`]
+          if (raw) cartItems.push(JSON.parse(raw))
+        }
+
+        const hasShipping = !!metadata.shipping_street1
+        const totalWeightOz = hasShipping
+          ? cartItems.reduce((sum: number, it: any) => sum + (it.weightOz || 0) * it.quantity, 0)
+          : null
+
+        const { data: order, error: orderError } = await supabase
           .from('orders')
-          .select('id')
-          .eq('stripe_session_id', session.id)
-          .maybeSingle()
+          .insert({
+            stripe_session_id: session.id,
+            weight_oz: totalWeightOz,
+            amount_total_cents: session.amount_total,
+            customer_email: session.customer_details?.email || null,
+            shipping_name: hasShipping ? metadata.shipping_name || null : null,
+            shipping_street1: hasShipping ? metadata.shipping_street1 || null : null,
+            shipping_street2: hasShipping ? metadata.shipping_street2 || null : null,
+            shipping_city: hasShipping ? metadata.shipping_city || null : null,
+            shipping_state: hasShipping ? metadata.shipping_state || null : null,
+            shipping_zip: hasShipping ? metadata.shipping_zip || null : null,
+            shipping_country: hasShipping ? metadata.shipping_country || null : null,
+            shipping_service: hasShipping ? metadata.shipping_service || null : null,
+            shipping_rate_id: hasShipping ? metadata.shipping_rate_id || null : null,
+            oversold_items: oversoldTitles.length > 0 ? oversoldTitles.join(', ') : null
+          })
+          .select()
+          .single()
 
-        if (existingOrder) {
-          isDuplicateDelivery = true
-        } else {
-          const metadata = session.metadata
-          const itemCount = parseInt(metadata.item_count, 10) || 0
-          const cartItems = []
-          for (let i = 0; i < itemCount; i++) {
-            const raw = metadata[`item_${i}`]
-            if (raw) cartItems.push(JSON.parse(raw))
-          }
+        if (orderError) throw orderError
 
-          const hasShipping = !!metadata.shipping_street1
-          const totalWeightOz = hasShipping
-            ? cartItems.reduce((sum: number, it: any) => sum + (it.weightOz || 0) * it.quantity, 0)
-            : null
+        if (cartItems.length > 0) {
+          const { error: itemsError } = await supabase.from('order_items').insert(
+            cartItems.map((it: any) => ({
+              order_id: order.id,
+              product_id: it.id || null,
+              product_title: it.title || 'Untitled',
+              category: it.category || null,
+              size: it.size || null,
+              quantity: it.quantity || 1,
+              unit_amount_cents: it.unitAmountCents ?? null,
+              weight_oz: it.weightOz ?? null,
+              printful_sync_variant_id: it.printfulSyncVariantId ?? null
+            }))
+          )
+          if (itemsError) console.error('Failed to insert order items for session', session.id, itemsError)
+        }
 
-          const { data: order, error: orderError } = await supabase
-            .from('orders')
-            .insert({
-              stripe_session_id: session.id,
-              weight_oz: totalWeightOz,
-              amount_total_cents: session.amount_total,
-              customer_email: session.customer_details?.email || null,
-              shipping_name: hasShipping ? metadata.shipping_name || null : null,
-              shipping_street1: hasShipping ? metadata.shipping_street1 || null : null,
-              shipping_street2: hasShipping ? metadata.shipping_street2 || null : null,
-              shipping_city: hasShipping ? metadata.shipping_city || null : null,
-              shipping_state: hasShipping ? metadata.shipping_state || null : null,
-              shipping_zip: hasShipping ? metadata.shipping_zip || null : null,
-              shipping_country: hasShipping ? metadata.shipping_country || null : null,
-              shipping_service: hasShipping ? metadata.shipping_service || null : null,
-              shipping_rate_id: hasShipping ? metadata.shipping_rate_id || null : null
-            })
-            .select()
-            .single()
+        // Self-fulfilled (Shippo) and Printful items ship as separate
+        // parcels even within the same order, so each gets its own
+        // fulfillment call — a self-fulfilled label purchase never blocks
+        // on, or is blocked by, Printful order submission.
+        const shippingRecipient = {
+          name: metadata.shipping_name || '',
+          street1: metadata.shipping_street1 || '',
+          street2: metadata.shipping_street2 || '',
+          city: metadata.shipping_city || '',
+          state: metadata.shipping_state || '',
+          zip: metadata.shipping_zip || '',
+          country: metadata.shipping_country || ''
+        }
 
-          if (orderError) throw orderError
+        if (hasShipping && metadata.shipping_rate_id) {
+          await purchaseLabelForOrder(
+            supabase,
+            order.id,
+            metadata.shipping_rate_id,
+            Deno.env.get('SHIPPO_API_KEY')
+          )
+        }
 
-          if (cartItems.length > 0) {
-            const { error: itemsError } = await supabase.from('order_items').insert(
-              cartItems.map((it: any) => ({
-                order_id: order.id,
-                product_id: it.id || null,
-                product_title: it.title || 'Untitled',
-                category: it.category || null,
-                size: it.size || null,
-                quantity: it.quantity || 1,
-                unit_amount_cents: it.unitAmountCents ?? null,
-                weight_oz: it.weightOz ?? null,
-                printful_sync_variant_id: it.printfulSyncVariantId ?? null
-              }))
-            )
-            if (itemsError) console.error('Failed to insert order items for session', session.id, itemsError)
-          }
+        const printfulItems = cartItems
+          .filter((it: any) => it.printfulSyncVariantId != null)
+          .map((it: any) => ({ sync_variant_id: it.printfulSyncVariantId, quantity: it.quantity || 1 }))
 
-          // Self-fulfilled (Shippo) and Printful items ship as separate
-          // parcels even within the same order, so each gets its own
-          // fulfillment call — a self-fulfilled label purchase never blocks
-          // on, or is blocked by, Printful order submission.
-          const shippingRecipient = {
-            name: metadata.shipping_name || '',
-            street1: metadata.shipping_street1 || '',
-            street2: metadata.shipping_street2 || '',
-            city: metadata.shipping_city || '',
-            state: metadata.shipping_state || '',
-            zip: metadata.shipping_zip || '',
-            country: metadata.shipping_country || ''
-          }
-
-          if (hasShipping && metadata.shipping_rate_id) {
-            await purchaseLabelForOrder(
-              supabase,
-              order.id,
-              metadata.shipping_rate_id,
-              Deno.env.get('SHIPPO_API_KEY')
-            )
-          }
-
-          const printfulItems = cartItems
-            .filter((it: any) => it.printfulSyncVariantId != null)
-            .map((it: any) => ({ sync_variant_id: it.printfulSyncVariantId, quantity: it.quantity || 1 }))
-
-          if (printfulItems.length > 0) {
-            await submitPrintfulOrder(
-              supabase,
-              order.id,
-              shippingRecipient,
-              printfulItems,
-              Deno.env.get('PRINTFUL_API_KEY')
-            )
-          }
+        if (printfulItems.length > 0) {
+          await submitPrintfulOrder(
+            supabase,
+            order.id,
+            shippingRecipient,
+            printfulItems,
+            Deno.env.get('PRINTFUL_API_KEY')
+          )
         }
       } catch (err) {
         console.error('Failed to create order / purchase label for session', session.id, err)
       }
     }
 
-    if (!isDuplicateDelivery && session.customer_details?.email) {
+    if (session.customer_details?.email) {
       const metadata = session.metadata || {}
       const hasShipping = !!metadata.shipping_street1
       await addContactToAudience(session.customer_details.email)
