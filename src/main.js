@@ -12,6 +12,20 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // ADMIN PORTAL
 let editingProduct = null
 
+// Mirrors the upload/edit category <select> order — anything found in the
+// data but not listed here (a legacy bare 'printful' row, say) still gets
+// its own group, just appended after these in alphabetical order.
+const CATEGORY_ORDER = ['apparel', 'art', 'music', 'services', 'printful-apparel', 'printful-picks', 'pancho picks']
+const CATEGORY_LABELS = {
+  apparel: 'Apparel',
+  art: 'Art',
+  music: 'Music',
+  services: 'Services',
+  'printful-apparel': 'Printful — Apparel',
+  'printful-picks': 'Printful — Picks',
+  'pancho picks': 'Pancho Picks',
+}
+
 async function loadAdminInventory() {
   const listEl = document.getElementById('admin-inventory-list')
   if (!listEl) return
@@ -30,61 +44,87 @@ async function loadAdminInventory() {
 
   listEl.innerHTML = ''
 
+  // Grouped by the product's real stored category (never displayCategory —
+  // the admin should see the truth, same reasoning as the rest of this
+  // function) so the admin can scan one product type at a time instead of
+  // whatever order the DB happened to return rows in.
+  const groups = new Map()
   products.forEach(product => {
-    const item = document.createElement('div')
-    item.className = 'inventory-item'
-    const isPublished = product.published !== false
-    const pricingMode = product.pricing_mode || 'standard'
-    // pricing_mode = 'free' forces price_cents to 0 (see readPricingModeFields),
-    // same as a plain $0 standard product always has — either one displays as
-    // FREE. offer_based also stores price_cents as 0 (unused, replaced by the
-    // min/max bounds below), so it's deliberately excluded here rather than
-    // read off price_cents too.
-    const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (product.price_cents || 0) === 0)
-    const isService = product.category === 'services'
-    const hasCheckoutId = !!product.stripe_product_id
-    // Services (any mode) and Free never need a Stripe Checkout ID —
-    // services always use create-product-payment-session's ad-hoc sessions
-    // instead of the cart's Stripe pipeline, Free never checks out.
-    const needsCheckoutId = product.category !== 'services' && pricingMode !== 'free' && !isFree
-    const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
-    const isTracked = product.inventory_count != null
-    const isSoldOut = isTracked && product.inventory_count <= 0
-    const landingSlotLabel = {
-      featured: 'Featured',
-      latest_release: 'Latest Release',
-      pancho_pick: 'Panchos Pick',
-    }[product.landing_slot] || ''
-    // A $0 service means "Custom Pricing" on its product page (too varied to
-    // quote a number), not a free giveaway — showing "FREE" here read as
-    // exactly that, incorrectly.
-    const priceLabel =
-      pricingMode === 'offer_based' ? `OFFER${product.offer_min_cents != null ? ` $${(product.offer_min_cents / 100).toFixed(2)}+` : ''}` :
-      isService && isFree ? 'CUSTOM PRICING' :
-      isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
-    item.innerHTML = `
-      <div class="inventory-item-info">
-        <div class="inventory-item-title">${product.title || 'Untitled'}</div>
-        <div class="inventory-item-meta">${priceLabel} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}${isTracked ? ` — ${product.inventory_count} IN STOCK` : ''}</div>
-        <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
-        ${!isService && isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
-        ${pricingMode === 'offer_based' ? '<span class="inventory-status-badge status-checkout-set">Offer Based</span>' : ''}
-        ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
-        ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
-        ${needsCheckoutId ? (hasCheckoutId
-          ? '<span class="inventory-status-badge status-checkout-set">Checkout ID Set</span>'
-          : '<span class="inventory-status-badge status-warning">No Checkout ID</span>') : ''}
-        ${landingSlotLabel ? `<span class="inventory-status-badge status-landing-slot">${landingSlotLabel}</span>` : ''}
-      </div>
-      <div class="inventory-item-actions">
-        <button type="button" class="inventory-edit-btn">Edit</button>
-        <button type="button" class="inventory-delete-btn">Delete</button>
-      </div>
-    `
-    item.querySelector('.inventory-edit-btn').addEventListener('click', () => openEditModal(product))
-    item.querySelector('.inventory-delete-btn').addEventListener('click', () => deleteProduct(product))
-    listEl.appendChild(item)
+    const key = product.category || 'uncategorized'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(product)
   })
+
+  const extraCategories = [...groups.keys()]
+    .filter(cat => cat !== 'uncategorized' && !CATEGORY_ORDER.includes(cat))
+    .sort()
+  const categoryKeys = [...CATEGORY_ORDER, ...extraCategories, 'uncategorized'].filter(cat => groups.has(cat))
+
+  categoryKeys.forEach(categoryKey => {
+    const categoryProducts = groups.get(categoryKey)
+    const heading = document.createElement('p')
+    heading.style.cssText = 'font-size: 0.6rem; color: #e8b923; letter-spacing: 1px; text-transform: uppercase; margin: 1rem 0 0.5rem 0;'
+    heading.textContent = `${CATEGORY_LABELS[categoryKey] || categoryKey} (${categoryProducts.length})`
+    listEl.appendChild(heading)
+
+    categoryProducts.forEach(product => renderAdminInventoryItem(listEl, product))
+  })
+}
+
+function renderAdminInventoryItem(listEl, product) {
+  const item = document.createElement('div')
+  item.className = 'inventory-item'
+  const isPublished = product.published !== false
+  const pricingMode = product.pricing_mode || 'standard'
+  // pricing_mode = 'free' forces price_cents to 0 (see readPricingModeFields),
+  // same as a plain $0 standard product always has — either one displays as
+  // FREE. offer_based also stores price_cents as 0 (unused, replaced by the
+  // min/max bounds below), so it's deliberately excluded here rather than
+  // read off price_cents too.
+  const isFree = pricingMode === 'free' || (pricingMode === 'standard' && (product.price_cents || 0) === 0)
+  const isService = product.category === 'services'
+  const hasCheckoutId = !!product.stripe_product_id
+  // Services (any mode) and Free never need a Stripe Checkout ID —
+  // services always use create-product-payment-session's ad-hoc sessions
+  // instead of the cart's Stripe pipeline, Free never checks out.
+  const needsCheckoutId = product.category !== 'services' && pricingMode !== 'free' && !isFree
+  const trackCount = Array.isArray(product.tracklist_snippets) ? product.tracklist_snippets.length : 0
+  const isTracked = product.inventory_count != null
+  const isSoldOut = isTracked && product.inventory_count <= 0
+  const landingSlotLabel = {
+    featured: 'Featured',
+    latest_release: 'Latest Release',
+    pancho_pick: 'Panchos Pick',
+  }[product.landing_slot] || ''
+  // A $0 service means "Custom Pricing" on its product page (too varied to
+  // quote a number), not a free giveaway — showing "FREE" here read as
+  // exactly that, incorrectly.
+  const priceLabel =
+    pricingMode === 'offer_based' ? `OFFER${product.offer_min_cents != null ? ` $${(product.offer_min_cents / 100).toFixed(2)}+` : ''}` :
+    isService && isFree ? 'CUSTOM PRICING' :
+    isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
+  item.innerHTML = `
+    <div class="inventory-item-info">
+      <div class="inventory-item-title">${product.title || 'Untitled'}</div>
+      <div class="inventory-item-meta">${priceLabel} — ${(product.category || 'uncategorized').toUpperCase()}${trackCount > 0 ? ` — ${trackCount} TRACKS` : ''}${isTracked ? ` — ${product.inventory_count} IN STOCK` : ''}</div>
+      <span class="inventory-status-badge ${isPublished ? 'status-published' : 'status-draft'}">${isPublished ? 'Published' : 'Draft'}</span>
+      ${!isService && isFree ? '<span class="inventory-status-badge status-free">Free</span>' : ''}
+      ${pricingMode === 'offer_based' ? '<span class="inventory-status-badge status-checkout-set">Offer Based</span>' : ''}
+      ${product.coming_soon ? '<span class="inventory-status-badge status-coming-soon">Coming Soon</span>' : ''}
+      ${isSoldOut ? '<span class="inventory-status-badge status-warning">Sold Out</span>' : ''}
+      ${needsCheckoutId ? (hasCheckoutId
+        ? '<span class="inventory-status-badge status-checkout-set">Checkout ID Set</span>'
+        : '<span class="inventory-status-badge status-warning">No Checkout ID</span>') : ''}
+      ${landingSlotLabel ? `<span class="inventory-status-badge status-landing-slot">${landingSlotLabel}</span>` : ''}
+    </div>
+    <div class="inventory-item-actions">
+      <button type="button" class="inventory-edit-btn">Edit</button>
+      <button type="button" class="inventory-delete-btn">Delete</button>
+    </div>
+  `
+  item.querySelector('.inventory-edit-btn').addEventListener('click', () => openEditModal(product))
+  item.querySelector('.inventory-delete-btn').addEventListener('click', () => deleteProduct(product))
+  listEl.appendChild(item)
 }
 
 // Tips are a read-only ledger — nothing to fulfill, so unlike orders there's
