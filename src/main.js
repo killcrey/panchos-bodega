@@ -162,6 +162,8 @@ async function loadAdminTips() {
           ${tip.email ? `<br>${tip.email}` : ''}
           <br>${tip.created_at ? new Date(tip.created_at).toLocaleDateString() : ''}
           ${tip.message ? `<br><span class="tip-row-message">"${tip.message}"</span>` : ''}
+          ${tip.refund_status ? `<br><strong style="color: #ff4d4d;">${tip.refund_status === 'refunded' ? 'Refunded' : 'Partially refunded'}</strong>` : ''}
+          ${tip.dispute_status ? `<br><strong style="color: #ff4d4d;">Dispute:</strong> ${tip.dispute_status}` : ''}
         </div>
         <div class="tip-row-amount">$${((tip.amount_cents || 0) / 100).toFixed(2)}</div>
       </div>
@@ -265,6 +267,8 @@ async function loadAdminServiceInquiries() {
           <strong style="color: #ccc;">${payment.product_title || 'Deleted product'}</strong>
           ${payment.name || payment.email ? `<br>${[payment.name, payment.email].filter(Boolean).join(' — ')}` : ''}
           <br>${payment.created_at ? new Date(payment.created_at).toLocaleDateString() : ''}
+          ${payment.refund_status ? `<br><strong style="color: #ff4d4d;">${payment.refund_status === 'refunded' ? 'Refunded' : 'Partially refunded'}</strong>` : ''}
+          ${payment.dispute_status ? `<br><strong style="color: #ff4d4d;">Dispute:</strong> ${payment.dispute_status}` : ''}
         </div>
         <div class="tip-row-amount">$${((payment.amount_cents || 0) / 100).toFixed(2)}</div>
       `
@@ -395,15 +399,20 @@ async function loadAdminOrders() {
         ${hasPrintful && order.printful_order_status === 'failed' && order.printful_order_error ? `<br><strong>Printful Error:</strong> ${order.printful_order_error}` : ''}
         ${hasPrintful && order.printful_order_id ? `<br><strong>Printful Order:</strong> #${order.printful_order_id}` : ''}
         ${order.oversold_items ? `<br><strong style="color: #ff4d4d;">Oversold:</strong> ${order.oversold_items} — paid for, but stock was already gone by the time this cleared. Handle manually (refund or backorder).` : ''}
+        ${order.refund_status ? `<br><strong>Refund:</strong> ${order.refund_status === 'refunded' ? 'Fully refunded' : 'Partially refunded'}${order.refunded_amount_cents ? ` ($${(order.refunded_amount_cents / 100).toFixed(2)})` : ''}` : ''}
+        ${order.dispute_status ? `<br><strong style="color: #ff4d4d;">Dispute:</strong> ${order.dispute_status}` : ''}
       </div>
       ${hasShippoLabel ? `<span class="order-status-badge status-${order.label_status}">${statusLabel}</span>` : ''}
       ${hasPrintful ? `<span class="order-status-badge status-${order.printful_order_status}">${printfulStatusLabel}</span>` : ''}
       ${order.oversold_items ? `<span class="order-status-badge status-warning">Oversold</span>` : ''}
+      ${order.refund_status ? `<span class="order-status-badge status-warning">${order.refund_status === 'refunded' ? 'Refunded' : 'Partial Refund'}</span>` : ''}
+      ${order.dispute_status ? `<span class="order-status-badge status-warning">Dispute: ${order.dispute_status}</span>` : ''}
       <div class="order-item-actions">
         ${hasShippoLabel ? (order.label_status === 'purchased'
           ? `<a href="${order.label_url}" target="_blank" rel="noopener noreferrer">Print Label</a>`
           : `<button type="button" class="buy-label-btn">${order.label_status === 'failed' ? 'Retry Label' : 'Buy Label'}</button>`
         ) : ''}
+        ${hasPrintful && order.printful_order_status === 'failed' ? `<button type="button" class="retry-printful-btn">Retry Printful Order</button>` : ''}
         ${order.tracking_url ? `<a href="${order.tracking_url}" target="_blank" rel="noopener noreferrer">Track</a>` : ''}
         ${hasShipping ? `<button type="button" class="mark-shipped-btn">Mark Shipped</button>` : ''}
       </div>
@@ -424,6 +433,27 @@ async function loadAdminOrders() {
           alert(await describeFunctionError(err))
           buyLabelBtn.disabled = false
           buyLabelBtn.textContent = order.label_status === 'failed' ? 'Retry Label' : 'Buy Label'
+        }
+      })
+    }
+
+    // Mirrors buyLabelBtn above — a failed Printful order previously had no
+    // recovery path in the admin at all (see AUDIT.md Pass 3).
+    const retryPrintfulBtn = item.querySelector('.retry-printful-btn')
+    if (retryPrintfulBtn) {
+      retryPrintfulBtn.addEventListener('click', async () => {
+        retryPrintfulBtn.disabled = true
+        retryPrintfulBtn.textContent = 'Retrying...'
+        try {
+          const { error: fnError } = await supabase.functions.invoke('retry-printful-order', {
+            body: { orderId: order.id }
+          })
+          if (fnError) throw fnError
+          loadAdminOrders()
+        } catch (err) {
+          alert(await describeFunctionError(err))
+          retryPrintfulBtn.disabled = false
+          retryPrintfulBtn.textContent = 'Retry Printful Order'
         }
       })
     }

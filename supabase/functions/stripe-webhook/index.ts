@@ -433,6 +433,30 @@ async function sendProductPaymentEmail(email: string, amountCents: number, produ
   }
 }
 
+// A refund/dispute event carries a Charge or PaymentIntent, not the
+// original Checkout Session — and none of orders/tips/product_payments
+// store a payment_intent id (only stripe_session_id). Stripe supports
+// looking a session up by the payment_intent that came from it, which is
+// the one reliable link back to whichever of the three tables this
+// payment actually landed in (a refund/dispute can hit a cart order, a
+// tip, or a service payment alike). Returns which table+row matched, or
+// null if none did (e.g. the event arrived before this deploy, or for a
+// payment type this store doesn't otherwise track).
+async function findPaymentRecordByPaymentIntent(
+  supabase: ReturnType<typeof createClient>,
+  paymentIntentId: string
+): Promise<{ table: 'orders' | 'tips' | 'product_payments'; id: string } | null> {
+  const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntentId, limit: 1 })
+  const session = sessions.data[0]
+  if (!session) return null
+
+  for (const table of ['orders', 'tips', 'product_payments'] as const) {
+    const { data } = await supabase.from(table).select('id').eq('stripe_session_id', session.id).maybeSingle()
+    if (data) return { table, id: data.id }
+  }
+  return null
+}
+
 serve(async (req) => {
   const signature = req.headers.get('Stripe-Signature')
   const body = await req.text()
@@ -770,6 +794,66 @@ serve(async (req) => {
         customMessage: siteSettings?.purchase_thank_you_message
       })
     }
+  }
+
+  // Neither event type was previously handled at all (AUDIT.md Pass 1) — a
+  // refund or dispute issued from the Stripe Dashboard had zero effect
+  // anywhere in this database. Both need the Dashboard's webhook endpoint
+  // to actually be subscribed to these event types, same caveat as every
+  // other event type here.
+  if (event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge
+    const paymentIntentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id
+
+    if (paymentIntentId) {
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      )
+      try {
+        const match = await findPaymentRecordByPaymentIntent(supabase, paymentIntentId)
+        if (match) {
+          // Deliberately not auto-restocking inventory or emailing anyone —
+          // a refund can be partial, or for reasons unrelated to returning
+          // goods, so that decision is left to the admin. This just makes
+          // sure they can actually find out it happened.
+          await supabase.from(match.table).update({
+            refund_status: charge.refunded ? 'refunded' : 'partially_refunded',
+            refunded_amount_cents: charge.amount_refunded,
+          }).eq('id', match.id)
+        } else {
+          console.error('charge.refunded: no matching order/tip/product_payment for payment_intent', paymentIntentId)
+        }
+      } catch (err) {
+        console.error('Failed to process refund for payment_intent', paymentIntentId, err)
+      }
+    }
+
+    return new Response(JSON.stringify({ received: true }), { status: 200 })
+  }
+
+  if (event.type === 'charge.dispute.created' || event.type === 'charge.dispute.updated' || event.type === 'charge.dispute.closed') {
+    const dispute = event.data.object as Stripe.Dispute
+    const paymentIntentId = typeof dispute.payment_intent === 'string' ? dispute.payment_intent : dispute.payment_intent?.id
+
+    if (paymentIntentId) {
+      const supabase = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      )
+      try {
+        const match = await findPaymentRecordByPaymentIntent(supabase, paymentIntentId)
+        if (match) {
+          await supabase.from(match.table).update({ dispute_status: dispute.status }).eq('id', match.id)
+        } else {
+          console.error('charge.dispute: no matching order/tip/product_payment for payment_intent', paymentIntentId)
+        }
+      } catch (err) {
+        console.error('Failed to process dispute for payment_intent', paymentIntentId, err)
+      }
+    }
+
+    return new Response(JSON.stringify({ received: true }), { status: 200 })
   }
 
   return new Response(JSON.stringify({ received: true }), {
