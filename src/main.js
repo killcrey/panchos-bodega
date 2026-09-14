@@ -361,6 +361,13 @@ async function loadAdminOrders() {
 
   listEl.innerHTML = ''
 
+  // Only used for the address-edit inputs' `value=""` attributes below — a
+  // customer-typed address landing in an unescaped attribute could break
+  // the markup or inject a script tag into the admin's own view.
+  const escapeAttr = (str) => String(str || '')
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const addrInputStyle = 'width: 100%; background: #000; border: 1px solid #555; color: #fff; padding: 0.4rem 0.5rem; margin-bottom: 0.4rem; font-size: 0.65rem; box-sizing: border-box; font-family: inherit;'
+
   orders.forEach(order => {
     const item = document.createElement('div')
     item.className = 'order-item'
@@ -414,8 +421,26 @@ async function loadAdminOrders() {
         ) : ''}
         ${hasPrintful && order.printful_order_status === 'failed' ? `<button type="button" class="retry-printful-btn">Retry Printful Order</button>` : ''}
         ${order.tracking_url ? `<a href="${order.tracking_url}" target="_blank" rel="noopener noreferrer">Track</a>` : ''}
+        ${hasShipping ? `<button type="button" class="edit-address-btn">Edit Address</button>` : ''}
         ${hasShipping ? `<button type="button" class="mark-shipped-btn">Mark Shipped</button>` : ''}
       </div>
+      ${hasShipping ? `
+        <div class="order-address-edit" style="display: none; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.15);">
+          <input type="text" class="addr-name" placeholder="Name" value="${escapeAttr(order.shipping_name)}" style="${addrInputStyle}">
+          <input type="text" class="addr-street1" placeholder="Street address" value="${escapeAttr(order.shipping_street1)}" style="${addrInputStyle}">
+          <input type="text" class="addr-street2" placeholder="Apt / suite (optional)" value="${escapeAttr(order.shipping_street2)}" style="${addrInputStyle}">
+          <div style="display: flex; gap: 0.4rem;">
+            <input type="text" class="addr-city" placeholder="City" value="${escapeAttr(order.shipping_city)}" style="${addrInputStyle} flex: 2;">
+            <input type="text" class="addr-state" placeholder="State" value="${escapeAttr(order.shipping_state)}" style="${addrInputStyle} flex: 1;">
+            <input type="text" class="addr-zip" placeholder="ZIP" value="${escapeAttr(order.shipping_zip)}" style="${addrInputStyle} flex: 1;">
+          </div>
+          <input type="text" class="addr-country" placeholder="Country" value="${escapeAttr(order.shipping_country)}" style="${addrInputStyle}">
+          <div style="display: flex; gap: 0.4rem; margin-top: 0.2rem;">
+            <button type="button" class="save-address-btn">Save Address</button>
+            <button type="button" class="cancel-address-btn">Cancel</button>
+          </div>
+        </div>
+      ` : ''}
     `
 
     const buyLabelBtn = item.querySelector('.buy-label-btn')
@@ -455,6 +480,65 @@ async function loadAdminOrders() {
           retryPrintfulBtn.disabled = false
           retryPrintfulBtn.textContent = 'Retry Printful Order'
         }
+      })
+    }
+
+    // Pass 3 MEDIUM (AUDIT.md): a bad address previously had no admin-facing
+    // fix short of editing the row directly in Supabase's Table Editor — a
+    // failed label/Printful submission would just fail the same way every
+    // retry, since both re-read these same shipping_* columns unchanged.
+    const editAddressBtn = item.querySelector('.edit-address-btn')
+    const addressEditPanel = item.querySelector('.order-address-edit')
+    if (editAddressBtn && addressEditPanel) {
+      editAddressBtn.addEventListener('click', () => {
+        addressEditPanel.style.display = addressEditPanel.style.display === 'none' ? 'block' : 'none'
+      })
+    }
+
+    const cancelAddressBtn = item.querySelector('.cancel-address-btn')
+    if (cancelAddressBtn) {
+      cancelAddressBtn.addEventListener('click', () => {
+        addressEditPanel.style.display = 'none'
+      })
+    }
+
+    const saveAddressBtn = item.querySelector('.save-address-btn')
+    if (saveAddressBtn) {
+      saveAddressBtn.addEventListener('click', async () => {
+        const updated = {
+          shipping_name: item.querySelector('.addr-name').value.trim(),
+          shipping_street1: item.querySelector('.addr-street1').value.trim(),
+          shipping_street2: item.querySelector('.addr-street2').value.trim() || null,
+          shipping_city: item.querySelector('.addr-city').value.trim(),
+          shipping_state: item.querySelector('.addr-state').value.trim(),
+          shipping_zip: item.querySelector('.addr-zip').value.trim(),
+          shipping_country: item.querySelector('.addr-country').value.trim(),
+        }
+        if (!updated.shipping_street1 || !updated.shipping_city || !updated.shipping_zip) {
+          alert('Street address, city, and ZIP are required.')
+          return
+        }
+
+        saveAddressBtn.disabled = true
+        saveAddressBtn.textContent = 'Saving...'
+
+        // .update() under RLS returns { error: null } even when it matches
+        // zero rows — chaining .select() and checking the row count is the
+        // only way to actually know the write landed (see CLAUDE.md).
+        const { data: rows, error: updateError } = await supabase
+          .from('orders')
+          .update(updated)
+          .eq('id', order.id)
+          .select()
+
+        if (updateError || !rows || rows.length === 0) {
+          alert(updateError?.message || 'Address update did not save — no matching order row.')
+          saveAddressBtn.disabled = false
+          saveAddressBtn.textContent = 'Save Address'
+          return
+        }
+
+        loadAdminOrders()
       })
     }
 
