@@ -39,6 +39,83 @@ function escapeHtml(str) {
   }[c]))
 }
 
+// og:image:width/height aren't required, but omitting them makes some
+// crawlers (Pinterest, LinkedIn, older Facebook scrapes) fetch and decode
+// the full image themselves before deciding whether/how to render a
+// preview — a step that can silently fail or time out. Hand-parses the
+// three formats actually used in this bucket (PNG/JPEG/WebP, including
+// WebP's VP8/VP8L/VP8X variants) straight from the real file bytes rather
+// than trusting anything embedded (a JPEG's EXIF thumbnail can carry a
+// completely different width/height than the actual image — verified
+// against a real product photo where EXIF said 1024x1024 and the real
+// image was 2167x2167). Returns null on anything unrecognized/truncated;
+// callers just omit the extra tags rather than failing the whole build.
+function getImageDimensions(buf) {
+  // PNG: signature (8 bytes) + IHDR chunk (length(4) + "IHDR" + width(4 BE) + height(4 BE)).
+  if (buf.length >= 24 && buf.readUInt32BE(0) === 0x89504e47 && buf.toString('ascii', 12, 16) === 'IHDR') {
+    return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
+  }
+
+  // JPEG: SOI (0xFFD8) then segments; find a SOFn marker (0xC0-0xCF, excluding
+  // 0xC4/0xC8/0xCC, which are DHT/JPG/DAC, not start-of-frame).
+  if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let offset = 2
+    while (offset + 9 < buf.length) {
+      if (buf[offset] !== 0xff) { offset++; continue }
+      const marker = buf[offset + 1]
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+        offset += 2
+        continue
+      }
+      const segmentLength = buf.readUInt16BE(offset + 2)
+      const isSOF = (marker >= 0xc0 && marker <= 0xcf) && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc
+      if (isSOF) {
+        return { height: buf.readUInt16BE(offset + 5), width: buf.readUInt16BE(offset + 7) }
+      }
+      offset += 2 + segmentLength
+    }
+    return null
+  }
+
+  // WebP: "RIFF" + size(4) + "WEBP" + chunk ("VP8 " lossy / "VP8L" lossless / "VP8X" extended).
+  if (buf.length >= 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+    const chunk = buf.toString('ascii', 12, 16)
+    if (chunk === 'VP8X') {
+      const width = 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16))
+      const height = 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16))
+      return { width, height }
+    }
+    if (chunk === 'VP8 ' && buf[23] === 0x9d && buf[24] === 0x01 && buf[25] === 0x2a) {
+      return {
+        width: (buf[26] | (buf[27] << 8)) & 0x3fff,
+        height: (buf[28] | (buf[29] << 8)) & 0x3fff,
+      }
+    }
+    if (chunk === 'VP8L' && buf[20] === 0x2f) {
+      const b0 = buf[21], b1 = buf[22], b2 = buf[23], b3 = buf[24]
+      return {
+        width: 1 + (((b1 & 0x3f) << 8) | b0),
+        height: 1 + (((b3 & 0x0f) << 10) | (b2 << 2) | ((b1 & 0xc0) >> 6)),
+      }
+    }
+  }
+
+  return null
+}
+
+async function fetchImageMeta(url) {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const contentType = res.headers.get('content-type') || ''
+    const buf = Buffer.from(await res.arrayBuffer())
+    const dims = getImageDimensions(buf)
+    return dims ? { ...dims, type: contentType } : null
+  } catch {
+    return null
+  }
+}
+
 async function main() {
   loadDotEnv()
 
@@ -78,6 +155,8 @@ async function main() {
       'Official apparel, unreleased tracks, and digital downloads from The Invisible Panchos.'
     const image = p.cover_art_url || `${SITE_URL}/opensign.jpg`
     const url = `${SITE_URL}/products/${p.slug}/`
+
+    const imageMeta = await fetchImageMeta(image)
 
     const availability = p.coming_soon
       ? 'https://schema.org/PreOrder'
@@ -130,6 +209,22 @@ async function main() {
         `<meta property="og:image" content="${image}" />`
       )
       .replace(
+        /<meta property="og:image:width" content="[^"]*" \/>/,
+        imageMeta ? `<meta property="og:image:width" content="${imageMeta.width}" />` : ''
+      )
+      .replace(
+        /<meta property="og:image:height" content="[^"]*" \/>/,
+        imageMeta ? `<meta property="og:image:height" content="${imageMeta.height}" />` : ''
+      )
+      .replace(
+        /<meta property="og:image:type" content="[^"]*" \/>/,
+        imageMeta?.type ? `<meta property="og:image:type" content="${escapeHtml(imageMeta.type)}" />` : ''
+      )
+      .replace(
+        /<meta property="og:image:alt" content="[^"]*" \/>/,
+        `<meta property="og:image:alt" content="${escapeHtml(p.title)}" />`
+      )
+      .replace(
         /<meta name="twitter:title" content="[^"]*" \/>/,
         `<meta name="twitter:title" content="${escapeHtml(title)}" />`
       )
@@ -140,6 +235,10 @@ async function main() {
       .replace(
         /<meta name="twitter:image" content="[^"]*" \/>/,
         `<meta name="twitter:image" content="${image}" />`
+      )
+      .replace(
+        /<meta name="twitter:image:alt" content="[^"]*" \/>/,
+        `<meta name="twitter:image:alt" content="${escapeHtml(p.title)}" />`
       )
       .replace(
         '</head>',
