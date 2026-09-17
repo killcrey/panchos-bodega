@@ -1,3 +1,9 @@
+# Local env — every VITE_-prefixed value here is intentionally public
+# (see CLAUDE.md's Deployment Protocol), but it shouldn't be tracked
+# regardless; Netlify's own dashboard env vars are what the real build
+# actually uses.
+.env
+
 # Logs
 logs
 *.log
