@@ -643,7 +643,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
   if (availableImages.length > 0) {
     galleryHTML = `
       <div class="image-gallery">
-        <img src="${availableImages[0]}" alt="${product.title}" class="lightbox-trigger gallery-current-img" data-idx="0">
+        <img src="${availableImages[0]}" alt="${product.title}" class="lightbox-trigger gallery-current-img" data-idx="0" loading="lazy" decoding="async">
         ${(showFullGallery && availableImages.length > 1) ? `
           <button type="button" class="gallery-arrow gallery-prev" aria-label="Previous photo">&#10094;</button>
           <button type="button" class="gallery-arrow gallery-next" aria-label="Next photo">&#10095;</button>
@@ -1033,13 +1033,39 @@ async function processDigitalFiles(inputFiles) {
 // native <input type="file" multiple> replaces its whole selection every
 // time the picker reopens, so reading it directly would silently drop
 // anything picked in an earlier batch.
+// Raw phone/camera uploads were 2-8 MB each and every storefront visit pulled
+// all of them — this is what tripped Supabase's Cached Egress quota (2026-10).
+// Downscales to MAX_PRODUCT_IMAGE_PX on the longest side and re-encodes as
+// WebP (keeps alpha, unlike JPEG). Falls back to the original file if the
+// browser can't decode/encode it, or if re-encoding wouldn't actually be smaller.
+const MAX_PRODUCT_IMAGE_PX = 1600
+async function compressProductImage(file) {
+  try {
+    if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml') return file
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, MAX_PRODUCT_IMAGE_PX / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bitmap.width * scale)
+    canvas.height = Math.round(bitmap.height * scale)
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close()
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.82))
+    if (!blob || blob.type !== 'image/webp' || blob.size >= file.size) return file
+    const safeName = file.name.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]+/g, '-') || 'image'
+    return new File([blob], `${safeName}.webp`, { type: 'image/webp' })
+  } catch {
+    return file
+  }
+}
+
 async function processImageFiles(files) {
   if (files.length === 0) {
     return { coverUrl: null, galleryImages: null }
   }
 
   const urls = []
-  for (const file of files) {
+  for (const original of files) {
+    const file = await compressProductImage(original)
     const path = `${Date.now()}-${file.name}`
     // Without an explicit cacheControl, this bucket was serving every object
     // with `Cache-Control: no-cache` (confirmed live via response headers on
@@ -3475,7 +3501,7 @@ function renderLandingSpotlight(el, products) {
     const colorClass = Math.floor(idx / 2) % 2 === 0 ? 'spotlight-gold' : 'spotlight-red'
     return `
       <button type="button" class="landing-spotlight-box ${colorClass}" data-product-id="${p.id}">
-        ${image ? `<img src="${image}" alt="${p.title}">` : ''}
+        ${image ? `<img src="${image}" alt="${p.title}" loading="lazy" decoding="async">` : ''}
         <span class="landing-spotlight-title">${p.title}</span>
         <span class="landing-spotlight-cta">View Product</span>
       </button>
@@ -3515,7 +3541,7 @@ function renderLandingPage(products) {
     track.innerHTML = landingFeatured.map(p => {
       const image = productImages(p)[0]
       return `<div class="landing-carousel-slide">${image
-        ? `<img src="${image}" alt="${p.title}" data-product-id="${p.id}">`
+        ? `<img src="${image}" alt="${p.title}" data-product-id="${p.id}" loading="lazy" decoding="async">`
         : '<div class="no-image">NO IMAGE</div>'}</div>`
     }).join('')
 
