@@ -40,7 +40,10 @@ export async function runApiAudit({ site, env, ctx }) {
 
   // -------------------------------------------------------------- products
   section('Catalog data (anon REST)')
-  const pr = await http(`${SB}/rest/v1/products?select=*&published=eq.true`, { headers: H })
+  // Same explicit column list as the storefront (anon can no longer select * — see
+  // migration 20261006220000_restrict_anon_product_columns.sql).
+  const STOREFRONT_COLS = 'id,title,type,price_cents,cover_art_url,image_2_url,image_3_url,gallery_images,description,sizes,audio_preview_url,tracklist_snippets,download_files,category,published,coming_soon,inventory_count,weight_oz,domestic_shipping_cents,international_shipping_cents,printful_variant_map,landing_slot,slug,pricing_mode,offer_min_cents,offer_max_cents,created_at'
+  const pr = await http(`${SB}/rest/v1/products?select=${STOREFRONT_COLS}&published=eq.true`, { headers: H })
   const products = (await pr.json()) || []
   ctx.products = products
   check('data', 'published products load via anon key', pr.status === 200 && products.length > 0, `${products.length} products`)
@@ -63,11 +66,12 @@ export async function runApiAudit({ site, env, ctx }) {
     }
     if (isPhysical(p)) {
       const hasSizes = p.sizes || (p.printful_variant_map && Object.keys(p.printful_variant_map).some(k => k !== 'default'))
-      if (p.category === 'apparel' || p.category === 'printful-apparel') check('data', `${label}: apparel has sizes`, !!hasSizes)
+      // A Printful item with only the 'default' key is a legitimate one-size product (e.g. the sling bag).
+      const printfulOnlyDefault = p.printful_variant_map && Object.keys(p.printful_variant_map).every(k => k === 'default')
+      if ((p.category === 'apparel' || p.category === 'printful-apparel') && !printfulOnlyDefault) check('data', `${label}: apparel has sizes`, !!hasSizes)
     } else {
       check('data', `${label}: paid digital product has a deliverable file`, hasFiles(p), 'buyer would pay and receive nothing')
     }
-    if (!p.stripe_product_id) warn('data', `${label}: has stripe_product_id`, 'checkout will be attempted below and reported there')
     if (p.inventory_count != null && p.inventory_count <= 0) warn('data', `${label}: in stock`, `inventory_count=${p.inventory_count} (shows Sold Out)`)
   }
 
@@ -138,9 +142,10 @@ export async function runApiAudit({ site, env, ctx }) {
   check('security', 'anon cannot update products', wr.status >= 400 || (await wr.text()) === '[]', `status ${wr.status}`)
   const ins = await http(`${SB}/rest/v1/products`, { method: 'POST', headers: H, body: JSON.stringify({ title: 'audit-should-fail' }) })
   check('security', 'anon cannot insert products', ins.status >= 400, `status ${ins.status}`)
-  const leak = products.filter(p => p.stripe_url)
-  if (leak.length) warn('security', 'products.stripe_url still readable by anyone with the public anon key', `${leak.length} product(s) — storefront no longer asks for it, but select=stripe_url on the REST API still returns it; needs a column-level REVOKE`)
-  else pass('security', 'stripe_url not exposed')
+  for (const col of ['stripe_url', 'stripe_product_id', '*']) {
+    const lr = await http(`${SB}/rest/v1/products?select=${col}&limit=1`, { headers: H })
+    check('security', `anon cannot read products.${col === '*' ? '* (all columns)' : col}`, lr.status >= 400, `status ${lr.status}`)
+  }
 
   // -------------------------------------------------------- audio vault
   section('Audio vault (private bucket)')
