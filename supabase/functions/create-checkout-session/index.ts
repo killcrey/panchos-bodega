@@ -161,6 +161,13 @@ function truncateForMetadata(value: string, maxLen: number): string {
       } else if (product.weight_oz != null && product.weight_oz > 0) {
         needsShipping = true
       } else {
+        // Apparel and Printful items are always physical. One with neither a
+        // weight nor Printful IDs would fall through here and sell as a
+        // download — no shipping address collected, no shipping charge, and
+        // nothing ever shipped. Found live (sling-bag, 2026-10-06). Fail closed.
+        if (product.category === 'apparel' || ['printful', 'printful-apparel', 'printful-picks'].includes(product.category)) {
+          throw new Error(`"${product.title}" isn't available to order right now.`)
+        }
         try {
           const taxCode = DIGITAL_TAX_CODE_BY_CATEGORY[product.category] || DEFAULT_DIGITAL_TAX_CODE
           await stripe.products.update(product.stripe_product_id, { tax_code: taxCode })

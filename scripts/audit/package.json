@@ -1,0 +1,9 @@
+{
+  "name": "panchos-bodega-audit",
+  "private": true,
+  "type": "module",
+  "description": "Live-site audit for Panchos Bodega. Separate from the root package so the Netlify build never installs it.",
+  "dependencies": {
+    "playwright-core": "^1.50.0"
+  }
+}

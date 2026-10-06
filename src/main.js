@@ -614,7 +614,14 @@ function computeProductFlags(product) {
   const isComingSoon = !!product.coming_soon
   const isService = product.category === 'services'
   const pricingMode = product.pricing_mode || 'standard'
-  return { isFree, isSoldOut, isComingSoon, isService, pricingMode, isInert: isSoldOut || isComingSoon }
+  // Apparel and Printful items are always physical. If one has neither a
+  // weight (self-ship) nor Printful IDs, checkout has no way to collect an
+  // address or charge shipping — it would sell as if it were a download.
+  // create-checkout-session refuses it too; this just keeps the button honest.
+  const hasPrintfulMap = !!(product.printful_variant_map && Object.keys(product.printful_variant_map).length > 0)
+  const isAlwaysPhysical = product.category === 'apparel' || isPrintfulCategory(product.category)
+  const isUnavailable = isAlwaysPhysical && !(product.weight_oz > 0) && !hasPrintfulMap
+  return { isFree, isSoldOut, isComingSoon, isService, isUnavailable, pricingMode, isInert: isSoldOut || isComingSoon || isUnavailable }
 }
 
 // Shared by both the grid card and the dedicated product page — they're the
@@ -624,7 +631,7 @@ function computeProductFlags(product) {
 // doesn't), and `truncateDescription` is the card's small-tile-friendly cap
 // that the dedicated page has no reason to apply.
 function renderProductMarkup(product, flags, { linkTitle = true, truncateDescription = true, showBuyControls = true, showDescription = true, showFullGallery = true, showAudioPreview = true } = {}) {
-  const { isFree, isInert, isComingSoon, isSoldOut, isService, pricingMode } = flags
+  const { isFree, isInert, isComingSoon, isSoldOut, isUnavailable, isService, pricingMode } = flags
   // Pricing Mode overrides the plain price/service logic below it — those
   // only ever apply to pricingMode === 'standard', the default every
   // existing product already has.
@@ -751,10 +758,10 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
         <button class="service-payment-btn" ${isInert ? 'disabled' : ''} style="flex: 1; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">${isComingSoon ? 'Coming Soon' : 'Payment'}</button>
       </div>`
     : `<button class="buy-btn" ${isInert ? 'disabled' : ''} style="margin-top: 0.3rem; width: 100%; padding: 0.5rem; background: ${isInert ? '#444' : '#00ffcc'}; color: ${isInert ? '#999' : '#111'}; border: none; border-radius: 4px; font-weight: bold; font-size: 0.55rem; cursor: ${isInert ? 'not-allowed' : 'pointer'}; text-transform: uppercase;">
-        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' :
+        ${isComingSoon ? 'Coming Soon' : (isSoldOut ? 'Sold Out' : (isUnavailable ? 'Unavailable' :
           (pricingMode === 'free' ? 'Get It Free' :
            pricingMode === 'offer_based' ? 'Pay What You Want' :
-           (isFree ? 'Get It Free' : 'Add to Cart')))}
+           (isFree ? 'Get It Free' : 'Add to Cart'))))}
       </button>`
 
   const titleInner = `<h3 style="margin: 0 0 0.15rem 0; font-size: 0.7rem; line-height: 1.2;">${product.title}</h3>`
