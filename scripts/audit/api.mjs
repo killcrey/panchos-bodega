@@ -42,7 +42,7 @@ export async function runApiAudit({ site, env, ctx }) {
   section('Catalog data (anon REST)')
   // Same explicit column list as the storefront (anon can no longer select * — see
   // migration 20261006220000_restrict_anon_product_columns.sql).
-  const STOREFRONT_COLS = 'id,title,type,price_cents,cover_art_url,image_2_url,image_3_url,gallery_images,description,sizes,audio_preview_url,tracklist_snippets,download_files,category,published,coming_soon,inventory_count,weight_oz,domestic_shipping_cents,international_shipping_cents,printful_variant_map,landing_slot,slug,pricing_mode,offer_min_cents,offer_max_cents,created_at'
+  const STOREFRONT_COLS = 'id,title,type,price_cents,cover_art_url,image_2_url,image_3_url,gallery_images,description,sizes,audio_preview_url,tracklist_snippets,download_files,category,published,coming_soon,inventory_count,weight_oz,domestic_shipping_cents,international_shipping_cents,printful_variant_map,landing_slot,slug,pricing_mode,offer_min_cents,offer_max_cents,created_at,feature_images'
   const pr = await http(`${SB}/rest/v1/products?select=${STOREFRONT_COLS}&published=eq.true`, { headers: H })
   const products = (await pr.json()) || []
   ctx.products = products

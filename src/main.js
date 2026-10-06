@@ -95,7 +95,13 @@ function renderAdminInventoryItem(listEl, product) {
     featured: 'Featured',
     latest_release: 'Latest Release',
     pancho_pick: 'Panchos Pick',
+    spotlight: 'Spotlight',
   }[product.landing_slot] || ''
+  // Mirrors the storefront/checkout rule (see computeProductFlags): apparel and
+  // Printful items with neither a weight nor Printful IDs can't ship, so the
+  // storefront shows them as Unavailable — flag it here too, since the Checkout
+  // ID can be perfectly fine while the item still can't actually be sold.
+  const cannotShip = computeProductFlags(product).isUnavailable
   // A $0 service means "Custom Pricing" on its product page (too varied to
   // quote a number), not a free giveaway — showing "FREE" here read as
   // exactly that, incorrectly.
@@ -115,6 +121,7 @@ function renderAdminInventoryItem(listEl, product) {
       ${needsCheckoutId ? (hasCheckoutId
         ? '<span class="inventory-status-badge status-checkout-set">Checkout ID Set</span>'
         : '<span class="inventory-status-badge status-warning">No Checkout ID</span>') : ''}
+      ${cannotShip ? '<span class="inventory-status-badge status-warning">Cannot ship — add Printful IDs or weight</span>' : ''}
       ${landingSlotLabel ? `<span class="inventory-status-badge status-landing-slot">${landingSlotLabel}</span>` : ''}
     </div>
     <div class="inventory-item-actions">
@@ -1104,7 +1111,8 @@ async function deleteProduct(product) {
       product.cover_art_url,
       product.image_2_url,
       product.image_3_url,
-      ...(Array.isArray(product.gallery_images) ? product.gallery_images : [])
+      ...(Array.isArray(product.gallery_images) ? product.gallery_images : []),
+      ...(Array.isArray(product.feature_images) ? product.feature_images : [])
     ]
       .map(url => extractStoragePath(url, 'bodega-images'))
       .filter(Boolean)
@@ -1555,6 +1563,12 @@ function renderPickedFilesPreview(files, previewEl) {
 // (add more, remove individual ones) instead of replace-the-whole-set.
 let editKeptImages = []
 
+// Same additive pattern for the Featured-page scrolling photo strip
+// (products.feature_images): what's already saved, minus any the admin removes,
+// plus newly picked files accumulated across picker reopens.
+let editKeptFeatureImages = []
+let editNewFeatureFiles = []
+
 // The edit form's existing-digital-file chips, mirroring editKeptImages —
 // picking new files used to fully replace whatever was here (a real
 // incident: adding two cover images wiped an 11-track album's audio files),
@@ -1634,6 +1648,15 @@ function renderEditImagePreview() {
     : 'Currently: no photos'
 }
 
+function renderEditFeaturePreview() {
+  document.getElementById('edit-feature-preview').innerHTML = editKeptFeatureImages.map((url, idx) => `
+    <div class="admin-image-thumb">
+      <img src="${url}" alt="">
+      <button type="button" class="admin-image-remove-btn" data-idx="${idx}" aria-label="Remove photo">&times;</button>
+    </div>
+  `).join('')
+}
+
 function openEditModal(product) {
   editingProduct = product
   document.getElementById('edit-id').value = product.id
@@ -1667,6 +1690,12 @@ function openEditModal(product) {
     .filter(Boolean)
   renderEditImagePreview()
 
+  document.getElementById('edit-feature-image').value = ''
+  editNewFeatureFiles = []
+  document.getElementById('edit-feature-new-preview').innerHTML = ''
+  editKeptFeatureImages = Array.isArray(product.feature_images) ? product.feature_images.filter(Boolean) : []
+  renderEditFeaturePreview()
+
   editKeptDigitalFiles = currentDigitalFileList(product)
   renderEditCurrentFilesPreview()
   document.getElementById('edit-file-clear').checked = false
@@ -1685,6 +1714,8 @@ function closeEditModal() {
   editingProduct = null
   editKeptImages = []
   editNewImageFiles = []
+  editKeptFeatureImages = []
+  editNewFeatureFiles = []
   editNewDigitalFiles = []
   editKeptDigitalFiles = []
   document.getElementById('edit-modal').style.display = 'none'
@@ -2569,6 +2600,26 @@ function initAdminPortal() {
     renderPickedImagesPreview(editNewImageFiles, document.getElementById('edit-image-new-preview'))
   })
 
+  document.getElementById('edit-feature-image').addEventListener('change', (e) => {
+    editNewFeatureFiles = editNewFeatureFiles.concat(Array.from(e.target.files))
+    e.target.value = ''
+    renderPickedImagesPreview(editNewFeatureFiles, document.getElementById('edit-feature-new-preview'))
+  })
+
+  document.getElementById('edit-feature-new-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-image-remove-btn')
+    if (!removeBtn) return
+    editNewFeatureFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderPickedImagesPreview(editNewFeatureFiles, document.getElementById('edit-feature-new-preview'))
+  })
+
+  document.getElementById('edit-feature-preview').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.admin-image-remove-btn')
+    if (!removeBtn) return
+    editKeptFeatureImages.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
+    renderEditFeaturePreview()
+  })
+
   document.getElementById('edit-image-preview').addEventListener('click', (e) => {
     const removeBtn = e.target.closest('.admin-image-remove-btn')
     if (!removeBtn) return
@@ -2758,6 +2809,9 @@ function initAdminPortal() {
       const newPhotos = await processImageFiles(editNewImageFiles)
       const newPhotoUrls = newPhotos.coverUrl ? [newPhotos.coverUrl, ...(newPhotos.galleryImages || [])] : []
       const allImages = [...editKeptImages, ...newPhotoUrls]
+      const newFeaturePhotos = await processImageFiles(editNewFeatureFiles)
+      const newFeatureUrls = newFeaturePhotos.coverUrl ? [newFeaturePhotos.coverUrl, ...(newFeaturePhotos.galleryImages || [])] : []
+      const allFeatureImages = [...editKeptFeatureImages, ...newFeatureUrls]
       const coverUrl = allImages[0] || null
       const galleryImages = allImages.length > 1 ? allImages.slice(1) : null
       const image2Url = null
@@ -2806,6 +2860,7 @@ function initAdminPortal() {
         image_2_url: image2Url,
         image_3_url: image3Url,
         gallery_images: galleryImages,
+        feature_images: allFeatureImages.length > 0 ? allFeatureImages : null,
         audio_preview_url: fileUrl,
         download_files: downloadFiles,
         tracklist_snippets: tracklistSnippets,
@@ -2995,7 +3050,7 @@ async function loadBodega() {
   // it in a public API response makes it discoverable by anyone, with no
   // relationship to the product's current (possibly since-changed) price.
   const { data: products, error } = await supabase.from('products').select(
-    'id, title, type, price_cents, cover_art_url, image_2_url, image_3_url, gallery_images, description, sizes, audio_preview_url, tracklist_snippets, download_files, category, published, coming_soon, inventory_count, weight_oz, domestic_shipping_cents, international_shipping_cents, printful_variant_map, landing_slot, slug, pricing_mode, offer_min_cents, offer_max_cents, created_at'
+    'id, title, type, price_cents, cover_art_url, image_2_url, image_3_url, gallery_images, description, sizes, audio_preview_url, tracklist_snippets, download_files, category, published, coming_soon, inventory_count, weight_oz, domestic_shipping_cents, international_shipping_cents, printful_variant_map, landing_slot, slug, pricing_mode, offer_min_cents, offer_max_cents, created_at, feature_images'
   ).eq('published', true)
 
   if (error) {
@@ -3446,6 +3501,16 @@ function setLandingSlide(index) {
 // No buy controls here by design — the featured panel is informational
 // (title/price/category/description); purchasing happens on the product's
 // own dedicated page.
+// The photos are emitted twice back to back so the CSS animation (it slides
+// the track left by exactly half its width) loops with no visible jump.
+// Duration scales with the photo count so speed stays roughly constant.
+function featurePhotosHTML(product) {
+  const photos = Array.isArray(product.feature_images) ? product.feature_images.filter(Boolean) : []
+  if (photos.length === 0) return ''
+  const imgs = photos.map(url => `<img src="${url}" alt="${product.title}" loading="lazy" decoding="async">`).join('')
+  return `<div class="landing-detail-photos"><div class="landing-detail-photos-track" style="--photos-duration: ${Math.max(12, photos.length * 6)}s">${imgs}${imgs}</div></div>`
+}
+
 function renderLandingDetail(product) {
   const detail = document.getElementById('landing-detail')
   if (!detail || !product) return
@@ -3462,6 +3527,7 @@ function renderLandingDetail(product) {
     <p class="landing-detail-price">${formattedPrice}</p>
     <p class="landing-detail-category">${(displayCategory(product.category) || 'uncategorized').toUpperCase()}</p>
     ${product.description ? `<p class="landing-detail-description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>` : ''}
+    ${featurePhotosHTML(product)}
   `
   // Reassigned on every slide change so it always points at whichever
   // product is currently showing, same as the side boxes.
