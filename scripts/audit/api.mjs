@@ -42,7 +42,7 @@ export async function runApiAudit({ site, env, ctx }) {
   section('Catalog data (anon REST)')
   // Same explicit column list as the storefront (anon can no longer select * — see
   // migration 20261006220000_restrict_anon_product_columns.sql).
-  const STOREFRONT_COLS = 'id,title,type,price_cents,cover_art_url,image_2_url,image_3_url,gallery_images,description,sizes,audio_preview_url,tracklist_snippets,download_files,category,published,coming_soon,inventory_count,weight_oz,domestic_shipping_cents,international_shipping_cents,printful_variant_map,landing_slot,slug,pricing_mode,offer_min_cents,offer_max_cents,created_at,feature_images'
+  const STOREFRONT_COLS = 'id,title,type,price_cents,cover_art_url,image_2_url,image_3_url,gallery_images,description,sizes,audio_preview_url,tracklist_snippets,download_files,category,published,coming_soon,inventory_count,weight_oz,domestic_shipping_cents,international_shipping_cents,printful_variant_map,landing_slot,slug,pricing_mode,offer_min_cents,offer_max_cents,created_at'
   const pr = await http(`${SB}/rest/v1/products?select=${STOREFRONT_COLS}&published=eq.true`, { headers: H })
   const products = (await pr.json()) || []
   ctx.products = products
@@ -146,6 +146,19 @@ export async function runApiAudit({ site, env, ctx }) {
     const lr = await http(`${SB}/rest/v1/products?select=${col}&limit=1`, { headers: H })
     check('security', `anon cannot read products.${col === '*' ? '* (all columns)' : col}`, lr.status >= 400, `status ${lr.status}`)
   }
+
+  // -------------------------------------------------------- look book
+  const lb = await http(`${SB}/rest/v1/lookbook_photos?select=id,image_url,source,created_at&order=created_at.asc`, { headers: H })
+  const lbRows = await lb.json().catch(() => null)
+  check('lookbook', 'anon can read the look book photos (public strip)', lb.status === 200 && Array.isArray(lbRows), `status ${lb.status}`)
+  check('lookbook', 'look book holds at most 4 photos', !Array.isArray(lbRows) || lbRows.length <= 4, `${lbRows?.length} rows`)
+  ctx.lookbookCount = Array.isArray(lbRows) ? lbRows.length : 0
+  for (const row of Array.isArray(lbRows) ? lbRows : []) {
+    const r = await http(row.image_url, { method: 'HEAD' })
+    check('lookbook', `look book photo loads (${row.source})`, r.status === 200 && /^image\//.test(r.headers.get('content-type') || ''), `status ${r.status}`)
+  }
+  const lbIns = await http(`${SB}/rest/v1/lookbook_photos`, { method: 'POST', headers: H, body: JSON.stringify({ image_url: 'audit-should-fail' }) })
+  check('security', 'anon cannot add look book photos', lbIns.status >= 400, `status ${lbIns.status}`)
 
   // -------------------------------------------------------- audio vault
   section('Audio vault (private bucket)')

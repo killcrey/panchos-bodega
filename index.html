@@ -509,9 +509,11 @@
         border-radius: 4px;
         flex: none;
       }
+      /* --photos-n = how many back-to-back copies of the photo set the track
+         holds; sliding by exactly one copy (its width plus one gap) loops it. */
       @keyframes landing-photos-scroll {
         from { transform: translateX(0); }
-        to { transform: translateX(calc(-50% - 0.3rem)); }
+        to { transform: translateX(calc((-100% - 0.6rem) / var(--photos-n, 2))); }
       }
       @media (prefers-reduced-motion: reduce) {
         .landing-detail-photos { overflow-x: auto; }
@@ -2546,6 +2548,7 @@
               <button type="button" class="admin-tab-btn" data-tab="tips">Tips</button>
               <button type="button" class="admin-tab-btn" data-tab="email-captures">Email Captures</button>
               <button type="button" class="admin-tab-btn" data-tab="inquiries">Inquiries</button>
+              <button type="button" class="admin-tab-btn" data-tab="lookbook">Look Book</button>
               <button type="button" class="admin-tab-btn" data-tab="messages">Messages</button>
             </div>
             <div class="admin-tab-panel" data-tab-panel="inventory">
@@ -2562,6 +2565,17 @@
             </div>
             <div class="admin-tab-panel" data-tab-panel="inquiries" style="display: none;">
               <div id="admin-service-inquiries-list"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="lookbook" style="display: none;">
+              <label class="admin-file-label">Look Book / Ad Photos (up to 4)</label>
+              <p class="field-hint">These scroll in a strip under the product description on the Featured page. Upload ads or look-book pictures — they're resized automatically. Holds 4 at a time: adding a 5th removes the oldest (the first one shown below). Click × to remove one yourself.</p>
+              <span id="lookbook-count" class="field-status"></span>
+              <div id="lookbook-current" class="admin-image-preview"></div>
+              <label class="admin-file-label" for="lookbook-file">Upload Photos</label>
+              <input type="file" id="lookbook-file" class="admin-input" accept="image/*" multiple>
+              <button type="button" id="lookbook-product-btn" class="admin-btn">Or Use an Existing Product Photo</button>
+              <div id="lookbook-product-picker" class="admin-image-preview" style="display: none;"></div>
+              <div id="lookbook-status" class="field-status"></div>
             </div>
             <div class="admin-tab-panel" data-tab-panel="messages" style="display: none;">
               <label class="admin-file-label" for="settings-purchase-message">Purchase &amp; Free Download Thank You Message</label>
@@ -2638,12 +2652,6 @@
               <label class="admin-file-label" for="edit-image">Add More Photos (optional — added to the photos above, doesn't replace them)</label>
               <div id="edit-image-new-preview" class="admin-image-preview"></div>
               <input type="file" id="edit-image" class="admin-input" accept="image/*" multiple>
-              <label class="admin-file-label">Featured Page Scrolling Photos (click × to remove one)</label>
-              <p class="field-hint">Shown as a scrolling strip under this product's description when it's in the Featured carousel. Separate from the product photos above.</p>
-              <div id="edit-feature-preview" class="admin-image-preview"></div>
-              <label class="admin-file-label" for="edit-feature-image">Add Scrolling Photos (optional — added to the ones above)</label>
-              <div id="edit-feature-new-preview" class="admin-image-preview"></div>
-              <input type="file" id="edit-feature-image" class="admin-input" accept="image/*" multiple>
               <label class="admin-file-label">Current Digital File(s) (click × to remove one)</label>
               <div id="edit-file-current-preview" class="admin-file-chip-list"></div>
               <label class="admin-checkbox-row">

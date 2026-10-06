@@ -26,6 +26,10 @@ const CATEGORY_LABELS = {
   'pancho picks': 'Pancho Picks',
 }
 
+// Kept so the Look Book tab's "use a product photo" picker can list every
+// product photo without a second query.
+let adminProductsCache = []
+
 async function loadAdminInventory() {
   const listEl = document.getElementById('admin-inventory-list')
   if (!listEl) return
@@ -36,6 +40,7 @@ async function loadAdminInventory() {
     listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load inventory.</p>'
     return
   }
+  adminProductsCache = products || []
 
   if (!products || products.length === 0) {
     listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No products yet.</p>'
@@ -324,6 +329,143 @@ async function loadAdminServiceInquiries() {
 // The two admin-editable notes appended to automated emails — read by
 // stripe-webhook (order confirmation + tip thank-you) and free-download
 // (download email) at send time. Blank means "no note", not an error.
+// ---- LOOK BOOK (admin) --------------------------------------------------
+// Keeps the newest LOOKBOOK_MAX photos: adding past the cap deletes the
+// oldest ones. Uploaded photos are resized small first (they only ever show
+// in a ~240px-tall strip). Rows with source 'product' just reference an
+// existing product photo — deleting one removes the row only, never the file,
+// because the product still uses it.
+const LOOKBOOK_IMAGE_PX = 1200
+
+// Pure so the FIFO rule can be tested on its own: rows are oldest -> newest,
+// returns the ones that have to go to get back down to max.
+function planLookbookTrim(rows, max) {
+  return rows.length > max ? rows.slice(0, rows.length - max) : []
+}
+
+async function removeLookbookRows(rows) {
+  if (rows.length === 0) return
+  const { data, error } = await supabase.from('lookbook_photos').delete().in('id', rows.map(r => r.id)).select('id')
+  // Same "update/delete lies by omission under RLS" rule as everywhere else.
+  if (error || !data || data.length !== rows.length) throw new Error(error?.message || 'Could not remove the photo.')
+  const paths = rows
+    .filter(r => r.source === 'upload')
+    .map(r => extractStoragePath(r.image_url, 'bodega-images'))
+    .filter(Boolean)
+  if (paths.length > 0) await supabase.storage.from('bodega-images').remove(paths)
+}
+
+async function loadAdminLookbook() {
+  const el = document.getElementById('lookbook-current')
+  if (!el) return
+  const { data, error } = await supabase.from('lookbook_photos').select('*').order('created_at', { ascending: true })
+  if (error) {
+    el.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load look book photos.</p>'
+    return
+  }
+  const rows = data || []
+  el.innerHTML = rows.map(row => `
+    <div class="admin-image-thumb">
+      <img src="${row.image_url}" alt="">
+      <button type="button" class="admin-image-remove-btn" data-id="${row.id}" aria-label="Remove photo">&times;</button>
+    </div>
+  `).join('')
+  el.dataset.rows = JSON.stringify(rows)
+  document.getElementById('lookbook-count').textContent = rows.length === 0
+    ? 'No photos yet — the strip stays hidden until you add one.'
+    : `${rows.length} of ${LOOKBOOK_MAX} photos — the first one is the oldest and is dropped first when you add more.`
+}
+
+async function addLookbookPhotos(items) {
+  const statusEl = document.getElementById('lookbook-status')
+  const say = (msg, color = '#e8b923') => { statusEl.textContent = msg; statusEl.style.color = color }
+  if (items.length === 0) return
+  try {
+    // More than a full set at once: only the newest LOOKBOOK_MAX would
+    // survive the trim anyway, so don't upload the rest just to delete them.
+    const picked = items.slice(-LOOKBOOK_MAX)
+    say(`Adding ${picked.length} photo${picked.length === 1 ? '' : 's'}...`)
+    const base = Date.now()
+    const rows = []
+    for (let i = 0; i < picked.length; i++) {
+      const item = picked[i]
+      let url = item.url
+      if (item.file) {
+        const file = await compressProductImage(item.file, LOOKBOOK_IMAGE_PX)
+        const safeName = file.name.replace(/[^A-Za-z0-9._-]+/g, '-')
+        const path = `lookbook-${base}-${i}-${safeName}`
+        const { error: upErr } = await supabase.storage.from('bodega-images').upload(path, file, { cacheControl: '2592000' })
+        if (upErr) throw upErr
+        url = supabase.storage.from('bodega-images').getPublicUrl(path).data.publicUrl
+      }
+      // Explicit, strictly increasing timestamps — a single multi-row insert
+      // would otherwise stamp every row with the same now() and make "oldest"
+      // ambiguous.
+      rows.push({ image_url: url, source: item.file ? 'upload' : 'product', created_at: new Date(base + i).toISOString() })
+    }
+    const { error: insErr } = await supabase.from('lookbook_photos').insert(rows)
+    if (insErr) throw insErr
+
+    const { data: all, error: listErr } = await supabase.from('lookbook_photos').select('*').order('created_at', { ascending: true })
+    if (listErr) throw listErr
+    await removeLookbookRows(planLookbookTrim(all || [], LOOKBOOK_MAX))
+    await loadAdminLookbook()
+    say('Saved. Refresh the Featured page to see it.', '#00ffcc')
+  } catch (err) {
+    console.error('Look book add failed:', err)
+    say(err.message || 'Something went wrong adding the photo.', '#ff4d4d')
+    await loadAdminLookbook()
+  }
+}
+
+function initLookbookAdmin() {
+  const fileInput = document.getElementById('lookbook-file')
+  if (!fileInput) return
+  fileInput.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files)
+    e.target.value = ''
+    await addLookbookPhotos(files.map(file => ({ file })))
+  })
+
+  document.getElementById('lookbook-current').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.admin-image-remove-btn')
+    if (!btn) return
+    const rows = JSON.parse(document.getElementById('lookbook-current').dataset.rows || '[]')
+    const row = rows.find(r => r.id === btn.getAttribute('data-id'))
+    if (!row) return
+    const statusEl = document.getElementById('lookbook-status')
+    try {
+      await removeLookbookRows([row])
+      statusEl.textContent = 'Removed.'
+      statusEl.style.color = '#00ffcc'
+    } catch (err) {
+      statusEl.textContent = err.message
+      statusEl.style.color = '#ff4d4d'
+    }
+    await loadAdminLookbook()
+  })
+
+  const picker = document.getElementById('lookbook-product-picker')
+  document.getElementById('lookbook-product-btn').addEventListener('click', () => {
+    if (picker.style.display !== 'none') { picker.style.display = 'none'; return }
+    const urls = new Set()
+    adminProductsCache.forEach(p => {
+      [p.cover_art_url, p.image_2_url, p.image_3_url, ...(Array.isArray(p.gallery_images) ? p.gallery_images : [])]
+        .filter(Boolean).forEach(u => urls.add(u))
+    })
+    picker.innerHTML = [...urls].map(u => `
+      <div class="admin-image-thumb lookbook-pick" data-url="${u}" style="cursor: pointer;"><img src="${u}" alt=""></div>
+    `).join('') || '<p style="font-size: 0.65rem; color: #888;">No product photos yet.</p>'
+    picker.style.display = 'flex'
+  })
+  picker.addEventListener('click', async (e) => {
+    const pick = e.target.closest('.lookbook-pick')
+    if (!pick) return
+    picker.style.display = 'none'
+    await addLookbookPhotos([{ url: pick.getAttribute('data-url') }])
+  })
+}
+
 async function loadAdminSettings() {
   const purchaseInput = document.getElementById('settings-purchase-message')
   const tipInput = document.getElementById('settings-tip-message')
@@ -1053,11 +1195,11 @@ async function processDigitalFiles(inputFiles) {
 // WebP (keeps alpha, unlike JPEG). Falls back to the original file if the
 // browser can't decode/encode it, or if re-encoding wouldn't actually be smaller.
 const MAX_PRODUCT_IMAGE_PX = 1600
-async function compressProductImage(file) {
+async function compressProductImage(file, maxPx = MAX_PRODUCT_IMAGE_PX) {
   try {
     if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml') return file
     const bitmap = await createImageBitmap(file)
-    const scale = Math.min(1, MAX_PRODUCT_IMAGE_PX / Math.max(bitmap.width, bitmap.height))
+    const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height))
     const canvas = document.createElement('canvas')
     canvas.width = Math.round(bitmap.width * scale)
     canvas.height = Math.round(bitmap.height * scale)
@@ -1111,8 +1253,7 @@ async function deleteProduct(product) {
       product.cover_art_url,
       product.image_2_url,
       product.image_3_url,
-      ...(Array.isArray(product.gallery_images) ? product.gallery_images : []),
-      ...(Array.isArray(product.feature_images) ? product.feature_images : [])
+      ...(Array.isArray(product.gallery_images) ? product.gallery_images : [])
     ]
       .map(url => extractStoragePath(url, 'bodega-images'))
       .filter(Boolean)
@@ -1563,12 +1704,6 @@ function renderPickedFilesPreview(files, previewEl) {
 // (add more, remove individual ones) instead of replace-the-whole-set.
 let editKeptImages = []
 
-// Same additive pattern for the Featured-page scrolling photo strip
-// (products.feature_images): what's already saved, minus any the admin removes,
-// plus newly picked files accumulated across picker reopens.
-let editKeptFeatureImages = []
-let editNewFeatureFiles = []
-
 // The edit form's existing-digital-file chips, mirroring editKeptImages —
 // picking new files used to fully replace whatever was here (a real
 // incident: adding two cover images wiped an 11-track album's audio files),
@@ -1648,15 +1783,6 @@ function renderEditImagePreview() {
     : 'Currently: no photos'
 }
 
-function renderEditFeaturePreview() {
-  document.getElementById('edit-feature-preview').innerHTML = editKeptFeatureImages.map((url, idx) => `
-    <div class="admin-image-thumb">
-      <img src="${url}" alt="">
-      <button type="button" class="admin-image-remove-btn" data-idx="${idx}" aria-label="Remove photo">&times;</button>
-    </div>
-  `).join('')
-}
-
 function openEditModal(product) {
   editingProduct = product
   document.getElementById('edit-id').value = product.id
@@ -1690,12 +1816,6 @@ function openEditModal(product) {
     .filter(Boolean)
   renderEditImagePreview()
 
-  document.getElementById('edit-feature-image').value = ''
-  editNewFeatureFiles = []
-  document.getElementById('edit-feature-new-preview').innerHTML = ''
-  editKeptFeatureImages = Array.isArray(product.feature_images) ? product.feature_images.filter(Boolean) : []
-  renderEditFeaturePreview()
-
   editKeptDigitalFiles = currentDigitalFileList(product)
   renderEditCurrentFilesPreview()
   document.getElementById('edit-file-clear').checked = false
@@ -1714,8 +1834,6 @@ function closeEditModal() {
   editingProduct = null
   editKeptImages = []
   editNewImageFiles = []
-  editKeptFeatureImages = []
-  editNewFeatureFiles = []
   editNewDigitalFiles = []
   editKeptDigitalFiles = []
   document.getElementById('edit-modal').style.display = 'none'
@@ -2492,6 +2610,7 @@ function initAdminPortal() {
       loadAdminEmailCaptures()
       loadAdminServiceInquiries()
       loadAdminSettings()
+      loadAdminLookbook()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
@@ -2525,6 +2644,8 @@ function initAdminPortal() {
       })
     })
   })
+
+  initLookbookAdmin()
 
   const settingsSaveBtn = document.getElementById('settings-save-btn')
   if (settingsSaveBtn) {
@@ -2598,26 +2719,6 @@ function initAdminPortal() {
     if (!removeBtn) return
     editNewImageFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
     renderPickedImagesPreview(editNewImageFiles, document.getElementById('edit-image-new-preview'))
-  })
-
-  document.getElementById('edit-feature-image').addEventListener('change', (e) => {
-    editNewFeatureFiles = editNewFeatureFiles.concat(Array.from(e.target.files))
-    e.target.value = ''
-    renderPickedImagesPreview(editNewFeatureFiles, document.getElementById('edit-feature-new-preview'))
-  })
-
-  document.getElementById('edit-feature-new-preview').addEventListener('click', (e) => {
-    const removeBtn = e.target.closest('.admin-image-remove-btn')
-    if (!removeBtn) return
-    editNewFeatureFiles.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
-    renderPickedImagesPreview(editNewFeatureFiles, document.getElementById('edit-feature-new-preview'))
-  })
-
-  document.getElementById('edit-feature-preview').addEventListener('click', (e) => {
-    const removeBtn = e.target.closest('.admin-image-remove-btn')
-    if (!removeBtn) return
-    editKeptFeatureImages.splice(parseInt(removeBtn.getAttribute('data-idx'), 10), 1)
-    renderEditFeaturePreview()
   })
 
   document.getElementById('edit-image-preview').addEventListener('click', (e) => {
@@ -2809,9 +2910,6 @@ function initAdminPortal() {
       const newPhotos = await processImageFiles(editNewImageFiles)
       const newPhotoUrls = newPhotos.coverUrl ? [newPhotos.coverUrl, ...(newPhotos.galleryImages || [])] : []
       const allImages = [...editKeptImages, ...newPhotoUrls]
-      const newFeaturePhotos = await processImageFiles(editNewFeatureFiles)
-      const newFeatureUrls = newFeaturePhotos.coverUrl ? [newFeaturePhotos.coverUrl, ...(newFeaturePhotos.galleryImages || [])] : []
-      const allFeatureImages = [...editKeptFeatureImages, ...newFeatureUrls]
       const coverUrl = allImages[0] || null
       const galleryImages = allImages.length > 1 ? allImages.slice(1) : null
       const image2Url = null
@@ -2860,7 +2958,6 @@ function initAdminPortal() {
         image_2_url: image2Url,
         image_3_url: image3Url,
         gallery_images: galleryImages,
-        feature_images: allFeatureImages.length > 0 ? allFeatureImages : null,
         audio_preview_url: fileUrl,
         download_files: downloadFiles,
         tracklist_snippets: tracklistSnippets,
@@ -3050,7 +3147,7 @@ async function loadBodega() {
   // it in a public API response makes it discoverable by anyone, with no
   // relationship to the product's current (possibly since-changed) price.
   const { data: products, error } = await supabase.from('products').select(
-    'id, title, type, price_cents, cover_art_url, image_2_url, image_3_url, gallery_images, description, sizes, audio_preview_url, tracklist_snippets, download_files, category, published, coming_soon, inventory_count, weight_oz, domestic_shipping_cents, international_shipping_cents, printful_variant_map, landing_slot, slug, pricing_mode, offer_min_cents, offer_max_cents, created_at, feature_images'
+    'id, title, type, price_cents, cover_art_url, image_2_url, image_3_url, gallery_images, description, sizes, audio_preview_url, tracklist_snippets, download_files, category, published, coming_soon, inventory_count, weight_oz, domestic_shipping_cents, international_shipping_cents, printful_variant_map, landing_slot, slug, pricing_mode, offer_min_cents, offer_max_cents, created_at'
   ).eq('published', true)
 
   if (error) {
@@ -3112,6 +3209,7 @@ async function loadBodega() {
   })
 
   setupCategoryFilters()
+  await loadLookbookPhotos()
   renderLandingPage(products)
   injectProductStructuredData(products)
 
@@ -3501,16 +3599,6 @@ function setLandingSlide(index) {
 // No buy controls here by design — the featured panel is informational
 // (title/price/category/description); purchasing happens on the product's
 // own dedicated page.
-// The photos are emitted twice back to back so the CSS animation (it slides
-// the track left by exactly half its width) loops with no visible jump.
-// Duration scales with the photo count so speed stays roughly constant.
-function featurePhotosHTML(product) {
-  const photos = Array.isArray(product.feature_images) ? product.feature_images.filter(Boolean) : []
-  if (photos.length === 0) return ''
-  const imgs = photos.map(url => `<img src="${url}" alt="${product.title}" loading="lazy" decoding="async">`).join('')
-  return `<div class="landing-detail-photos"><div class="landing-detail-photos-track" style="--photos-duration: ${Math.max(12, photos.length * 6)}s">${imgs}${imgs}</div></div>`
-}
-
 function renderLandingDetail(product) {
   const detail = document.getElementById('landing-detail')
   if (!detail || !product) return
@@ -3527,11 +3615,45 @@ function renderLandingDetail(product) {
     <p class="landing-detail-price">${formattedPrice}</p>
     <p class="landing-detail-category">${(displayCategory(product.category) || 'uncategorized').toUpperCase()}</p>
     ${product.description ? `<p class="landing-detail-description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>` : ''}
-    ${featurePhotosHTML(product)}
+    ${lookbookStripHTML()}
   `
   // Reassigned on every slide change so it always points at whichever
   // product is currently showing, same as the side boxes.
   detail.onclick = () => goToProduct(product)
+}
+
+// LOOK BOOK — one shared set of up to 4 ad / look-book photos (table
+// lookbook_photos), shown as a scrolling strip under the description in the
+// Featured detail panel. Not tied to any one product. See the admin side
+// (loadAdminLookbook) for how photos get added and the oldest dropped.
+const LOOKBOOK_MAX = 4
+let lookbookPhotos = []
+
+async function loadLookbookPhotos() {
+  const { data, error } = await supabase
+    .from('lookbook_photos')
+    .select('id, image_url, source, created_at')
+    .order('created_at', { ascending: true })
+  if (error) {
+    // A missing look book must never take the storefront down with it.
+    console.error('Failed to load look book photos:', error)
+    lookbookPhotos = []
+    return
+  }
+  lookbookPhotos = (data || []).slice(-LOOKBOOK_MAX)
+}
+
+// The photo set is emitted several times back to back and the CSS animation
+// slides the track left by exactly one set's width (`--photos-n` = how many
+// copies), so the loop has no visible jump. Fewer photos need more copies so
+// one set's width still exceeds the box — otherwise a gap shows at the loop
+// point. Duration scales with photo count so the speed stays about constant.
+function lookbookStripHTML() {
+  const photos = lookbookPhotos
+  if (photos.length === 0) return ''
+  const copies = photos.length >= 4 ? 2 : photos.length === 3 ? 3 : photos.length === 2 ? 4 : 6
+  const set = photos.map(p => `<img src="${p.image_url}" alt="The Invisible Panchos look book" loading="lazy" decoding="async">`).join('')
+  return `<div class="landing-detail-photos"><div class="landing-detail-photos-track" style="--photos-n: ${copies}; --photos-duration: ${Math.max(14, photos.length * 7)}s">${set.repeat(copies)}</div></div>`
 }
 
 function renderLandingSideBox(el, product, label) {

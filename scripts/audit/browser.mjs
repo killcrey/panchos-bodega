@@ -57,6 +57,18 @@ export async function runBrowserAudit({ site, env, ctx }) {
     const mb = page.issues.imgBytes / 1048576
     check('perf', 'first landing view image weight', mb < 4, `${mb.toFixed(1)} MB of bodega-images fetched on first load`, 'WARN')
   })
+  await guard('browser', 'look book strip', async () => {
+    if (!ctx.lookbookCount) { skip('lookbook', 'scrolling strip on the Featured page', 'no look book photos uploaded yet'); return }
+    await page.locator('.filter-btn[data-filter="home"]').first().click()
+    await page.waitForTimeout(2500)
+    const strip = page.locator('.landing-detail-photos-track')
+    if (!(await strip.count())) { fail('lookbook', 'scrolling strip appears under the Featured description', `${ctx.lookbookCount} photos exist but no strip rendered (is any product Featured?)`); return }
+    const t1 = await strip.evaluate(el => getComputedStyle(el).transform)
+    await page.waitForTimeout(1500)
+    const t2 = await strip.evaluate(el => getComputedStyle(el).transform)
+    const loaded = await page.evaluate(() => [...document.querySelectorAll('.landing-detail-photos-track img')].filter(i => i.complete && i.naturalWidth > 0).length)
+    check('lookbook', 'scrolling strip appears under the Featured description, loads, and scrolls', loaded > 0 && t1 !== t2, `${loaded} images loaded, moving=${t1 !== t2}`)
+  })
   await guard('browser', 'category filters', async () => {
     const filters = await page.locator('.filter-btn[data-filter]').evaluateAll(els => els.filter(e => e.getBoundingClientRect().width > 0).map(e => e.getAttribute('data-filter')))
     for (const f of filters) {
