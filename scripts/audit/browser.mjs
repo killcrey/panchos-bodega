@@ -61,13 +61,15 @@ export async function runBrowserAudit({ site, env, ctx }) {
     if (!ctx.lookbookCount) { skip('lookbook', 'scrolling strip on the Featured page', 'no look book photos uploaded yet'); return }
     await page.locator('.filter-btn[data-filter="home"]').first().click()
     await page.waitForTimeout(2500)
-    const strip = page.locator('.landing-detail-photos-track')
-    if (!(await strip.count())) { fail('lookbook', 'scrolling strip appears under the Featured description', `${ctx.lookbookCount} photos exist but no strip rendered (is any product Featured?)`); return }
+    const strip = page.locator('#landing-lookbook-track')
+    if (!(await strip.count())) { fail('lookbook', 'look book carousel appears under the Featured description', `${ctx.lookbookCount} photos exist but no carousel rendered (is any product Featured?)`); return }
+    const handle = await strip.elementHandle()
     const t1 = await strip.evaluate(el => getComputedStyle(el).transform)
-    await page.waitForTimeout(1500)
+    await page.waitForTimeout(6500)
     const t2 = await strip.evaluate(el => getComputedStyle(el).transform)
-    const loaded = await page.evaluate(() => [...document.querySelectorAll('.landing-detail-photos-track img')].filter(i => i.complete && i.naturalWidth > 0).length)
-    check('lookbook', 'scrolling strip appears under the Featured description, loads, and scrolls', loaded > 0 && t1 !== t2, `${loaded} images loaded, moving=${t1 !== t2}`)
+    const sameNode = await page.evaluate(el => el === document.getElementById('landing-lookbook-track'), handle)
+    const loaded = await page.evaluate(() => [...document.querySelectorAll('.landing-lookbook-slide img')].filter(i => i.complete && i.naturalWidth > 0).length)
+    check('lookbook', 'look book carousel shows, advances on its own, and survives Featured slide changes without resetting', loaded > 0 && sameNode && (ctx.lookbookCount < 2 || t1 !== t2), `${loaded} images loaded, sameNode=${sameNode}, moved=${t1 !== t2}`)
   })
   await guard('browser', 'category filters', async () => {
     const filters = await page.locator('.filter-btn[data-filter]').evaluateAll(els => els.filter(e => e.getBoundingClientRect().width > 0).map(e => e.getAttribute('data-filter')))

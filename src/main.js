@@ -3610,16 +3610,19 @@ function renderLandingDetail(product) {
     pricingMode === 'offer_based' ? (product.offer_min_cents != null ? `From $${(product.offer_min_cents / 100).toFixed(2)}` : 'Name Your Price') :
     isFree ? 'FREE' : `$${((product.price_cents || 0) / 100).toFixed(2)}`
 
-  detail.innerHTML = `
+  ensureLandingDetailSkeleton(detail)
+  document.getElementById('landing-detail-text').innerHTML = `
     <h3 class="landing-detail-title">${product.title}</h3>
     <p class="landing-detail-price">${formattedPrice}</p>
     <p class="landing-detail-category">${(displayCategory(product.category) || 'uncategorized').toUpperCase()}</p>
     ${product.description ? `<p class="landing-detail-description">${product.description.slice(0, MAX_DESCRIPTION_LENGTH)}</p>` : ''}
-    ${lookbookStripHTML()}
   `
   // Reassigned on every slide change so it always points at whichever
   // product is currently showing, same as the side boxes.
-  detail.onclick = () => goToProduct(product)
+  detail.onclick = (e) => {
+    if (e.target.closest('#landing-lookbook')) return // ad photos aren't product links
+    goToProduct(product)
+  }
 }
 
 // LOOK BOOK — one shared set of up to 4 ad / look-book photos (table
@@ -3643,17 +3646,86 @@ async function loadLookbookPhotos() {
   lookbookPhotos = (data || []).slice(-LOOKBOOK_MAX)
 }
 
-// The photo set is emitted several times back to back and the CSS animation
-// slides the track left by exactly one set's width (`--photos-n` = how many
-// copies), so the loop has no visible jump. Fewer photos need more copies so
-// one set's width still exceeds the box — otherwise a gap shows at the loop
-// point. Duration scales with photo count so the speed stays about constant.
-function lookbookStripHTML() {
-  const photos = lookbookPhotos
-  if (photos.length === 0) return ''
-  const copies = photos.length >= 4 ? 2 : photos.length === 3 ? 3 : photos.length === 2 ? 4 : 6
-  const set = photos.map(p => `<img src="${p.image_url}" alt="The Invisible Panchos look book" loading="lazy" decoding="async">`).join('')
-  return `<div class="landing-detail-photos"><div class="landing-detail-photos-track" style="--photos-n: ${copies}; --photos-duration: ${Math.max(14, photos.length * 7)}s">${set.repeat(copies)}</div></div>`
+// Same behavior as the Featured carousel (slide transition, dots, pause on
+// hover, LANDING_ROTATE_MS rotation) but with its own index/timer, started half
+// an interval out of phase so the two never change at the same moment. Built
+// once into a persistent #landing-lookbook — renderLandingDetail rewrites only
+// the text above it, so a Featured slide change doesn't restart this.
+let lookbookIndex = 0
+let lookbookTimer = null
+let lookbookStartTimeout = null
+
+function stopLookbookRotation() {
+  if (lookbookTimer) clearInterval(lookbookTimer)
+  if (lookbookStartTimeout) clearTimeout(lookbookStartTimeout)
+  lookbookTimer = null
+  lookbookStartTimeout = null
+}
+
+function advanceLookbook() {
+  setLookbookSlide((lookbookIndex + 1) % lookbookPhotos.length)
+}
+
+// offsetMs: delay before the first advance (half an interval on first load,
+// to stay out of phase with Featured; a full interval after hover/dot clicks).
+function startLookbookRotation(offsetMs = LANDING_ROTATE_MS) {
+  stopLookbookRotation()
+  if (lookbookPhotos.length < 2) return
+  lookbookStartTimeout = setTimeout(() => {
+    advanceLookbook()
+    lookbookTimer = setInterval(advanceLookbook, LANDING_ROTATE_MS)
+  }, offsetMs)
+}
+
+function setLookbookSlide(index) {
+  lookbookIndex = index
+  const track = document.getElementById('landing-lookbook-track')
+  if (track) track.style.transform = `translateX(-${index * 100}%)`
+  document.querySelectorAll('.lookbook-dot').forEach((dot, i) => dot.classList.toggle('active', i === index))
+}
+
+function renderLookbookCarousel() {
+  const el = document.getElementById('landing-lookbook')
+  if (!el) return
+  stopLookbookRotation()
+  if (lookbookPhotos.length === 0) {
+    el.style.display = 'none'
+    el.innerHTML = ''
+    return
+  }
+  el.style.display = 'block'
+  el.innerHTML = `
+    <div class="landing-lookbook-track" id="landing-lookbook-track">
+      ${lookbookPhotos.map(p => `<div class="landing-lookbook-slide"><img src="${p.image_url}" alt="The Invisible Panchos look book" loading="lazy" decoding="async"></div>`).join('')}
+    </div>
+    <div class="landing-lookbook-dots">
+      ${lookbookPhotos.length > 1 ? lookbookPhotos.map((_p, i) => `<button type="button" class="lookbook-dot" data-idx="${i}" aria-label="Look book photo ${i + 1}"></button>`).join('') : ''}
+    </div>
+  `
+  el.querySelectorAll('.lookbook-dot').forEach(dot => {
+    dot.addEventListener('click', () => {
+      setLookbookSlide(parseInt(dot.getAttribute('data-idx'), 10))
+      startLookbookRotation()
+    })
+  })
+  // Pause-on-hover only where a real hover exists — on a phone a tap leaves
+  // mouseenter "stuck" with no matching mouseleave, which would freeze it.
+  if (window.matchMedia('(hover: hover)').matches) {
+    el.onmouseenter = stopLookbookRotation
+    el.onmouseleave = () => startLookbookRotation()
+  }
+  lookbookIndex = 0
+  setLookbookSlide(0)
+  // Half an interval out of phase with the Featured carousel.
+  startLookbookRotation(LANDING_ROTATE_MS / 2)
+}
+
+// The detail panel is two parts: a text area that is rewritten on every
+// Featured slide change, and the persistent Look Book below it.
+function ensureLandingDetailSkeleton(detail) {
+  if (document.getElementById('landing-detail-text')) return
+  detail.innerHTML = '<div id="landing-detail-text"></div><div class="landing-lookbook" id="landing-lookbook"></div>'
+  renderLookbookCarousel()
 }
 
 function renderLandingSideBox(el, product, label) {

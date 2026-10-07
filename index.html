@@ -467,57 +467,64 @@
 
       .landing-detail-actions { margin-top: auto; }
 
-      /* Scrolling photo strip under the Featured description. The track holds
-         the photos twice back to back and slides left by exactly half its
-         width, so the loop is seamless. Pauses on hover/touch; with
-         prefers-reduced-motion it becomes a plain swipe-able row. */
-      /* min-width: 0 on the panel and the box is what stops the (very wide)
-         track from stretching the whole grid column. */
+      /* Look Book: a slideshow that behaves exactly like the Featured carousel
+         beside it (same slide transition, same dots, same 5s rotation) but on
+         its own timer, offset so the two never change at the same moment. It
+         lives in a persistent element — renderLandingDetail only rewrites the
+         text above it, so a Featured slide change never restarts it. */
       .landing-detail { min-width: 0; }
-      .landing-detail-photos {
+      .landing-lookbook {
+        position: relative;
+        overflow: hidden;
         margin-top: 1rem;
         flex: 1;
-        min-height: 150px;
-        width: 100%;
-        min-width: 0;
-        max-width: 100%;
-        overflow: hidden;
+        min-height: 190px;
+        max-height: 320px;
         border-radius: 4px;
         background: rgba(0, 0, 0, 0.25);
+        cursor: default;
+      }
+      .landing-lookbook-track {
+        display: flex;
+        height: 100%;
+        transition: transform 0.6s ease;
+      }
+      .landing-lookbook-slide {
+        flex: 0 0 100%;
         display: flex;
         align-items: center;
+        justify-content: center;
+        padding: 0.6rem 0.6rem 1.5rem;
+        box-sizing: border-box;
       }
-      .landing-detail-photos-track {
-        display: flex;
-        gap: 0.6rem;
-        width: max-content;
-        height: 100%;
-        padding: 0.5rem 0;
-        animation: landing-photos-scroll var(--photos-duration, 24s) linear infinite;
-      }
-      /* Only on devices that really hover — on a phone a tap leaves :hover
-         stuck on, which would freeze the strip permanently. */
-      @media (hover: hover) {
-        .landing-detail-photos:hover .landing-detail-photos-track { animation-play-state: paused; }
-      }
-      .landing-detail-photos-track img {
-        height: 100%;
-        max-height: 220px;
-        min-height: 130px;
-        width: auto;
-        object-fit: cover;
+      .landing-lookbook-slide img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
         border-radius: 4px;
-        flex: none;
       }
-      /* --photos-n = how many back-to-back copies of the photo set the track
-         holds; sliding by exactly one copy (its width plus one gap) loops it. */
-      @keyframes landing-photos-scroll {
-        from { transform: translateX(0); }
-        to { transform: translateX(calc((-100% - 0.6rem) / var(--photos-n, 2))); }
+      .landing-lookbook-dots {
+        position: absolute;
+        bottom: 0.5rem;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: center;
+        gap: 0.4rem;
       }
+      .lookbook-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        border: 1px solid rgba(0, 255, 204, 0.6);
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+        transition: background 0.2s ease;
+      }
+      .lookbook-dot.active { background: #00ffcc; }
       @media (prefers-reduced-motion: reduce) {
-        .landing-detail-photos { overflow-x: auto; }
-        .landing-detail-photos-track { animation: none; }
+        .landing-lookbook-track { transition: none; }
       }
 
       .landing-buy-btn {
