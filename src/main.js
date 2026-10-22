@@ -2619,6 +2619,26 @@ function initAdminPortal() {
     }
   })
 
+  // Admin hub hand-off: the main site's /admin hub opens this page as
+  // `?mode=admin#hub=<base64url JSON {a: access_token, r: refresh_token}>` so the shared
+  // login carries over. The fragment is cleared immediately; the session itself goes
+  // through the normal auth flow above (onAuthStateChange shows the dashboard).
+  if (isAdminMode && window.location.hash.startsWith('#hub=')) {
+    const packed = window.location.hash.slice('#hub='.length)
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+    try {
+      const b64 = packed.replace(/-/g, '+').replace(/_/g, '/')
+      const { a, r } = JSON.parse(atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4)))
+      if (a && r) {
+        supabase.auth.setSession({ access_token: a, refresh_token: r }).then(({ error }) => {
+          if (error) console.warn('Hub hand-off failed — log in normally.', error.message)
+        })
+      }
+    } catch (err) {
+      console.warn('Hub hand-off was malformed — log in normally.')
+    }
+  }
+
   loginBtn.addEventListener('click', async () => {
     const { error } = await supabase.auth.signInWithPassword({
       email: emailInput.value,
