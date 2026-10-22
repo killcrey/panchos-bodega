@@ -335,7 +335,7 @@ async function loadAdminServiceInquiries() {
 // in a ~240px-tall strip). Rows with source 'product' just reference an
 // existing product photo — deleting one removes the row only, never the file,
 // because the product still uses it.
-const LOOKBOOK_IMAGE_PX = 1200
+const LOOKBOOK_IMAGE_PX = 1000
 
 // Pure so the FIFO rule can be tested on its own: rows are oldest -> newest,
 // returns the ones that have to go to get back down to max.
@@ -1194,7 +1194,7 @@ async function processDigitalFiles(inputFiles) {
 // Downscales to MAX_PRODUCT_IMAGE_PX on the longest side and re-encodes as
 // WebP (keeps alpha, unlike JPEG). Falls back to the original file if the
 // browser can't decode/encode it, or if re-encoding wouldn't actually be smaller.
-const MAX_PRODUCT_IMAGE_PX = 1600
+const MAX_PRODUCT_IMAGE_PX = 1000
 async function compressProductImage(file, maxPx = MAX_PRODUCT_IMAGE_PX) {
   try {
     if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.type === 'image/svg+xml') return file
@@ -1205,7 +1205,7 @@ async function compressProductImage(file, maxPx = MAX_PRODUCT_IMAGE_PX) {
     canvas.height = Math.round(bitmap.height * scale)
     canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
     bitmap.close()
-    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.82))
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.74))
     if (!blob || blob.type !== 'image/webp' || blob.size >= file.size) return file
     const safeName = file.name.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]+/g, '-') || 'image'
     return new File([blob], `${safeName}.webp`, { type: 'image/webp' })
