@@ -928,7 +928,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
           <span class="play-icon">▶</span> Play Preview
         </button>
         <p style="font-size: 0.5rem; color: #888; margin: 0 0 0.4rem 0; text-transform: uppercase; letter-spacing: 1px;">Preview Tracklist</p>
-        <div class="tracklist-slider" style="max-height: 66px; overflow-y: auto; padding-right: 5px;">
+        <div class="tracklist-slider" style="max-height: 280px; overflow-y: auto; padding-right: 5px;">
           <ul style="list-style: none; padding: 0; margin: 0;">
             ${playableTracks.map((track) => `
               <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
@@ -3121,6 +3121,28 @@ function playGlobalTrack(url, title, triggerEl) {
   globalAudio.play()
 }
 
+// When a track in an album's preview tracklist finishes, move on to the next
+// one — without this the player simply stopped after track 1 (the "Play
+// Preview" button starts track 1), so listeners only ever heard the first song
+// unless they noticed the small tracklist and clicked each track themselves.
+// The play button is matched to its track by URL. Single-track previews and
+// the last track of an album have nothing after them, so playback just ends.
+function playNextAlbumTrack() {
+  const current = activePlayTrigger
+  const album = current && current.closest('.album-player-container')
+  if (!album) return
+  const items = [...album.querySelectorAll('.track-item')]
+  const index = current.classList.contains('track-item')
+    ? items.indexOf(current)
+    : items.findIndex(t => t.getAttribute('data-url') === current.getAttribute('data-url'))
+  const next = index >= 0 ? items[index + 1] : null
+  if (!next) return
+  // Keep the playing track in view inside the tracklist's own scroll box.
+  const slider = album.querySelector('.tracklist-slider')
+  if (slider) slider.scrollTop += next.getBoundingClientRect().top - slider.getBoundingClientRect().top - 4
+  next.click()
+}
+
 function initGlobalAudioPlayer() {
   const player = document.getElementById('global-audio-player')
   const toggleBtn = document.getElementById('gap-toggle')
@@ -3154,6 +3176,7 @@ function initGlobalAudioPlayer() {
   globalAudio.addEventListener('ended', () => {
     seekBar.value = 0
     setTriggerPlayingState(activePlayTrigger, false)
+    playNextAlbumTrack()
   })
 
   seekBar.addEventListener('input', () => {
