@@ -202,28 +202,85 @@ async function submitPrintfulOrder(
   }
 }
 
-// Reads whichever digital files are attached to a Stripe Product's metadata
-// (the same file_count/file_N / file scheme create-stripe-link writes) and
-// signs a link for each so the confirmation email can hand the buyer their
-// download directly. A multi-file product gets one link per track rather
-// than an assembled zip — simpler and consistent with a cart that can now
-// contain several different products in one email.
+// Mirrors the same helpers in secure-download/index.ts and download-zip/index.ts.
+// A zip link is signed (HMAC over session + product + expiry, using
+// UNSUBSCRIBE_SECRET with a "zip|" prefix) and only ever minted after the
+// payment was verified, so download-zip needs no Stripe call of its own.
+async function buildZipUrl(sessionId: string, stripeProductId: string, ttlSeconds: number): Promise<string> {
+  const exp = Math.floor(Date.now() / 1000) + ttlSeconds
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(Deno.env.get('UNSUBSCRIBE_SECRET') ?? ''),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`zip|${sessionId}|${stripeProductId}|${exp}`))
+  const token = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+  const base = Deno.env.get('SUPABASE_URL') ?? ''
+  return `${base}/functions/v1/download-zip?s=${encodeURIComponent(sessionId)}&p=${encodeURIComponent(stripeProductId)}&e=${exp}&t=${token}`
+}
+
+// The public URL stored on a product row -> the object's path in audio-vault.
+function pathFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  const marker = '/storage/v1/object/public/audio-vault/'
+  const idx = url.indexOf(marker)
+  if (idx === -1) return null
+  try { return decodeURIComponent(url.slice(idx + marker.length).split('?')[0]) } catch { return url.slice(idx + marker.length).split('?')[0] }
+}
+
+// Works out which digital files a purchased product should deliver and builds
+// the download block for the confirmation email: a single signed link for a
+// one-file product, or ONE signed zip link for anything with more than one file.
 async function buildDownloadBlockForProduct(
   supabase: ReturnType<typeof createClient>,
-  product: { name?: string; metadata?: Record<string, string> } | null | undefined
+  product: { id?: string; name?: string; metadata?: Record<string, string> } | null | undefined,
+  sessionId: string
 ): Promise<{ title: string; files: { name: string; url: string }[] } | null> {
   const metadata = product?.metadata || {}
-  const filenames: string[] = []
-  if (metadata.file_count) {
-    const count = parseInt(metadata.file_count, 10)
-    for (let i = 0; i < count; i++) {
-      if (metadata[`file_${i}`]) filenames.push(metadata[`file_${i}`])
+
+  // The files a buyer gets come from the product's CURRENT files in the
+  // database, not the copy saved on the Stripe product when its Checkout ID
+  // was generated (that copy goes stale as soon as audio is replaced in the
+  // admin — two live albums ended up pointing at deleted files). Stripe's copy
+  // is only a fallback for a product with no database row. Same logic as
+  // secure-download (the post-payment page).
+  let filenames: string[] = []
+  let rowFound = false
+  if (product?.id) {
+    const { data: row } = await supabase
+      .from('products')
+      .select('download_files, tracklist_snippets, audio_preview_url')
+      .eq('stripe_product_id', product.id)
+      .maybeSingle()
+    if (row) {
+      rowFound = true
+      const dl = Array.isArray(row.download_files) ? row.download_files : []
+      const tr = Array.isArray(row.tracklist_snippets) ? row.tracklist_snippets : []
+      const rowItems = dl.length ? dl : tr
+      filenames = (rowItems.length ? rowItems.map((i: { url: string }) => pathFromUrl(i.url)) : [pathFromUrl(row.audio_preview_url)]).filter(Boolean) as string[]
     }
-  } else if (metadata.file) {
-    filenames.push(metadata.file)
+  }
+  if (!rowFound && filenames.length === 0) {
+    if (metadata.file_count) {
+      const count = parseInt(metadata.file_count, 10)
+      for (let i = 0; i < count; i++) {
+        if (metadata[`file_${i}`]) filenames.push(metadata[`file_${i}`])
+      }
+    } else if (metadata.file) {
+      filenames.push(metadata.file)
+    }
   }
 
   if (filenames.length === 0) return null
+
+  // More than one file: one .zip (assembled on the fly by download-zip), good
+  // for 7 days — an emailed link the buyer may open much later.
+  if (filenames.length > 1 && product?.id) {
+    const zipTitle = (product.name || 'Download').replace(/[^A-Za-z0-9._ -]/g, '_').trim() || 'Download'
+    return { title: product.name || 'Download', files: [{ name: `${zipTitle}.zip`, url: await buildZipUrl(sessionId, product.id, 60 * 60 * 24 * 7) }] }
+  }
 
   const files: { name: string; url: string }[] = []
   for (const path of filenames) {
@@ -297,7 +354,7 @@ async function sendOrderConfirmationEmail(
           ${block.files.map(f => `<p style="margin: 0.2rem 0;"><a href="${f.url}" style="color: #00ffcc;">${f.name}</a></p>`).join('')}
         </div>
       `).join('')}
-      <p style="font-size: 0.7rem; color: #888; margin-top: 0.5rem;">These links are good for 24 hours. Right-click (or tap and hold) a link and choose "Save Link As" / "Download Linked File" to save it.</p>
+      <p style="font-size: 0.7rem; color: #888; margin-top: 0.5rem;">Single-file links are good for 24 hours; album .zip links for 7 days. An album downloads as one .zip file — unzip it to get every track. Right-click (or tap and hold) a link and choose "Save Link As" / "Download Linked File" to save it.</p>
     </div>
   ` : ''
 
@@ -718,7 +775,7 @@ serve(async (req) => {
 
         lineRows.push({ title: product?.name || 'Item', quantity, amount: item.amount_total ?? 0 })
 
-        const downloadBlock = await buildDownloadBlockForProduct(supabase, product)
+        const downloadBlock = await buildDownloadBlockForProduct(supabase, product, session.id)
         if (downloadBlock) downloadBlocks.push(downloadBlock)
       }
     } catch (err) {

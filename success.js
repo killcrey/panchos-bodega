@@ -73,6 +73,7 @@ async function secureTheBag() {
       ${downloadsHTML}
       ${result.skippedCount > 0 ? `<p style="font-size: 0.75rem; color: #888; margin-top: 1rem;">${result.skippedCount} item${result.skippedCount === 1 ? '' : 's'} in this order ${result.skippedCount === 1 ? "doesn't" : "don't"} have a digital file — check your email receipt for details.</p>` : ''}
       <div class="download-instructions">
+        <p><strong>Albums</strong> download as one .zip file — unzip it to get every track. The same link is in your email receipt for 7 days.</p>
         <p><strong>Windows / Android:</strong> Right-click (or tap and hold) a button above and choose "Save Link As" / "Download Link" to save the file.</p>
         <p><strong>Mac (Safari):</strong> Right-click a button and choose "Download Linked File."</p>
         <p><strong>iPhone / iPad (Safari):</strong> Tap and hold a button, then choose "Download Linked File" — it saves to your Files app. If it opens a preview instead, use the Share icon and choose "Save to Files."</p>

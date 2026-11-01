@@ -424,6 +424,12 @@ entrypoint = "./functions/secure-download/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/secure-download/*.html" ]
 
+[functions.download-zip]
+enabled = true
+verify_jwt = false
+import_map = "./functions/download-zip/deno.json"
+entrypoint = "./functions/download-zip/index.ts"
+
 [functions.create-stripe-link]
 enabled = true
 verify_jwt = true
