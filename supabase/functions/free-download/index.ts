@@ -78,7 +78,21 @@ function customMessageBlockHTML(message: string | null | undefined): string {
   `
 }
 
-async function sendDownloadEmail(email: string, title: string, downloadUrl: string, customMessage?: string | null) {
+// Small centered logo at the top of every customer email — a PNG on purpose,
+// since the site's own logo files are WebP and some mail apps (Outlook desktop)
+// can't show WebP. Mirrors the same helper in stripe-webhook/index.ts.
+function emailLogoHTML(): string {
+  const base = Deno.env.get('SUPABASE_URL') ?? ''
+  return `<div style="text-align: center; margin: 0 0 1.5rem 0;"><img src="${base}/storage/v1/object/public/bodega-images/email-logo.png" alt="Panchos Bodega" width="180" style="display: inline-block; width: 180px; max-width: 60%; height: auto; border: 0;"></div>`
+}
+
+// The product's main photo, centered under the heading. Blank when it has none.
+function productPhotoHTML(url: string | null | undefined, title: string): string {
+  if (!url) return ''
+  return `<div style="text-align: center; margin: 1rem 0 1.25rem 0;"><img src="${url}" alt="${title.replace(/"/g, '&quot;')}" width="220" style="display: inline-block; width: 220px; max-width: 100%; height: auto; border: 0; border-radius: 4px;"></div>`
+}
+
+async function sendDownloadEmail(email: string, title: string, downloadUrl: string, customMessage?: string | null, coverUrl?: string | null) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
@@ -86,7 +100,9 @@ async function sendDownloadEmail(email: string, title: string, downloadUrl: stri
 
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="letter-spacing: 1px;">Thanks for grabbing "${title}"!</h2>
+      ${emailLogoHTML()}
+      <h2 style="letter-spacing: 1px; text-align: center;">Thanks for grabbing "${title}"!</h2>
+      ${productPhotoHTML(coverUrl, title)}
       <p>Here's your download link — it's good for the next 60 minutes:</p>
       <p style="margin: 1.5rem 0;">
         <a href="${downloadUrl}" style="display: inline-block; padding: 0.9rem 1.5rem; background: #000; color: #fff; text-decoration: none; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;">Download Now</a>
@@ -130,7 +146,7 @@ async function sendDownloadEmail(email: string, title: string, downloadUrl: stri
 // email every track's own signed link — the buyer downloading right now in
 // the browser still gets a single assembled zip (see below), this is just
 // the fallback for opening the email later or on another device.
-async function sendTrackListEmail(email: string, title: string, tracks: { title: string; url: string }[], customMessage?: string | null) {
+async function sendTrackListEmail(email: string, title: string, tracks: { title: string; url: string }[], customMessage?: string | null, coverUrl?: string | null) {
   const resendKey = Deno.env.get('RESEND_API_KEY')
   if (!resendKey) return
 
@@ -144,7 +160,9 @@ async function sendTrackListEmail(email: string, title: string, tracks: { title:
 
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
-      <h2 style="letter-spacing: 1px;">Thanks for grabbing "${title}"!</h2>
+      ${emailLogoHTML()}
+      <h2 style="letter-spacing: 1px; text-align: center;">Thanks for grabbing "${title}"!</h2>
+      ${productPhotoHTML(coverUrl, title)}
       <p>Your browser should already be downloading a zip of the full album. These individual track links are good for the next 60 minutes as a backup, or for opening on another device:</p>
       <div style="margin: 1.5rem 0;">${trackRows}</div>
       <p><strong>Windows / Android:</strong> Right-click (or tap and hold) a link and choose "Save Link As" / "Download Link."</p>
@@ -202,7 +220,7 @@ serve(async (req) => {
 
     const { data: product, error: productError } = await supabase
       .from('products')
-      .select('title, price_cents, audio_preview_url, tracklist_snippets, download_files, published')
+      .select('title, price_cents, audio_preview_url, tracklist_snippets, download_files, published, cover_art_url')
       .eq('id', productId)
       .single()
 
@@ -257,7 +275,7 @@ serve(async (req) => {
 
       if (error) throw error
 
-      await sendDownloadEmail(email, product.title || 'your download', data.signedUrl, siteSettings?.purchase_thank_you_message)
+      await sendDownloadEmail(email, product.title || 'your download', data.signedUrl, siteSettings?.purchase_thank_you_message, product.cover_art_url)
 
       return new Response(
         JSON.stringify({ downloadUrl: data.signedUrl }),
@@ -279,7 +297,7 @@ serve(async (req) => {
       if (error) throw error
       trackLinks.push({ title: items[i]?.title || items[i]?.name || `File ${i + 1}`, url: data.signedUrl })
     }
-    await sendTrackListEmail(email, product.title || 'your download', trackLinks, siteSettings?.purchase_thank_you_message)
+    await sendTrackListEmail(email, product.title || 'your download', trackLinks, siteSettings?.purchase_thank_you_message, product.cover_art_url)
 
     const zip = new JSZip()
     for (const path of targetFilenames) {

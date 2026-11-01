@@ -230,6 +230,14 @@ function pathFromUrl(url: string | null | undefined): string | null {
   try { return decodeURIComponent(url.slice(idx + marker.length).split('?')[0]) } catch { return url.slice(idx + marker.length).split('?')[0] }
 }
 
+// Small centered logo at the top of every customer email. A PNG on purpose —
+// the site's own logo files are WebP, which some mail apps (Outlook desktop)
+// can't show. Mirrors the same helper in free-download/index.ts.
+function emailLogoHTML(): string {
+  const base = Deno.env.get('SUPABASE_URL') ?? ''
+  return `<div style="text-align: center; margin: 0 0 1.5rem 0;"><img src="${base}/storage/v1/object/public/bodega-images/email-logo.png" alt="Panchos Bodega" width="180" style="display: inline-block; width: 180px; max-width: 60%; height: auto; border: 0;"></div>`
+}
+
 // Works out which digital files a purchased product should deliver and builds
 // the download block for the confirmation email: a single signed link for a
 // one-file product, or ONE signed zip link for anything with more than one file.
@@ -317,7 +325,7 @@ function customMessageBlockHTML(message: string | null | undefined): string {
 async function sendOrderConfirmationEmail(
   email: string,
   data: {
-    lineRows: { title: string; quantity: number; amount: number }[]
+    lineRows: { title: string; quantity: number; amount: number; image?: string | null }[]
     downloadBlocks: { title: string; files: { name: string; url: string }[] }[]
     subtotalCents: number | null
     taxCents: number | null
@@ -332,17 +340,20 @@ async function sendOrderConfirmationEmail(
 
   const unsubscribeUrl = await buildUnsubscribeUrl(email)
 
+  // Each item gets its product photo to the left of the title (when it has
+  // one). The totals rows below span both left columns (colspan) to line up.
   const itemRows = data.lineRows.map(row => `
     <tr>
-      <td style="padding: 0.5rem 0; color: #fff; font-size: 0.85rem;">${row.title}${row.quantity > 1 ? ` &times; ${row.quantity}` : ''}</td>
-      <td style="padding: 0.5rem 0; color: #ccc; font-size: 0.85rem; text-align: right; white-space: nowrap;">${money(row.amount)}</td>
+      <td style="padding: 0.5rem 0.9rem 0.5rem 0; width: 88px; vertical-align: middle;">${row.image ? `<img src="${row.image}" alt="" width="88" height="88" style="display: block; width: 88px; height: 88px; object-fit: cover; border-radius: 4px; border: 0;">` : ''}</td>
+      <td style="padding: 0.5rem 0; color: #fff; font-size: 0.85rem; vertical-align: middle;">${row.title}${row.quantity > 1 ? ` &times; ${row.quantity}` : ''}</td>
+      <td style="padding: 0.5rem 0; color: #ccc; font-size: 0.85rem; text-align: right; white-space: nowrap; vertical-align: middle;">${money(row.amount)}</td>
     </tr>
   `).join('')
 
   const totalsRows = [
-    data.shippingCents != null ? `<tr><td style="padding: 0.2rem 0; color: #999; font-size: 0.8rem;">Shipping</td><td style="padding: 0.2rem 0; color: #999; font-size: 0.8rem; text-align: right;">${money(data.shippingCents)}</td></tr>` : '',
-    data.taxCents != null ? `<tr><td style="padding: 0.2rem 0; color: #999; font-size: 0.8rem;">Tax</td><td style="padding: 0.2rem 0; color: #999; font-size: 0.8rem; text-align: right;">${money(data.taxCents)}</td></tr>` : '',
-    `<tr><td style="padding: 0.5rem 0 0 0; color: #fff; font-size: 0.95rem; font-weight: bold; border-top: 1px solid #444;">Total</td><td style="padding: 0.5rem 0 0 0; color: #00ffcc; font-size: 0.95rem; font-weight: bold; text-align: right; border-top: 1px solid #444;">${money(data.totalCents)}</td></tr>`,
+    data.shippingCents != null ? `<tr><td colspan="2" style="padding: 0.2rem 0; color: #999; font-size: 0.8rem;">Shipping</td><td style="padding: 0.2rem 0; color: #999; font-size: 0.8rem; text-align: right;">${money(data.shippingCents)}</td></tr>` : '',
+    data.taxCents != null ? `<tr><td colspan="2" style="padding: 0.2rem 0; color: #999; font-size: 0.8rem;">Tax</td><td style="padding: 0.2rem 0; color: #999; font-size: 0.8rem; text-align: right;">${money(data.taxCents)}</td></tr>` : '',
+    `<tr><td colspan="2" style="padding: 0.5rem 0 0 0; color: #fff; font-size: 0.95rem; font-weight: bold; border-top: 1px solid #444;">Total</td><td style="padding: 0.5rem 0 0 0; color: #00ffcc; font-size: 0.95rem; font-weight: bold; text-align: right; border-top: 1px solid #444;">${money(data.totalCents)}</td></tr>`,
   ].join('')
 
   const downloadsHTML = data.downloadBlocks.length > 0 ? `
@@ -373,6 +384,7 @@ async function sendOrderConfirmationEmail(
 
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #111; padding: 2rem; border: 1px solid #333;">
+      ${emailLogoHTML()}
       <h2 style="letter-spacing: 1px; color: #fff; margin: 0 0 0.25rem 0;">Order Confirmed</h2>
       <p style="color: #888; font-size: 0.8rem; margin: 0 0 1.5rem 0;">Thanks for shopping the Bodega.</p>
       <table style="width: 100%; border-collapse: collapse;">
@@ -418,6 +430,7 @@ async function sendTipThankYouEmail(email: string, amountCents: number, name: st
 
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #111; padding: 2rem; border: 1px solid #333;">
+      ${emailLogoHTML()}
       <h2 style="letter-spacing: 1px; color: #fff; margin: 0 0 0.25rem 0;">Thank You${name ? `, ${name}` : ''}</h2>
       <p style="color: #888; font-size: 0.8rem; margin: 0 0 1.5rem 0;">Your support keeps the Bodega lit.</p>
       <table style="width: 100%; border-collapse: collapse;">
@@ -471,6 +484,7 @@ async function sendProductPaymentEmail(email: string, amountCents: number, produ
 
   const html = `
     <div style="font-family: Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; background: #111; padding: 2rem; border: 1px solid #333;">
+      ${emailLogoHTML()}
       <h2 style="letter-spacing: 1px; color: #fff; margin: 0 0 0.25rem 0;">Payment Received</h2>
       <p style="color: #888; font-size: 0.8rem; margin: 0 0 1.5rem 0;">${productTitle}</p>
       <table style="width: 100%; border-collapse: collapse;">
@@ -739,7 +753,7 @@ serve(async (req) => {
       }
     }
 
-    const lineRows: { title: string; quantity: number; amount: number }[] = []
+    const lineRows: { title: string; quantity: number; amount: number; image?: string | null }[] = []
     const downloadBlocks: { title: string; files: { name: string; url: string }[] }[] = []
     // Populated when decrement_inventory reports 0 decremented for a
     // tracked-inventory line — the buyer already paid, but stock was
@@ -773,7 +787,18 @@ serve(async (req) => {
           }
         }
 
-        lineRows.push({ title: product?.name || 'Item', quantity, amount: item.amount_total ?? 0 })
+        // The product's main photo for the confirmation email. A failed lookup
+        // just means no photo — it must never get in the way of the receipt.
+        let image: string | null = null
+        if (product?.id) {
+          try {
+            const { data: photoRow } = await supabase.from('products').select('cover_art_url').eq('stripe_product_id', product.id).maybeSingle()
+            image = photoRow?.cover_art_url ?? null
+          } catch (err) {
+            console.error('Failed to look up product photo for', product.id, err)
+          }
+        }
+        lineRows.push({ title: product?.name || 'Item', quantity, amount: item.amount_total ?? 0, image })
 
         const downloadBlock = await buildDownloadBlockForProduct(supabase, product, session.id)
         if (downloadBlock) downloadBlocks.push(downloadBlock)
