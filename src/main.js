@@ -837,6 +837,16 @@ function isImageUrl(url) {
   return IMAGE_URL_EXTENSIONS.some(ext => clean.endsWith(ext))
 }
 
+// Track titles come from the uploaded file names ("10 - The Invisible Panchos -
+// Get The"), which already start with their own number, and the tracklist adds
+// its own "10." in front — so rows read "10. 10 - ...". Drops a leading 1-3
+// digit number plus its separator for display only; the stored title and the
+// player's own title are left alone. A title with no separator after the
+// number ("2 Chainz") or a 4-digit year ("1999 - ...") is not touched.
+function stripLeadingTrackNumber(title) {
+  return String(title || '').replace(/^\s*\d{1,3}\s*[-–—.:)]\s*/, '')
+}
+
 function computeProductFlags(product) {
   const isFree = (product.price_cents || 0) === 0
   const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
@@ -932,7 +942,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
           <ul style="list-style: none; padding: 0; margin: 0;">
             ${playableTracks.map((track) => `
               <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
-                <span class="play-icon" style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${track.title}
+                <span class="play-icon" style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${stripLeadingTrackNumber(track.title)}
               </li>
             `).join('')}
           </ul>
