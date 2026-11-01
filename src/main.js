@@ -41,6 +41,7 @@ async function loadAdminInventory() {
     return
   }
   adminProductsCache = products || []
+  renderFeaturedOrderAdmin()
 
   if (!products || products.length === 0) {
     listEl.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No products yet.</p>'
@@ -329,6 +330,85 @@ async function loadAdminServiceInquiries() {
 // The two admin-editable notes appended to automated emails — read by
 // stripe-webhook (order confirmation + tip thank-you) and free-download
 // (download email) at send time. Blank means "no note", not an error.
+// ---- FEATURED ORDER ---------------------------------------------------------
+// The Featured carousel follows products.featured_order (1 = first slide).
+// Products with no order yet (null) sort after every ordered one, and ties keep
+// the order the database returned them in (Array.sort is stable), so nothing
+// changes until the admin sets an order.
+function byFeaturedOrder(a, b) {
+  return (a.featured_order ?? 1e9) - (b.featured_order ?? 1e9)
+}
+
+// Pure so it can be tested on its own: returns the featured list in its new
+// order after moving one product up (-1) or down (+1), or null if it can't move.
+function moveInFeaturedList(sortedList, id, dir) {
+  const i = sortedList.findIndex(p => p.id === id)
+  const j = i + dir
+  if (i < 0 || j < 0 || j >= sortedList.length) return null
+  const next = sortedList.slice()
+  ;[next[i], next[j]] = [next[j], next[i]]
+  return next
+}
+
+function renderFeaturedOrderAdmin() {
+  const el = document.getElementById('featured-order-list')
+  if (!el) return
+  const list = adminProductsCache.filter(p => p.landing_slot === 'featured').sort(byFeaturedOrder)
+  if (list.length === 0) {
+    el.innerHTML = '<p style="font-size: 0.65rem; color: #888;">No products are set to Featured yet. Set a product\'s Landing Page Slot to Featured in its Edit window and it will show up here.</p>'
+    return
+  }
+  const esc = (str) => String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+  el.innerHTML = list.map((p, i) => `
+    <div class="inventory-item" data-id="${p.id}">
+      <div class="inventory-item-info">
+        <div class="inventory-item-title">${i + 1}. ${esc(p.title || 'Untitled')}</div>
+      </div>
+      <div class="inventory-item-actions">
+        <button type="button" class="inventory-edit-btn" data-dir="-1" ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
+        <button type="button" class="inventory-edit-btn" data-dir="1" ${i === list.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
+      </div>
+    </div>
+  `).join('')
+}
+
+async function moveFeatured(id, dir) {
+  const statusEl = document.getElementById('featured-order-status')
+  const say = (msg, color) => { statusEl.textContent = msg; statusEl.style.color = color }
+  const list = adminProductsCache.filter(p => p.landing_slot === 'featured').sort(byFeaturedOrder)
+  const next = moveInFeaturedList(list, id, dir)
+  if (!next) return
+  try {
+    say('Saving...', '#e8b923')
+    // Renumber the whole list 1..n (so products that had no order yet get one)
+    // and write only the rows whose number actually changed. Each update chains
+    // .select() and checks the row count — the "update lies by omission" rule.
+    const changes = next.map((p, i) => ({ p, order: i + 1 })).filter(({ p, order }) => p.featured_order !== order)
+    const results = await Promise.all(changes.map(({ p, order }) =>
+      supabase.from('products').update({ featured_order: order }).eq('id', p.id).select('id')
+    ))
+    const failed = results.find(r => r.error || !r.data || r.data.length !== 1)
+    if (failed) throw new Error(failed.error?.message || 'One of the changes did not save.')
+    changes.forEach(({ p, order }) => { p.featured_order = order })
+    renderFeaturedOrderAdmin()
+    say('Saved. Refresh the Featured page to see the new order.', '#00ffcc')
+  } catch (err) {
+    console.error('Featured order save failed:', err)
+    say(err.message || 'Could not save the new order.', '#ff4d4d')
+    await loadAdminInventory()
+  }
+}
+
+function initFeaturedOrderAdmin() {
+  const el = document.getElementById('featured-order-list')
+  if (!el) return
+  el.addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-dir]')
+    if (!btn || btn.disabled) return
+    moveFeatured(btn.closest('.inventory-item').getAttribute('data-id'), parseInt(btn.getAttribute('data-dir'), 10))
+  })
+}
+
 // ---- LOOK BOOK (admin) --------------------------------------------------
 // Keeps the newest LOOKBOOK_MAX photos: adding past the cap deletes the
 // oldest ones. Uploaded photos are resized small first (they only ever show
@@ -2666,6 +2746,7 @@ function initAdminPortal() {
   })
 
   initLookbookAdmin()
+  initFeaturedOrderAdmin()
 
   const settingsSaveBtn = document.getElementById('settings-save-btn')
   if (settingsSaveBtn) {
@@ -3167,7 +3248,7 @@ async function loadBodega() {
   // it in a public API response makes it discoverable by anyone, with no
   // relationship to the product's current (possibly since-changed) price.
   const { data: products, error } = await supabase.from('products').select(
-    'id, title, type, price_cents, cover_art_url, image_2_url, image_3_url, gallery_images, description, sizes, audio_preview_url, tracklist_snippets, download_files, category, published, coming_soon, inventory_count, weight_oz, domestic_shipping_cents, international_shipping_cents, printful_variant_map, landing_slot, slug, pricing_mode, offer_min_cents, offer_max_cents, created_at'
+    'id, title, type, price_cents, cover_art_url, image_2_url, image_3_url, gallery_images, description, sizes, audio_preview_url, tracklist_snippets, download_files, category, published, coming_soon, inventory_count, weight_oz, domestic_shipping_cents, international_shipping_cents, printful_variant_map, landing_slot, slug, pricing_mode, offer_min_cents, offer_max_cents, created_at, featured_order'
   ).eq('published', true)
 
   if (error) {
@@ -3805,7 +3886,7 @@ function renderLandingPage(products) {
   const landing = document.getElementById('landing-view')
   if (!landing) return
 
-  landingFeatured = products.filter(p => p.landing_slot === 'featured').slice(0, MAX_FEATURED_PRODUCTS)
+  landingFeatured = products.filter(p => p.landing_slot === 'featured').sort(byFeaturedOrder).slice(0, MAX_FEATURED_PRODUCTS)
   const latestRelease = products.find(p => p.landing_slot === 'latest_release') || null
   const panchoPick = products.find(p => p.landing_slot === 'pancho_pick') || null
   const landingSpotlight = products.filter(p => p.landing_slot === 'spotlight').slice(0, MAX_SPOTLIGHT_PRODUCTS)
@@ -3988,3 +4069,4 @@ if (!isAdminMode) {
   loadBodega()
   initEnterOverlay()
 }
+
