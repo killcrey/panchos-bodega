@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import Stripe from 'npm:stripe@^17'
 
 // Streams a product's files to the buyer as ONE .zip. Nothing is stored: the
 // zip is assembled on the fly from the audio-vault files and sent as it's
@@ -84,6 +85,22 @@ Deno.serve(async (req) => {
     if (!sid || !pid || !exp || !tok) return fail(400, 'This download link is incomplete.')
     if (!(Number(exp) > Date.now() / 1000)) return fail(410, 'This download link has expired. Open your order email or the order page again for a fresh one.')
     if (!safeEqual(await hmacHex(`zip|${sid}|${pid}|${exp}`), tok)) return fail(403, 'This download link is not valid.')
+
+    // A signed link outlives the moment it was issued (up to 7 days for the
+    // emailed one), so re-check the order on every download: a refunded or
+    // disputed payment must stop delivering files. Fails closed if Stripe can't
+    // be reached — better "try again" than handing files to an unverified order.
+    try {
+      const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY') ?? '', { timeout: 15000 })
+      const session = await stripe.checkout.sessions.retrieve(sid, { expand: ['payment_intent.latest_charge'] })
+      // deno-lint-ignore no-explicit-any
+      const charge = (session.payment_intent as any)?.latest_charge
+      if (session.payment_status !== 'paid') return fail(403, 'This order is not paid, so the download is not available.')
+      if (charge && (charge.refunded || charge.disputed)) return fail(403, 'This order was refunded or disputed, so the download is no longer available. Contact us if that is a mistake.')
+    } catch (err) {
+      console.error('download-zip: could not verify the order with Stripe:', err)
+      return fail(503, 'We could not verify your order just now. Please try the link again in a minute.')
+    }
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '')
     const { data: product } = await supabase
