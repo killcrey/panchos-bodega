@@ -847,6 +847,30 @@ function stripLeadingTrackNumber(title) {
   return String(title || '').replace(/^\s*\d{1,3}\s*[-–—.:)]\s*/, '')
 }
 
+// The player rows/mini-player show the song name with the artist on its own
+// line, so a file name that already starts with "The Invisible Panchos - " has
+// that prefix dropped for display (the artist is shown separately).
+const PLAYER_ARTIST = 'The Invisible Panchos'
+function cleanTrackTitle(title) {
+  const t = stripLeadingTrackNumber(title)
+  const prefix = new RegExp('^\\s*' + PLAYER_ARTIST + '\\s*[-–—:]\\s*', 'i')
+  return t.replace(prefix, '') || t
+}
+
+// Escapes text for use inside HTML text and double-quoted attributes.
+function escapeHtmlText(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+const PLAY_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11-6.86a1 1 0 0 0 0-1.72l-11-6.86A1 1 0 0 0 8 5.14z"/></svg>'
+const PAUSE_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4.5" width="4.2" height="15" rx="1"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1"/></svg>'
+const PREV_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="2.4" height="14" rx="1"/><path d="M19 6.1v11.8a1 1 0 0 1-1.55.83L9.3 12.83a1 1 0 0 1 0-1.66l8.15-5.9A1 1 0 0 1 19 6.1z"/></svg>'
+const NEXT_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="16.6" y="5" width="2.4" height="14" rx="1"/><path d="M5 6.1v11.8a1 1 0 0 0 1.55.83l8.15-5.9a1 1 0 0 0 0-1.66l-8.15-5.9A1 1 0 0 0 5 6.1z"/></svg>'
+
 function computeProductFlags(product) {
   const isFree = (product.price_cents || 0) === 0
   const isSoldOut = product.inventory_count != null && product.inventory_count <= 0
@@ -931,18 +955,28 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
           : [])
   )
 
+  // Every play trigger carries what the player needs to show it: the song name,
+  // the artist line, the album it belongs to, and the cover art.
+  const playerCover = product.cover_art_url || ''
+  const playerAlbum = product.title || ''
+  const triggerAttrs = (url, name, track) =>
+    `data-url="${escapeHtmlText(url)}" data-title="${escapeHtmlText(track ? `${playerAlbum} — ${track}` : playerAlbum)}" data-name="${escapeHtmlText(name)}" data-sub="${escapeHtmlText(PLAYER_ARTIST)}" data-album="${escapeHtmlText(playerAlbum)}" data-cover="${escapeHtmlText(playerCover)}"`
+
   if (playableTracks.length > 1) {
     audioHTML = `
-      <div class="album-player-container" style="background: #111; padding: 0.5rem; border-radius: 6px; margin-bottom: 0.3rem; border: 1px solid #333;">
-        <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title} — ${playableTracks[0].title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.5rem; padding: 0.4rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
-          <span class="play-icon">▶</span> Play Preview
-        </button>
-        <p style="font-size: 0.5rem; color: #888; margin: 0 0 0.4rem 0; text-transform: uppercase; letter-spacing: 1px;">Preview Tracklist</p>
-        <div class="tracklist-slider" style="max-height: 280px; overflow-y: auto; padding-right: 5px;">
-          <ul style="list-style: none; padding: 0; margin: 0;">
+      <div class="album-player-container">
+        <div class="album-actions">
+          <span class="album-label">Preview · ${playableTracks.length} tracks</span>
+          <button type="button" class="card-play-btn album-big-play" aria-label="Play preview" ${triggerAttrs(playableTracks[0].url, cleanTrackTitle(playableTracks[0].title), playableTracks[0].title)}>
+            <span class="play-icon">${PLAY_ICON_SVG}</span>
+          </button>
+        </div>
+        <div class="tracklist-slider">
+          <ul>
             ${playableTracks.map((track) => `
-              <li class="track-item" data-url="${track.url}" data-title="${product.title} — ${track.title}" style="font-size: 0.55rem; color: #ccc; margin-bottom: 0.2rem; cursor: pointer; padding: 4px; background: #222; border-radius: 3px; display: flex; align-items: center; gap: 6px; transition: background 0.2s;">
-                <span class="play-icon" style="color: #00ffcc; font-size: 0.45rem;">▶</span> ${track.trackNumber}. ${stripLeadingTrackNumber(track.title)}
+              <li class="track-item" ${triggerAttrs(track.url, cleanTrackTitle(track.title), track.title)}>
+                <span class="track-num"><span class="track-n">${track.trackNumber}</span><span class="track-eq"><i></i><i></i><i></i></span></span>
+                <span class="track-meta"><span class="track-name">${escapeHtmlText(cleanTrackTitle(track.title))}</span><span class="track-artist">${escapeHtmlText(PLAYER_ARTIST)}</span></span>
               </li>
             `).join('')}
           </ul>
@@ -951,14 +985,14 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
     `
   } else if (playableTracks.length === 1) {
     audioHTML = `
-      <button class="card-play-btn" data-url="${playableTracks[0].url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
-        <span class="play-icon">▶</span> Play Preview
+      <button type="button" class="card-play-btn preview-pill" ${triggerAttrs(playableTracks[0].url, playerAlbum, '')}>
+        <span class="play-icon">${PLAY_ICON_SVG}</span> Play Preview
       </button>
     `
   } else if (showAudioPreview && isAudioUrl(product.audio_preview_url)) {
     audioHTML = `
-      <button class="card-play-btn" data-url="${product.audio_preview_url}" data-title="${product.title}" style="display: flex; align-items: center; justify-content: center; gap: 0.3rem; width: 100%; margin-bottom: 0.3rem; padding: 0.5rem; background: rgba(0, 255, 204, 0.1); color: #00ffcc; border: 1px solid #00ffcc; border-radius: 4px; font-size: 0.55rem; font-weight: bold; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;">
-        <span class="play-icon">▶</span> Play Preview
+      <button type="button" class="card-play-btn preview-pill" ${triggerAttrs(product.audio_preview_url, playerAlbum, '')}>
+        <span class="play-icon">${PLAY_ICON_SVG}</span> Play Preview
       </button>
     `
   }
@@ -1077,6 +1111,21 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
   const playTriggers = container.querySelectorAll('.card-play-btn, .track-item')
   playTriggers.forEach(trigger => {
     trigger.addEventListener('click', async () => {
+      // The album's big round play button drives the track rows (so the
+      // highlighted row, the mini-player and prev/next all stay in sync):
+      // it pauses/resumes if this album is already playing, else starts track 1.
+      if (trigger.classList.contains('album-big-play')) {
+        const rows = [...trigger.closest('.album-player-container').querySelectorAll('.track-item')]
+        if (currentTrack && rows.some(r => r.dataset.url === currentTrack.url)) toggleGlobalPlayback()
+        else if (rows[0]) rows[0].click()
+        return
+      }
+      // Tapping the track that's already loaded pauses/resumes it instead of
+      // restarting it from the top.
+      if (currentTrack && currentTrack.url === trigger.dataset.url && globalAudio.src && !globalAudio.error) {
+        toggleGlobalPlayback()
+        return
+      }
       // Plain opacity dimming, not a text-content swap — these triggers
       // contain a styled child <span> icon, and setting .textContent to
       // "restore" it afterward would flatten that markup permanently.
@@ -1085,11 +1134,11 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
       trigger.style.opacity = '0.6'
 
       try {
-        const { data, error } = await supabase.functions.invoke('get-playback-url', {
-          body: { url: trigger.getAttribute('data-url') }
-        })
-        if (error || !data?.url) throw error || new Error('No playback URL returned.')
-        playGlobalTrack(data.url, trigger.getAttribute('data-title'), trigger)
+        // A track row plays within its album's list, so next/previous and
+        // auto-advance walk the whole tracklist.
+        const album = trigger.classList.contains('track-item') ? trigger.closest('.album-player-container') : null
+        const queue = album ? [...album.querySelectorAll('.track-item')].map(metaFromEl) : [metaFromEl(trigger)]
+        await startTrack(metaFromEl(trigger), queue)
       } catch (err) {
         console.error('Failed to get playback URL:', err)
       } finally {
@@ -1098,6 +1147,8 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
       }
     })
   })
+  // A freshly rendered page may contain the track that's already playing.
+  refreshPlayStateUI()
 
   // Services get their own two-button wiring — REQUEST A QUOTE always opens the
   // quote-request inquiry, PAYMENT always starts the flat $25 deposit
@@ -3098,112 +3149,299 @@ function initAdminPortal() {
 
 // GLOBAL AUDIO ENGINE
 // A single shared Audio() instance drives every "Play" trigger on the page,
-// so only one preview can ever be playing at once.
+// so only one preview can ever be playing at once. The UI around it is a
+// floating mini-player plus a full-screen "Now Playing" sheet (#global-audio-player
+// / #now-playing in index.html), the way streaming apps do it.
 const globalAudio = new Audio()
-let activePlayTrigger = null
+// What's loaded (read off a trigger's data-* attributes) and the list it came
+// from. Kept as plain data, not DOM nodes, so prev/next/auto-advance and the
+// player keep working even after the visitor navigates and the tracklist that
+// started the music is gone from the page.
+let currentTrack = null
+let playQueue = []
+const coverColorCache = new Map()
 
-function setTriggerPlayingState(el, isPlaying) {
-  if (!el) return
-  const icon = el.querySelector('.play-icon')
-  if (icon) icon.textContent = isPlaying ? '❚❚' : '▶'
+function formatTime(sec) {
+  if (!isFinite(sec) || sec < 0) sec = 0
+  return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
+}
 
-  if (el.classList.contains('track-item')) {
-    el.style.background = isPlaying ? '#333' : '#222'
-    el.style.color = isPlaying ? '#fff' : '#ccc'
-  } else if (el.classList.contains('card-play-btn')) {
-    el.style.background = isPlaying ? 'rgba(0, 255, 204, 0.3)' : 'rgba(0, 255, 204, 0.1)'
+function metaFromEl(el) {
+  return {
+    url: el.dataset.url,
+    title: el.dataset.title || '',
+    name: el.dataset.name || el.dataset.title || '',
+    sub: el.dataset.sub || '',
+    album: el.dataset.album || '',
+    cover: el.dataset.cover || ''
   }
 }
 
-function playGlobalTrack(url, title, triggerEl) {
-  if (activePlayTrigger && activePlayTrigger !== triggerEl) {
-    setTriggerPlayingState(activePlayTrigger, false)
-  }
-  activePlayTrigger = triggerEl
+function toggleGlobalPlayback() {
+  if (globalAudio.paused) globalAudio.play().catch(() => {})
+  else globalAudio.pause()
+}
 
+// Fetches a fresh signed URL (audio-vault is private) and plays `meta`;
+// `queue` is the list prev/next/auto-advance walk through.
+async function startTrack(meta, queue) {
+  const { data, error } = await supabase.functions.invoke('get-playback-url', {
+    body: { url: meta.url }
+  })
+  if (error || !data?.url) throw error || new Error('No playback URL returned.')
+  playQueue = queue && queue.length ? queue : [meta]
+  currentTrack = meta
+  loadTrackUI(meta)
+  globalAudio.src = data.url
+  globalAudio.currentTime = 0
+  globalAudio.play().catch(() => {})
+  refreshPlayStateUI()
+}
+
+// Moves one track forward/back in the queue. Returns false when there's
+// nowhere to go (single preview, or the first/last track).
+async function stepTrack(delta) {
+  if (!currentTrack || playQueue.length < 2) return false
+  const index = playQueue.findIndex(t => t.url === currentTrack.url)
+  const next = index >= 0 ? playQueue[index + delta] : null
+  if (!next) return false
+  try {
+    await startTrack(next, playQueue)
+  } catch (err) {
+    console.error('Failed to get playback URL:', err)
+  }
+  return true
+}
+
+// Keeps every piece of play/pause UI in step with the audio: the highlighted
+// track row (animated bars while playing), the album/pill play buttons, both
+// play buttons in the players, and whether prev/next have anywhere to go.
+function refreshPlayStateUI() {
+  const playing = !globalAudio.paused
+  const url = currentTrack ? currentTrack.url : null
+
+  document.querySelectorAll('.track-item').forEach(row => {
+    const active = !!url && row.dataset.url === url
+    row.classList.toggle('is-active', active)
+    row.classList.toggle('is-playing', active && playing)
+  })
+
+  document.querySelectorAll('.card-play-btn').forEach(btn => {
+    let on = false
+    if (playing && url) {
+      on = btn.classList.contains('album-big-play')
+        ? [...btn.closest('.album-player-container').querySelectorAll('.track-item')].some(r => r.dataset.url === url)
+        : btn.dataset.url === url
+    }
+    btn.classList.toggle('is-playing', on)
+    const icon = btn.querySelector('.play-icon')
+    if (icon) icon.innerHTML = on ? PAUSE_ICON_SVG : PLAY_ICON_SVG
+  })
+
+  const icon = playing ? PAUSE_ICON_SVG : PLAY_ICON_SVG
+  const gapToggle = document.getElementById('gap-toggle')
+  const npToggle = document.getElementById('np-toggle')
+  if (gapToggle) gapToggle.innerHTML = icon
+  if (npToggle) npToggle.innerHTML = icon
+
+  const index = currentTrack ? playQueue.findIndex(t => t.url === currentTrack.url) : -1
+  const prev = document.getElementById('np-prev')
+  const next = document.getElementById('np-next')
+  if (prev) prev.disabled = !(index > 0)
+  if (next) next.disabled = !(index >= 0 && index < playQueue.length - 1)
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = currentTrack ? (playing ? 'playing' : 'paused') : 'none'
+  }
+}
+
+// Average colour of the cover (sampled on a tiny canvas), darkened so white text
+// stays readable — tints the mini-player and the top of the Now Playing sheet.
+function applyCoverColor(url) {
   const player = document.getElementById('global-audio-player')
-  document.getElementById('gap-title').textContent = title
+  const sheet = document.getElementById('now-playing')
+  const set = (rgb) => {
+    if (rgb) {
+      player.style.setProperty('--gap-bg', rgb)
+      sheet.style.setProperty('--np-color', rgb)
+    } else {
+      player.style.removeProperty('--gap-bg')
+      sheet.style.removeProperty('--np-color')
+    }
+  }
+  if (!url) { set(null); return }
+  if (coverColorCache.has(url)) { set(coverColorCache.get(url)); return }
+  set(null)
+  const img = new Image()
+  img.crossOrigin = 'anonymous'
+  img.onload = () => {
+    try {
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 16
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0, 16, 16)
+      const px = ctx.getImageData(0, 0, 16, 16).data
+      let r = 0, g = 0, b = 0, n = 0
+      for (let i = 0; i < px.length; i += 4) {
+        if (px[i + 3] < 200) continue
+        r += px[i]; g += px[i + 1]; b += px[i + 2]; n++
+      }
+      if (!n) return
+      r /= n; g /= n; b /= n
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b
+      const k = lum > 85 ? 85 / lum : 1
+      const rgb = `rgb(${Math.round(r * k)}, ${Math.round(g * k)}, ${Math.round(b * k)})`
+      coverColorCache.set(url, rgb)
+      if (currentTrack && currentTrack.cover === url) set(rgb)
+    } catch (err) {
+      // A cover that can't be sampled (CORS, decode error) just keeps the default dark look.
+    }
+  }
+  img.src = url
+}
+
+// Puts the track's name/artist/cover into the mini-player and the Now Playing
+// sheet, and hands the same to the phone's lock screen / headset controls.
+function loadTrackUI(meta) {
+  const player = document.getElementById('global-audio-player')
+  document.getElementById('gap-title').textContent = meta.name
+  document.getElementById('gap-sub').textContent = meta.sub
+  document.getElementById('np-title').textContent = meta.name
+  document.getElementById('np-sub').textContent = meta.sub
+  document.getElementById('np-album').textContent = meta.album
+  ;['gap-cover', 'np-cover'].forEach(id => {
+    const img = document.getElementById(id)
+    if (meta.cover) {
+      img.src = meta.cover
+      img.alt = meta.album
+      img.hidden = false
+    } else {
+      img.hidden = true
+    }
+  })
   player.style.display = 'flex'
   document.body.classList.add('audio-player-active')
+  applyCoverColor(meta.cover)
 
-  globalAudio.src = url
-  globalAudio.currentTime = 0
-  globalAudio.play()
-}
-
-// When a track in an album's preview tracklist finishes, move on to the next
-// one — without this the player simply stopped after track 1 (the "Play
-// Preview" button starts track 1), so listeners only ever heard the first song
-// unless they noticed the small tracklist and clicked each track themselves.
-// The play button is matched to its track by URL. Single-track previews and
-// the last track of an album have nothing after them, so playback just ends.
-function playNextAlbumTrack() {
-  const current = activePlayTrigger
-  const album = current && current.closest('.album-player-container')
-  if (!album) return
-  const items = [...album.querySelectorAll('.track-item')]
-  const index = current.classList.contains('track-item')
-    ? items.indexOf(current)
-    : items.findIndex(t => t.getAttribute('data-url') === current.getAttribute('data-url'))
-  const next = index >= 0 ? items[index + 1] : null
-  if (!next) return
-  // Keep the playing track in view inside the tracklist's own scroll box.
-  const slider = album.querySelector('.tracklist-slider')
-  if (slider) slider.scrollTop += next.getBoundingClientRect().top - slider.getBoundingClientRect().top - 4
-  next.click()
+  if ('mediaSession' in navigator && window.MediaMetadata) {
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: meta.name,
+        artist: meta.sub,
+        album: meta.album,
+        artwork: meta.cover ? [{ src: meta.cover }] : []
+      })
+    } catch (err) { /* lock-screen art is a nicety, never worth breaking playback */ }
+  }
 }
 
 function initGlobalAudioPlayer() {
   const player = document.getElementById('global-audio-player')
-  const toggleBtn = document.getElementById('gap-toggle')
+  const sheet = document.getElementById('now-playing')
   const seekBar = document.getElementById('gap-seek')
-  const closeBtn = document.getElementById('gap-close')
+  const fill = document.getElementById('gap-progress-fill')
+  const elapsedEl = document.getElementById('np-elapsed')
+  const remainingEl = document.getElementById('np-remaining')
+  let dragging = false
 
-  toggleBtn.addEventListener('click', () => {
-    if (globalAudio.paused) {
-      globalAudio.play()
-    } else {
-      globalAudio.pause()
+  document.getElementById('np-prev').innerHTML = PREV_ICON_SVG
+  document.getElementById('np-next').innerHTML = NEXT_ICON_SVG
+  refreshPlayStateUI()
+
+  const openSheet = () => {
+    if (!currentTrack) return
+    sheet.classList.add('open')
+    sheet.setAttribute('aria-hidden', 'false')
+    document.body.classList.add('np-open')
+  }
+  const closeSheet = () => {
+    sheet.classList.remove('open')
+    sheet.setAttribute('aria-hidden', 'true')
+    document.body.classList.remove('np-open')
+  }
+
+  const showProgress = () => {
+    const d = globalAudio.duration
+    const t = globalAudio.currentTime
+    const pct = d > 0 && isFinite(d) ? (t / d) * 100 : 0
+    if (!dragging) {
+      seekBar.value = pct
+      seekBar.style.setProperty('--pct', pct + '%')
     }
+    fill.style.width = pct + '%'
+    elapsedEl.textContent = formatTime(t)
+    remainingEl.textContent = d > 0 && isFinite(d) ? '-' + formatTime(d - t) : '0:00'
+  }
+
+  document.getElementById('gap-toggle').addEventListener('click', toggleGlobalPlayback)
+  document.getElementById('np-toggle').addEventListener('click', toggleGlobalPlayback)
+  document.getElementById('np-next').addEventListener('click', () => stepTrack(1))
+  // Like every player: a second or two in, "previous" restarts the song; near
+  // the start it goes to the track before.
+  const goPrevious = async () => {
+    if (globalAudio.currentTime > 3 || !(await stepTrack(-1))) globalAudio.currentTime = 0
+  }
+  document.getElementById('np-prev').addEventListener('click', goPrevious)
+
+  const gapMain = document.getElementById('gap-main')
+  gapMain.addEventListener('click', openSheet)
+  gapMain.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet() }
+  })
+  document.getElementById('np-collapse').addEventListener('click', closeSheet)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet()
   })
 
-  globalAudio.addEventListener('play', () => {
-    toggleBtn.textContent = '❚❚'
-    setTriggerPlayingState(activePlayTrigger, true)
+  globalAudio.addEventListener('play', refreshPlayStateUI)
+  globalAudio.addEventListener('pause', refreshPlayStateUI)
+  globalAudio.addEventListener('timeupdate', showProgress)
+  globalAudio.addEventListener('loadedmetadata', showProgress)
+
+  globalAudio.addEventListener('ended', async () => {
+    showProgress()
+    refreshPlayStateUI()
+    await stepTrack(1)
   })
 
-  globalAudio.addEventListener('pause', () => {
-    toggleBtn.textContent = '▶'
-    setTriggerPlayingState(activePlayTrigger, false)
-  })
-
-  globalAudio.addEventListener('timeupdate', () => {
-    if (!isNaN(globalAudio.duration) && globalAudio.duration > 0) {
-      seekBar.value = (globalAudio.currentTime / globalAudio.duration) * 100
-    }
-  })
-
-  globalAudio.addEventListener('ended', () => {
-    seekBar.value = 0
-    setTriggerPlayingState(activePlayTrigger, false)
-    playNextAlbumTrack()
-  })
-
+  seekBar.addEventListener('pointerdown', () => { dragging = true })
+  seekBar.addEventListener('pointerup', () => { dragging = false })
+  seekBar.addEventListener('pointercancel', () => { dragging = false })
   seekBar.addEventListener('input', () => {
+    seekBar.style.setProperty('--pct', seekBar.value + '%')
     if (!isNaN(globalAudio.duration) && globalAudio.duration > 0) {
       globalAudio.currentTime = (seekBar.value / 100) * globalAudio.duration
     }
   })
 
-  closeBtn.addEventListener('click', () => {
+  document.getElementById('gap-close').addEventListener('click', () => {
     globalAudio.pause()
     globalAudio.currentTime = 0
     seekBar.value = 0
+    seekBar.style.setProperty('--pct', '0%')
+    fill.style.width = '0'
     player.style.display = 'none'
     document.body.classList.remove('audio-player-active')
-    setTriggerPlayingState(activePlayTrigger, false)
-    activePlayTrigger = null
+    closeSheet()
+    currentTrack = null
+    playQueue = []
+    if ('mediaSession' in navigator) navigator.mediaSession.metadata = null
+    refreshPlayStateUI()
   })
+
+  // Lock screen / headphones / car controls.
+  if ('mediaSession' in navigator) {
+    const handlers = {
+      play: () => globalAudio.play().catch(() => {}),
+      pause: () => globalAudio.pause(),
+      previoustrack: goPrevious,
+      nexttrack: () => stepTrack(1),
+      seekto: (d) => { if (d && typeof d.seekTime === 'number') globalAudio.currentTime = d.seekTime }
+    }
+    Object.entries(handlers).forEach(([action, fn]) => {
+      try { navigator.mediaSession.setActionHandler(action, fn) } catch (err) { /* not supported here */ }
+    })
+  }
 }
 
 initGlobalAudioPlayer()
