@@ -207,9 +207,9 @@ function drawStoryCard(meta, cover) {
   ctx.fillRect(0, 0, STORY_W, STORY_H)
 
   const names = displayNames(meta)
-  const coverSize = 800
+  const coverSize = 740
   const coverX = (STORY_W - coverSize) / 2
-  const coverY = 270
+  const coverY = 260
   ctx.save()
   ctx.shadowColor = 'rgba(0, 0, 0, 0.55)'
   ctx.shadowBlur = 60
@@ -251,7 +251,7 @@ function drawStoryCard(meta, cover) {
     ctx.fillText(fitLine(ctx, `from ${names.album}`, 900), STORY_W / 2, y)
   }
 
-  const baseY = 1650
+  const baseY = 1570
   if (STORY_TAGLINE) {
     ctx.font = `800 34px ${font}`
     ctx.fillStyle = '#00ffcc'
@@ -280,6 +280,11 @@ async function shareStoryImage(meta) {
   const storyBtn = document.getElementById('share-story-btn')
   storyBtn.disabled = true
   storyBtn.textContent = 'Making image…'
+  // Instagram takes the picture but not a link, so the fan adds the link with
+  // its Link sticker — copy it now, while the tap still counts as a user
+  // gesture (Safari drops clipboard access once the image has been made).
+  const linkCopied = copyText(meta.url)
+  const linkTip = 'Link copied — add it with a Link sticker'
   try {
     let cover = await loadCover(meta.cover)
     let blob
@@ -296,6 +301,7 @@ async function shareStoryImage(meta) {
       try {
         await navigator.share({ files: [file], title: meta.name })
         closeMenu()
+        if (await linkCopied) showToast(linkTip)
         return
       } catch (err) {
         if (err && err.name === 'AbortError') return
@@ -311,7 +317,7 @@ async function shareStoryImage(meta) {
     a.click()
     a.remove()
     setTimeout(() => URL.revokeObjectURL(href), 10000)
-    showToast('Image saved — add it to your Story')
+    showToast((await linkCopied) ? 'Image saved · link copied — add it with a Link sticker' : 'Image saved — add it to your Story')
     closeMenu()
   } catch (err) {
     console.error('Story image failed:', err)
