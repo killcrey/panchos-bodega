@@ -4265,6 +4265,11 @@ function initEnterOverlay() {
   const enterBtn = document.getElementById('enter-btn')
   if (!overlay || !enterBtn) return
 
+  // A link straight to a product or song (/products/<slug>/...) goes right to
+  // it — the gate is only the front door of the main address. Counts as having
+  // entered, so going Home or refreshing in that session doesn't show it either.
+  if (parseProductPath()) sessionStorage.setItem('bodegaEntered', 'true')
+
   if (sessionStorage.getItem('bodegaEntered') !== 'true') {
     overlay.style.display = 'flex'
     document.body.classList.add('overlay-open')
