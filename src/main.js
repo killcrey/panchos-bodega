@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { loadStripe } from '@stripe/stripe-js'
 import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasPhysicalItems, isUpchargeSize, SIZE_UPCHARGE_CENTS } from './cart.js'
+import { PLAYER_ARTIST, isAudioUrl, slugify, getPlayableTracks, findTrackBySlug, productPath, trackPath, trackMeta } from './tracks.js'
+import { SHARE_ICON_SVG, openShareMenu, initShareMenu } from './share.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -796,12 +798,6 @@ async function loadAdminOrders() {
 // existed can't blow out the product card either.
 const MAX_DESCRIPTION_LENGTH = 400
 
-// Mirrors the backfill regex in the products_slug migration, so an admin
-// typing a title sees the same slug the DB would have generated for it.
-function slugify(text) {
-  return (text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-}
-
 // Auto-fills a slug field from its title field until the admin edits the
 // slug directly — same "don't fight what the user just typed" pattern as
 // the printful-variant/size fields elsewhere in these forms.
@@ -822,14 +818,7 @@ function wireSlugAutofill(titleInputId, slugInputId) {
   })
 }
 
-const AUDIO_URL_EXTENSIONS = ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac']
 const IMAGE_URL_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg']
-
-function isAudioUrl(url) {
-  if (!url) return false
-  const clean = url.split('?')[0].toLowerCase()
-  return AUDIO_URL_EXTENSIONS.some(ext => clean.endsWith(ext))
-}
 
 function isImageUrl(url) {
   if (!url) return false
@@ -837,25 +826,8 @@ function isImageUrl(url) {
   return IMAGE_URL_EXTENSIONS.some(ext => clean.endsWith(ext))
 }
 
-// Track titles come from the uploaded file names ("10 - The Invisible Panchos -
-// Get The"), which already start with their own number, and the tracklist adds
-// its own "10." in front — so rows read "10. 10 - ...". Drops a leading 1-3
-// digit number plus its separator for display only; the stored title and the
-// player's own title are left alone. A title with no separator after the
-// number ("2 Chainz") or a 4-digit year ("1999 - ...") is not touched.
-function stripLeadingTrackNumber(title) {
-  return String(title || '').replace(/^\s*\d{1,3}\s*[-–—.:)]\s*/, '')
-}
-
-// The player rows/mini-player show the song name with the artist on its own
-// line, so a file name that already starts with "The Invisible Panchos - " has
-// that prefix dropped for display (the artist is shown separately).
-const PLAYER_ARTIST = 'The Invisible Panchos'
-function cleanTrackTitle(title) {
-  const t = stripLeadingTrackNumber(title)
-  const prefix = new RegExp('^\\s*' + PLAYER_ARTIST + '\\s*[-–—:]\\s*', 'i')
-  return t.replace(prefix, '') || t
-}
+// Track naming (stripLeadingTrackNumber / cleanTrackTitle / PLAYER_ARTIST) and
+// the per-track URL slugs live in ./tracks.js, shared with the build-time prerender.
 
 // Escapes text for use inside HTML text and double-quoted attributes.
 function escapeHtmlText(value) {
@@ -945,55 +917,56 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
 
   // Card no longer plays audio at all — preview belongs on the product page.
   let audioHTML = ''
-  const playableTracks = !showAudioPreview ? [] : (
-    (product.tracklist_snippets && product.tracklist_snippets.length > 0)
-      ? [...product.tracklist_snippets].sort((a, b) => (a.trackNumber || 0) - (b.trackNumber || 0))
-      : (Array.isArray(product.download_files)
-          ? product.download_files
-              .filter(f => isAudioUrl(f.url))
-              .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
-          : [])
-  )
+  const playableTracks = !showAudioPreview ? [] : getPlayableTracks(product)
 
   // Every play trigger carries what the player needs to show it: the song name,
-  // the artist line, the album it belongs to, and the cover art.
+  // the artist line, the album it belongs to, and the cover art — plus the URL
+  // to share for it (a track's own page, or the product page for a single/album).
   const playerCover = product.cover_art_url || ''
   const playerAlbum = product.title || ''
-  const triggerAttrs = (url, name, track) =>
-    `data-url="${escapeHtmlText(url)}" data-title="${escapeHtmlText(track ? `${playerAlbum} — ${track}` : playerAlbum)}" data-name="${escapeHtmlText(name)}" data-sub="${escapeHtmlText(PLAYER_ARTIST)}" data-album="${escapeHtmlText(playerAlbum)}" data-cover="${escapeHtmlText(playerCover)}"`
+  const triggerAttrs = (url, name, track, sharePath) =>
+    `data-url="${escapeHtmlText(url)}" data-title="${escapeHtmlText(track ? `${playerAlbum} — ${track}` : playerAlbum)}" data-name="${escapeHtmlText(name)}" data-sub="${escapeHtmlText(PLAYER_ARTIST)}" data-album="${escapeHtmlText(playerAlbum)}" data-cover="${escapeHtmlText(playerCover)}"` +
+    (sharePath ? ` data-share-url="${escapeHtmlText(SITE_URL + sharePath)}"` : '')
+  // A product with no slug has no page to link to, so it gets no share button.
+  const shareBtn = (label, extraAttrs = '') => product.slug
+    ? `<button type="button" class="share-btn" aria-label="${escapeHtmlText(label)}" ${extraAttrs}>${SHARE_ICON_SVG}</button>`
+    : ''
+  const productSharePath = product.slug ? productPath(product.slug) : ''
 
   if (playableTracks.length > 1) {
     audioHTML = `
       <div class="album-player-container">
         <div class="album-actions">
           <span class="album-label">Preview · ${playableTracks.length} tracks</span>
-          <button type="button" class="card-play-btn album-big-play" aria-label="Play preview" ${triggerAttrs(playableTracks[0].url, cleanTrackTitle(playableTracks[0].title), playableTracks[0].title)}>
-            <span class="play-icon">${PLAY_ICON_SVG}</span>
-          </button>
+          <span class="album-actions-right">
+            ${shareBtn(`Share ${playerAlbum}`, `data-share-url="${escapeHtmlText(SITE_URL + productSharePath)}" data-name="${escapeHtmlText(playerAlbum)}" data-album="" data-cover="${escapeHtmlText(playerCover)}"`)}
+            <button type="button" class="card-play-btn album-big-play" aria-label="Play preview" ${triggerAttrs(playableTracks[0].url, playableTracks[0].name, playableTracks[0].title)}>
+              <span class="play-icon">${PLAY_ICON_SVG}</span>
+            </button>
+          </span>
         </div>
         <div class="tracklist-slider">
           <ul>
             ${playableTracks.map((track) => `
-              <li class="track-item" ${triggerAttrs(track.url, cleanTrackTitle(track.title), track.title)}>
+              <li class="track-item" data-track-slug="${escapeHtmlText(track.slug)}" ${triggerAttrs(track.url, track.name, track.title, product.slug ? trackPath(product.slug, track.slug) : '')}>
                 <span class="track-num"><span class="track-n">${track.trackNumber}</span><span class="track-eq"><i></i><i></i><i></i></span></span>
-                <span class="track-meta"><span class="track-name">${escapeHtmlText(cleanTrackTitle(track.title))}</span><span class="track-artist">${escapeHtmlText(PLAYER_ARTIST)}</span></span>
+                <span class="track-meta"><span class="track-name">${escapeHtmlText(track.name)}</span><span class="track-artist">${escapeHtmlText(PLAYER_ARTIST)}</span></span>
+                ${shareBtn(`Share ${track.name}`)}
               </li>
             `).join('')}
           </ul>
         </div>
       </div>
     `
-  } else if (playableTracks.length === 1) {
+  } else if (playableTracks.length === 1 || (showAudioPreview && isAudioUrl(product.audio_preview_url))) {
+    const singleUrl = playableTracks.length === 1 ? playableTracks[0].url : product.audio_preview_url
     audioHTML = `
-      <button type="button" class="card-play-btn preview-pill" ${triggerAttrs(playableTracks[0].url, playerAlbum, '')}>
-        <span class="play-icon">${PLAY_ICON_SVG}</span> Play Preview
-      </button>
-    `
-  } else if (showAudioPreview && isAudioUrl(product.audio_preview_url)) {
-    audioHTML = `
-      <button type="button" class="card-play-btn preview-pill" ${triggerAttrs(product.audio_preview_url, playerAlbum, '')}>
-        <span class="play-icon">${PLAY_ICON_SVG}</span> Play Preview
-      </button>
+      <div class="single-actions">
+        <button type="button" class="card-play-btn preview-pill" ${triggerAttrs(singleUrl, playerAlbum, '', productSharePath)}>
+          <span class="play-icon">${PLAY_ICON_SVG}</span> Play Preview
+        </button>
+        ${shareBtn(`Share ${playerAlbum}`, `data-share-url="${escapeHtmlText(SITE_URL + productSharePath)}" data-name="${escapeHtmlText(playerAlbum)}" data-album="" data-cover="${escapeHtmlText(playerCover)}"`)}
+      </div>
     `
   }
 
@@ -1149,6 +1122,17 @@ function wireProductInteractions(container, product, flags, { enableLightbox = t
   })
   // A freshly rendered page may contain the track that's already playing.
   refreshPlayStateUI()
+
+  // Share buttons: one inside a track row shares that song (its row carries
+  // the data), a standalone one carries its own. stopPropagation keeps the
+  // click from also starting playback on the row underneath it.
+  container.querySelectorAll('.share-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      const src = btn.closest('.track-item') || btn
+      openShareMenu({ url: src.dataset.shareUrl, name: src.dataset.name, album: src.dataset.album, cover: src.dataset.cover })
+    })
+  })
 
   // Services get their own two-button wiring — REQUEST A QUOTE always opens the
   // quote-request inquiry, PAYMENT always starts the flat $25 deposit
@@ -3173,7 +3157,8 @@ function metaFromEl(el) {
     name: el.dataset.name || el.dataset.title || '',
     sub: el.dataset.sub || '',
     album: el.dataset.album || '',
-    cover: el.dataset.cover || ''
+    cover: el.dataset.cover || '',
+    shareUrl: el.dataset.shareUrl || ''
   }
 }
 
@@ -3309,6 +3294,7 @@ function loadTrackUI(meta) {
   document.getElementById('np-title').textContent = meta.name
   document.getElementById('np-sub').textContent = meta.sub
   document.getElementById('np-album').textContent = meta.album
+  document.getElementById('np-share').style.visibility = meta.shareUrl ? '' : 'hidden'
   ;['gap-cover', 'np-cover'].forEach(id => {
     const img = document.getElementById(id)
     if (meta.cover) {
@@ -3389,6 +3375,10 @@ function initGlobalAudioPlayer() {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSheet() }
   })
   document.getElementById('np-collapse').addEventListener('click', closeSheet)
+  document.getElementById('np-share').addEventListener('click', () => {
+    if (!currentTrack || !currentTrack.shareUrl) return
+    openShareMenu({ url: currentTrack.shareUrl, name: currentTrack.name, album: currentTrack.album, cover: currentTrack.cover })
+  })
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet()
   })
@@ -3445,6 +3435,7 @@ function initGlobalAudioPlayer() {
 }
 
 initGlobalAudioPlayer()
+initShareMenu()
 
 async function loadBodega() {
   const storeGrid = document.getElementById('store-grid')
@@ -3569,7 +3560,7 @@ async function loadBodega() {
     // controls and the title link (handled above, with real link semantics)
     // are the only things carved out so they keep their own behavior.
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.card-play-btn, .track-item, .product-title-link')) return
+      if (e.target.closest('.card-play-btn, .track-item, .product-title-link, .share-btn')) return
       showProductPage(product)
     })
 
@@ -3615,12 +3606,20 @@ async function loadBodega() {
   showLanding({ skipHistoryUpdate: true })
 }
 
+// Splits window.location.pathname into /products/<slug>/ and an optional
+// <track> segment (/products/<slug>/<track>/ — the shareable per-song page).
+function parseProductPath() {
+  const match = window.location.pathname.match(/^\/products\/([^/]+)(?:\/([^/]+))?\/?$/)
+  return match ? { slug: match[1], trackSlug: match[2] || null } : null
+}
+
 // Matches window.location.pathname against /products/<slug>/ — the path a
-// prerendered page (see scripts/prerender-products.js) was served at.
+// prerendered page (see scripts/prerender-products.js) was served at. A
+// per-track path resolves to its album's product.
 function matchProductFromPath(products) {
-  const match = window.location.pathname.match(/^\/products\/([^/]+)\/?$/)
-  if (!match) return null
-  return products.find(p => p.slug === match[1]) || null
+  const parsed = parseProductPath()
+  if (!parsed) return null
+  return products.find(p => p.slug === parsed.slug) || null
 }
 
 // Every product this session has loaded — kept module-level so the popstate
@@ -3677,13 +3676,55 @@ function resetMetaTagsToHomepage() {
 // with whatever product is actually on screen.
 function updateProductUrlAndMeta(product) {
   if (!product.slug) return
-  const path = `/products/${product.slug}/`
+  const parsed = parseProductPath()
+  const onThisProduct = !!parsed && parsed.slug === product.slug
+  const track = onThisProduct && parsed.trackSlug ? findTrackBySlug(product, parsed.trackSlug) : null
   // Guards against a redundant history entry when this runs on the initial
-  // load of that exact prerendered page (matchProductFromPath's own caller).
-  if (window.location.pathname !== path) {
-    history.pushState(null, '', path)
+  // load of that exact prerendered page (matchProductFromPath's own caller) —
+  // including a per-track page, which must keep its own URL.
+  if (!onThisProduct) {
+    history.pushState(null, '', productPath(product.slug))
+  } else if (parsed.trackSlug && !track) {
+    // A track segment that isn't one of this product's songs: fall back to the product's own URL.
+    history.replaceState(null, '', productPath(product.slug))
   }
-  setProductMetaTags(product)
+  if (track) setTrackMetaTags(product, track)
+  else setProductMetaTags(product)
+}
+
+function setTrackMetaTags(product, track) {
+  const { title, description } = trackMeta(product, track)
+  applyMetaTags({
+    title,
+    description,
+    url: `${SITE_URL}${trackPath(product.slug, track.slug)}`,
+    image: product.cover_art_url || DEFAULT_META.image,
+  })
+}
+
+// Arriving on /products/<slug>/<track>/ (a shared link): mark that song's row
+// and put a "Shared with you" strip with a Play button above the tracklist.
+// Browsers don't allow music to start by itself on page load, so the visitor
+// taps Play. Returns true if it found the song.
+function focusSharedTrack(product, content) {
+  const parsed = parseProductPath()
+  if (!parsed || parsed.slug !== product.slug || !parsed.trackSlug) return false
+  const track = findTrackBySlug(product, parsed.trackSlug)
+  const list = content.querySelector('.album-player-container')
+  if (!track || !list) return false
+  const row = [...list.querySelectorAll('.track-item')].find(r => r.dataset.trackSlug === track.slug)
+  if (!row) return false
+
+  row.classList.add('is-shared')
+  const banner = document.createElement('div')
+  banner.className = 'shared-track-banner'
+  banner.innerHTML = '<span class="shared-track-text"><span class="shared-track-label">Shared with you</span><span class="shared-track-name"></span></span>' +
+    `<button type="button" class="shared-track-play">${PLAY_ICON_SVG} Play</button>`
+  banner.querySelector('.shared-track-name').textContent = track.name
+  banner.querySelector('.shared-track-play').addEventListener('click', () => row.click())
+  list.insertBefore(banner, list.firstChild)
+  banner.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  return true
 }
 
 // Back/Forward doesn't touch the visible filter/scroll state (a title-link
@@ -3932,7 +3973,7 @@ function showProductPage(product) {
 
   view.style.display = 'block'
   updateProductUrlAndMeta(product)
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  if (!focusSharedTrack(product, content)) window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 // Sends the visitor from a landing box (carousel photo, Latest Release,

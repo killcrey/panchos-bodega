@@ -11,6 +11,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { getPlayableTracks, trackPath, trackMeta, PLAYER_ARTIST } from '../src/tracks.js'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const DIST = path.join(ROOT, 'dist')
@@ -116,6 +117,77 @@ async function fetchImageMeta(url) {
   }
 }
 
+// Clones the built index.html with one page's <title>/meta/OG/JSON-LD swapped
+// in. Shared by the product pages and the per-track pages so the two can never
+// drift apart on which tags get rewritten.
+function renderPage(template, { title, description, url, image, imageAlt, imageMeta, jsonLd }) {
+  return template
+    .replace(
+      '<title>Panchos Bodega | The Invisible Panchos</title>',
+      `<title>${escapeHtml(title)}</title>`
+    )
+    .replace(
+      /<meta name="description" content="[^"]*" \/>/,
+      `<meta name="description" content="${escapeHtml(description)}" />`
+    )
+    .replace(
+      /<link rel="canonical" href="[^"]*" \/>/,
+      `<link rel="canonical" href="${url}" />`
+    )
+    .replace(
+      /<meta property="og:url" content="[^"]*" \/>/,
+      `<meta property="og:url" content="${url}" />`
+    )
+    .replace(
+      /<meta property="og:title" content="[^"]*" \/>/,
+      `<meta property="og:title" content="${escapeHtml(title)}" />`
+    )
+    .replace(
+      /<meta property="og:description" content="[^"]*" \/>/,
+      `<meta property="og:description" content="${escapeHtml(description)}" />`
+    )
+    .replace(
+      /<meta property="og:image" content="[^"]*" \/>/,
+      `<meta property="og:image" content="${image}" />`
+    )
+    .replace(
+      /<meta property="og:image:width" content="[^"]*" \/>/,
+      imageMeta ? `<meta property="og:image:width" content="${imageMeta.width}" />` : ''
+    )
+    .replace(
+      /<meta property="og:image:height" content="[^"]*" \/>/,
+      imageMeta ? `<meta property="og:image:height" content="${imageMeta.height}" />` : ''
+    )
+    .replace(
+      /<meta property="og:image:type" content="[^"]*" \/>/,
+      imageMeta?.type ? `<meta property="og:image:type" content="${escapeHtml(imageMeta.type)}" />` : ''
+    )
+    .replace(
+      /<meta property="og:image:alt" content="[^"]*" \/>/,
+      `<meta property="og:image:alt" content="${escapeHtml(imageAlt)}" />`
+    )
+    .replace(
+      /<meta name="twitter:title" content="[^"]*" \/>/,
+      `<meta name="twitter:title" content="${escapeHtml(title)}" />`
+    )
+    .replace(
+      /<meta name="twitter:description" content="[^"]*" \/>/,
+      `<meta name="twitter:description" content="${escapeHtml(description)}" />`
+    )
+    .replace(
+      /<meta name="twitter:image" content="[^"]*" \/>/,
+      `<meta name="twitter:image" content="${image}" />`
+    )
+    .replace(
+      /<meta name="twitter:image:alt" content="[^"]*" \/>/,
+      `<meta name="twitter:image:alt" content="${escapeHtml(imageAlt)}" />`
+    )
+    .replace(
+      '</head>',
+      `  <script type="application/ld+json">${jsonLd}</script>\n  </head>`
+    )
+}
+
 async function main() {
   loadDotEnv()
 
@@ -135,7 +207,7 @@ async function main() {
   const template = readFileSync(templatePath, 'utf8')
 
   const res = await fetch(
-    `${supabaseUrl}/rest/v1/products?select=slug,title,description,cover_art_url,price_cents,coming_soon,inventory_count&published=eq.true&slug=not.is.null`,
+    `${supabaseUrl}/rest/v1/products?select=slug,title,description,cover_art_url,price_cents,coming_soon,inventory_count,tracklist_snippets,download_files,audio_preview_url&published=eq.true&slug=not.is.null`,
     { headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${supabaseAnonKey}` } }
   )
   if (!res.ok) {
@@ -146,6 +218,7 @@ async function main() {
   const products = await res.json()
 
   let written = 0
+  let trackPages = 0
   const sitemapUrls = [SITE_URL + '/']
   for (const p of products) {
     if (!p.slug) continue
@@ -179,77 +252,47 @@ async function main() {
       },
     })
 
-    let html = template
-      .replace(
-        '<title>Panchos Bodega | The Invisible Panchos</title>',
-        `<title>${escapeHtml(title)}</title>`
-      )
-      .replace(
-        /<meta name="description" content="[^"]*" \/>/,
-        `<meta name="description" content="${escapeHtml(description)}" />`
-      )
-      .replace(
-        /<link rel="canonical" href="[^"]*" \/>/,
-        `<link rel="canonical" href="${url}" />`
-      )
-      .replace(
-        /<meta property="og:url" content="[^"]*" \/>/,
-        `<meta property="og:url" content="${url}" />`
-      )
-      .replace(
-        /<meta property="og:title" content="[^"]*" \/>/,
-        `<meta property="og:title" content="${escapeHtml(title)}" />`
-      )
-      .replace(
-        /<meta property="og:description" content="[^"]*" \/>/,
-        `<meta property="og:description" content="${escapeHtml(description)}" />`
-      )
-      .replace(
-        /<meta property="og:image" content="[^"]*" \/>/,
-        `<meta property="og:image" content="${image}" />`
-      )
-      .replace(
-        /<meta property="og:image:width" content="[^"]*" \/>/,
-        imageMeta ? `<meta property="og:image:width" content="${imageMeta.width}" />` : ''
-      )
-      .replace(
-        /<meta property="og:image:height" content="[^"]*" \/>/,
-        imageMeta ? `<meta property="og:image:height" content="${imageMeta.height}" />` : ''
-      )
-      .replace(
-        /<meta property="og:image:type" content="[^"]*" \/>/,
-        imageMeta?.type ? `<meta property="og:image:type" content="${escapeHtml(imageMeta.type)}" />` : ''
-      )
-      .replace(
-        /<meta property="og:image:alt" content="[^"]*" \/>/,
-        `<meta property="og:image:alt" content="${escapeHtml(p.title)}" />`
-      )
-      .replace(
-        /<meta name="twitter:title" content="[^"]*" \/>/,
-        `<meta name="twitter:title" content="${escapeHtml(title)}" />`
-      )
-      .replace(
-        /<meta name="twitter:description" content="[^"]*" \/>/,
-        `<meta name="twitter:description" content="${escapeHtml(description)}" />`
-      )
-      .replace(
-        /<meta name="twitter:image" content="[^"]*" \/>/,
-        `<meta name="twitter:image" content="${image}" />`
-      )
-      .replace(
-        /<meta name="twitter:image:alt" content="[^"]*" \/>/,
-        `<meta name="twitter:image:alt" content="${escapeHtml(p.title)}" />`
-      )
-      .replace(
-        '</head>',
-        `  <script type="application/ld+json">${jsonLd}</script>\n  </head>`
-      )
+    const html = renderPage(template, { title, description, url, image, imageAlt: p.title, imageMeta, jsonLd })
 
     const outDir = path.join(DIST, 'products', p.slug)
     mkdirSync(outDir, { recursive: true })
     writeFileSync(path.join(outDir, 'index.html'), html)
     sitemapUrls.push(url)
     written++
+
+    // An album's songs each get their own page, so a shared link to one song
+    // unfurls with that song's title instead of the whole album's. Kept out of
+    // the sitemap on purpose — they exist for link previews and shared links.
+    // Singles don't need one: their product page already is that song's page.
+    const tracks = getPlayableTracks(p)
+    if (tracks.length > 1) {
+      for (const track of tracks) {
+        const meta = trackMeta(p, track)
+        const trackUrl = `${SITE_URL}${trackPath(p.slug, track.slug)}`
+        const trackJsonLd = JSON.stringify({
+          '@context': 'https://schema.org',
+          '@type': 'MusicRecording',
+          name: track.name,
+          url: trackUrl,
+          image,
+          byArtist: { '@type': 'MusicGroup', name: PLAYER_ARTIST },
+          inAlbum: { '@type': 'MusicAlbum', name: p.title, url },
+        })
+        const trackHtml = renderPage(template, {
+          title: meta.title,
+          description: meta.description,
+          url: trackUrl,
+          image,
+          imageAlt: `${track.name} — ${p.title}`,
+          imageMeta,
+          jsonLd: trackJsonLd,
+        })
+        const trackDir = path.join(outDir, track.slug)
+        mkdirSync(trackDir, { recursive: true })
+        writeFileSync(path.join(trackDir, 'index.html'), trackHtml)
+        trackPages++
+      }
+    }
   }
 
   // robots.txt already points at /sitemap.xml (see public/robots.txt) —
@@ -260,7 +303,7 @@ async function main() {
     `\n</urlset>\n`
   writeFileSync(path.join(DIST, 'sitemap.xml'), sitemap)
 
-  console.log(`prerender-products: wrote ${written} product page(s) and sitemap.xml.`)
+  console.log(`prerender-products: wrote ${written} product page(s), ${trackPages} track page(s) and sitemap.xml.`)
 }
 
 main().catch((err) => {
