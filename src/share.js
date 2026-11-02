@@ -2,14 +2,15 @@
 // Stories". The link is the song's own URL (/products/<slug>/<track>/, which has
 // its own social card when prerendered); the Stories image is a 1080x1920
 // card drawn on a canvas, so a fan can post it and add a link sticker.
-import { PLAYER_ARTIST, slugify, albumDisplayName } from './tracks.js'
+import { PLAYER_ARTIST, slugify, albumDisplayName, albumCredit } from './tracks.js'
 
 // What the share sheet and the Stories card print for a song: the track name,
-// and the album it's from (nothing when the thing shared IS the album/single).
+// and how its album is credited ("the soundtrack Memories Of Home") — nothing
+// when the thing shared IS the album/single.
 function displayNames(meta) {
   const name = albumDisplayName(meta.name)
   const album = meta.album ? albumDisplayName(meta.album) : ''
-  return { name, album: album && album !== name ? album : '' }
+  return { name, album: album && album !== name ? albumCredit(meta.album) : '' }
 }
 
 export const SHARE_ICON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11.5"/><path d="M7.8 7.6 12 3.4l4.2 4.2"/><path d="M5 12.5v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>'

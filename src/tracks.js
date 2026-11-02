@@ -52,6 +52,18 @@ export function albumDisplayName(title) {
   return cleaned || raw
 }
 
+// How a song's album is credited in "from ..." lines (share sheet, Stories card,
+// social-card text). Most albums are just "from <album>"; an album listed here
+// gets its own wording, keyed by its display name in lower case.
+const ALBUM_CREDITS = {
+  'memories of home': 'the soundtrack Memories Of Home',
+  'layers': 'the soundtrack Layers',
+}
+export function albumCredit(title) {
+  const name = albumDisplayName(title)
+  return ALBUM_CREDITS[name.toLowerCase()] || name
+}
+
 // The playable tracks of a product, in play order, each with its display name
 // and a URL slug. `tracklist_snippets` (an album's saved tracklist) wins; a
 // bundle saved before that existed is re-derived from its audio files in
@@ -94,6 +106,6 @@ export const trackPath = (slug, trackSlug) => `/products/${slug}/${trackSlug}/`
 export function trackMeta(product, track) {
   return {
     title: `${track.name} — ${PLAYER_ARTIST} | Panchos Bodega`,
-    description: `Listen to “${track.name}” from ${albumDisplayName(product.title)} by ${PLAYER_ARTIST} on the Panchos Bodega.`,
+    description: `Listen to “${track.name}” from ${albumCredit(product.title)} by ${PLAYER_ARTIST} on the Panchos Bodega.`,
   }
 }

@@ -1274,9 +1274,11 @@
       .track-name {
         font-size: 0.95rem;
         font-weight: 600;
-        white-space: nowrap;
         overflow: hidden;
-        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow-wrap: anywhere;
       }
 
       .track-artist {
@@ -1340,7 +1342,7 @@
       }
       .shared-track-text { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
       .shared-track-label { font-size: 0.62rem; letter-spacing: 1.4px; text-transform: uppercase; color: #00ffcc; }
-      .shared-track-name { font-size: 1rem; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .shared-track-name { font-size: 1rem; font-weight: 700; color: #fff; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
       .shared-track-play {
         display: flex;
         align-items: center;
