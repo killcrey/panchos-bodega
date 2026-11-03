@@ -72,7 +72,7 @@ async function secureTheBag() {
       <h2 style="color: #00ffcc;">VERIFIED</h2>
       <p>Your order is confirmed — a receipt with these links has also been emailed to you. Links below are good for the next 60 minutes.</p>
       ${downloadsHTML}
-      ${hasZip ? `<p id="zip-wait-note" style="font-size: 0.8rem; color: #e8b923; margin-top: 0.75rem;">Albums are packaged into a zip when you click, so the download can take up to a minute to start. Please keep this page open and only click once.</p>` : ''}
+      ${hasZip ? `<p id="zip-wait-note" style="font-size: 0.8rem; color: #e8b923; margin-top: 0.75rem;">Albums are packaged into a zip when you click, so the download can take a few seconds to start. Please keep this page open and only click once.</p>` : ''}
       ${result.skippedCount > 0 ? `<p style="font-size: 0.75rem; color: #888; margin-top: 1rem;">${result.skippedCount} item${result.skippedCount === 1 ? '' : 's'} in this order ${result.skippedCount === 1 ? "doesn't" : "don't"} have a digital file — check your email receipt for details.</p>` : ''}
       <div class="download-instructions">
         <p><strong>Albums</strong> download as one .zip file — unzip it to get every track. The same link is in your email receipt for 7 days.</p>
@@ -88,7 +88,7 @@ async function secureTheBag() {
       a.addEventListener('click', () => {
         const note = document.getElementById('zip-wait-note')
         if (note) {
-          note.textContent = 'Packaging your download… this can take up to a minute before it starts. Please keep this page open and don\'t click again.'
+          note.textContent = 'Packaging your download… this can take a few seconds before it starts. Please keep this page open and don\'t click again.'
           note.style.fontWeight = 'bold'
         }
       })

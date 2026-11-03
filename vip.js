@@ -48,7 +48,7 @@ function daysLeftText(expiresAt) {
   return `Link closes ${when} · ${left}`
 }
 
-// The "packing" popup: the zip is built while the browser waits (up to a minute),
+// The "packing" popup: the zip is built while the browser waits (a few seconds),
 // so the tap opens this - the game poster and a link to the game - instead of
 // leaving a blank, awkward wait. The download itself is a normal link
 // navigation, so the browser can't tell us when it starts; the popup stays until
@@ -67,7 +67,7 @@ function openPackModal() {
     const poster = el('img', 'pack-poster')
     poster.src = GAME_POSTER
     poster.alt = 'The Invisible Panchos video game'
-    const sub = el('p', 'pack-sub', 'Your download starts by itself. It can take up to a minute. Keep this page open until it does.')
+    const sub = el('p', 'pack-sub', 'Your download starts by itself in a few seconds. Keep this page open until it does.')
     const game = el('a', 'pack-game', 'Don’t forget to check out our game on your way out')
     game.href = GAME_URL
     game.target = '_blank'
@@ -87,12 +87,12 @@ function openPackModal() {
     document.body.append(backdrop)
     packModal = backdrop
   }
-  packModal._sub.textContent = 'Your download starts by itself. It can take up to a minute. Keep this page open until it does.'
+  packModal._sub.textContent = 'Your download starts by itself in a few seconds. Keep this page open until it does.'
   packModal.classList.add('open')
   clearTimeout(packModal._late)
   packModal._late = setTimeout(() => {
     packModal._sub.textContent = 'Taking a while? Check your downloads, or close this and tap once more.'
-  }, 75000)
+  }, 30000)
 }
 
 function render(data, token) {
@@ -123,16 +123,16 @@ function render(data, token) {
     ? 'All the songs, the covers and this note. Opens in Google Drive — tap Download all.'
     : `${data.tracks.length} songs, the covers and this note in one file.`)
   // The zip is assembled while the browser waits, so nothing visibly happens for
-  // up to a minute after the tap. Say so up front (and again once tapped) so
+  // a few seconds after the tap. Say so up front (and again once tapped) so
   // nobody gives up and leaves.
   if (!useDrive) new Image().src = GAME_POSTER
   let zipWait = null
   if (!useDrive) {
-    const wait = el('p', 'zip-wait', 'Heads up: it takes up to a minute to start after you tap. Keep this page open and tap once.')
+    const wait = el('p', 'zip-wait', 'Heads up: it can take a few seconds to start after you tap. Keep this page open and tap once.')
     wait.id = 'zip-wait'
     zipWait = wait
     zip.addEventListener('click', () => {
-      wait.textContent = 'Packaging your download now. This can take up to a minute to start. Keep this page open.'
+      wait.textContent = 'Packaging your download now. This can take a few seconds to start. Keep this page open.'
       wait.style.fontWeight = 'bold'
       openPackModal()
     })
