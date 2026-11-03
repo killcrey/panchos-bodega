@@ -7,6 +7,8 @@ import { watchPlays } from './src/playlog.js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const API = `${supabaseUrl}/functions/v1/vip-folder`
 const SITE = 'https://bodega.theinvisiblepanchos.com'
+const GAME_URL = 'https://game.theinvisiblepanchos.com/'
+const GAME_POSTER = 'https://defanfglngsszhyurpfn.supabase.co/storage/v1/object/public/bodega-images/gameposter-1792682886734-60.webp'
 
 const app = document.getElementById('app')
 
@@ -46,6 +48,53 @@ function daysLeftText(expiresAt) {
   return `Link closes ${when} · ${left}`
 }
 
+// The "packing" popup: the zip is built while the browser waits (up to a minute),
+// so the tap opens this - the game poster and a link to the game - instead of
+// leaving a blank, awkward wait. The download itself is a normal link
+// navigation, so the browser can't tell us when it starts; the popup stays until
+// it is closed, and after a while it admits it is taking long.
+let packModal = null
+function openPackModal() {
+  if (!packModal) {
+    const backdrop = el('div', 'pack-backdrop')
+    backdrop.setAttribute('role', 'dialog')
+    backdrop.setAttribute('aria-modal', 'true')
+    backdrop.setAttribute('aria-label', 'Packing up your order')
+    const box = el('div', 'pack-box')
+    const close = el('button', 'pack-close', '×')
+    close.type = 'button'
+    close.setAttribute('aria-label', 'Close')
+    const poster = el('img', 'pack-poster')
+    poster.src = GAME_POSTER
+    poster.alt = 'The Invisible Panchos video game'
+    const sub = el('p', 'pack-sub', 'Your download starts by itself. It can take up to a minute.')
+    const game = el('a', 'pack-game', 'Play the game while you wait')
+    game.href = GAME_URL
+    game.target = '_blank'
+    game.rel = 'noopener'
+    box.append(
+      close,
+      el('h2', 'pack-title', 'Packing up your order, Pancho!'),
+      el('p', 'pack-text', 'Hold tight and don’t steal anything. The cameras are on. \u{1F441}️'),
+      sub, poster, game,
+    )
+    backdrop.append(box)
+    const hide = () => { backdrop.classList.remove('open'); clearTimeout(backdrop._late) }
+    close.addEventListener('click', hide)
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) hide() })
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hide() })
+    backdrop._sub = sub
+    document.body.append(backdrop)
+    packModal = backdrop
+  }
+  packModal._sub.textContent = 'Your download starts by itself. It can take up to a minute.'
+  packModal.classList.add('open')
+  clearTimeout(packModal._late)
+  packModal._late = setTimeout(() => {
+    packModal._sub.textContent = 'Taking a while? Check your downloads, or close this and tap once more.'
+  }, 75000)
+}
+
 function render(data, token) {
   app.replaceChildren()
   document.title = `Thank You | ${data.album} | The Invisible Panchos`
@@ -76,6 +125,7 @@ function render(data, token) {
   // The zip is assembled while the browser waits, so nothing visibly happens for
   // up to a minute after the tap. Say so up front (and again once tapped) so
   // nobody gives up and leaves.
+  if (!useDrive) new Image().src = GAME_POSTER
   let zipWait = null
   if (!useDrive) {
     const wait = el('p', 'zip-wait', 'Heads up: it takes up to a minute to start after you tap. Keep this page open and tap once.')
@@ -84,6 +134,7 @@ function render(data, token) {
     zip.addEventListener('click', () => {
       wait.textContent = 'Packaging your download now. This can take up to a minute to start. Keep this page open.'
       wait.style.fontWeight = 'bold'
+      openPackModal()
     })
   }
   app.append(zip, zipMeta)
