@@ -3,6 +3,7 @@
 // checks the link is live; this page only draws what it is given. Everything
 // from the response goes in with textContent/attributes, never as HTML.
 import { watchPlays } from './src/playlog.js'
+import { initInAppBrowserNotice } from './src/inapp.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const API = `${supabaseUrl}/functions/v1/vip-folder`
@@ -239,4 +240,5 @@ async function main() {
   }
 }
 
+initInAppBrowserNotice()
 main()

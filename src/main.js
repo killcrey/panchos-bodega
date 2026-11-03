@@ -4,6 +4,7 @@ import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSub
 import { PLAYER_ARTIST, isAudioUrl, slugify, getPlayableTracks, findTrackBySlug, productPath, trackPath, trackMeta } from './tracks.js'
 import { SHARE_ICON_SVG, openShareMenu, initShareMenu } from './share.js'
 import { watchPlays } from './playlog.js'
+import { initInAppBrowserNotice } from './inapp.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -4551,5 +4552,6 @@ const isAdminMode = initAdminPortal()
 if (!isAdminMode) {
   loadBodega()
   initEnterOverlay()
+  initInAppBrowserNotice()
 }
 

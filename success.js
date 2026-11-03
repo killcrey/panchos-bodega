@@ -1,3 +1,5 @@
+import { initInAppBrowserNotice } from './src/inapp.js'
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
@@ -115,4 +117,5 @@ async function secureTheBag() {
   }
 }
 
+initInAppBrowserNotice()
 secureTheBag()
