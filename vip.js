@@ -2,6 +2,8 @@
 // /vip/<token>. All content comes from the vip-folder edge function, which
 // checks the link is live; this page only draws what it is given. Everything
 // from the response goes in with textContent/attributes, never as HTML.
+import { watchPlays } from './src/playlog.js'
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const API = `${supabaseUrl}/functions/v1/vip-folder`
 const SITE = 'https://bodega.theinvisiblepanchos.com'
@@ -107,6 +109,8 @@ function render(data, token) {
     audio.play().catch(() => {})
     paint()
   }
+  // A song listened to for 30 s counts as a play (source 'vip'), same as on the store.
+  watchPlays(audio, () => activeIndex >= 0 && ({ productSlug: data.productSlug, trackSlug: '', trackName: data.tracks[activeIndex].name, source: 'vip' }))
   audio.addEventListener('play', paint)
   audio.addEventListener('pause', paint)
   audio.addEventListener('ended', () => {

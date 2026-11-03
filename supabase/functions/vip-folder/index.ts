@@ -326,6 +326,7 @@ Deno.serve(async (req) => {
     return json(200, {
       label: link.label,
       expiresAt: link.expires_at,
+      productSlug: link.product_slug,
       album,
       note,
       // Where "Download everything" goes instead of the built-in zip. Only ever a

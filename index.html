@@ -3041,6 +3041,7 @@
               <button type="button" class="admin-tab-btn" data-tab="lookbook">Look Book</button>
               <button type="button" class="admin-tab-btn" data-tab="featured-order">Featured Order</button>
               <button type="button" class="admin-tab-btn" data-tab="vip-links">VIP Links</button>
+              <button type="button" class="admin-tab-btn" data-tab="plays">Plays</button>
               <button type="button" class="admin-tab-btn" data-tab="messages">Messages</button>
             </div>
             <div class="admin-tab-panel" data-tab-panel="inventory">
@@ -3089,6 +3090,12 @@
               <button type="button" id="vip-create-btn" class="admin-btn">Make New Link</button>
               <div id="vip-status" class="field-status"></div>
               <div id="vip-links-list"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="plays" style="display: none;">
+              <label class="admin-file-label">30-Second Plays</label>
+              <p class="field-hint">A play is counted when someone has listened to a song for 30 seconds (skipping ahead doesn't count). Listeners = different browsers, so one person on two devices counts twice. Counts start from when this went live.</p>
+              <div id="plays-totals"></div>
+              <div id="plays-list"></div>
             </div>
             <div class="admin-tab-panel" data-tab-panel="messages" style="display: none;">
               <label class="admin-file-label" for="settings-purchase-message">Purchase &amp; Free Download Thank You Message</label>

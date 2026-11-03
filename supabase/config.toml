@@ -489,3 +489,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/vip-folder/deno.json"
 entrypoint = "./functions/vip-folder/index.ts"
+
+[functions.log-play]
+enabled = true
+verify_jwt = false
+import_map = "./functions/log-play/deno.json"
+entrypoint = "./functions/log-play/index.ts"

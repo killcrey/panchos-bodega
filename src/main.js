@@ -3,6 +3,7 @@ import { loadStripe } from '@stripe/stripe-js'
 import { getCart, addToCart, removeFromCart, setCartQuantity, cartCount, cartSubtotalCents, cartHasPhysicalItems, isUpchargeSize, SIZE_UPCHARGE_CENTS } from './cart.js'
 import { PLAYER_ARTIST, isAudioUrl, slugify, getPlayableTracks, findTrackBySlug, productPath, trackPath, trackMeta } from './tracks.js'
 import { SHARE_ICON_SVG, openShareMenu, initShareMenu } from './share.js'
+import { watchPlays } from './playlog.js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -511,6 +512,41 @@ function vipLinkStatus(row) {
   if (new Date(row.expires_at).getTime() <= Date.now()) return { text: 'Expired', color: '#888', live: false }
   const when = new Date(row.expires_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   return { text: `Live — closes ${when}`, color: '#00ffcc', live: true }
+}
+
+async function loadAdminPlays() {
+  const totalsEl = document.getElementById('plays-totals')
+  const listEl = document.getElementById('plays-list')
+  if (!totalsEl || !listEl) return
+  const [totalsRes, statsRes] = await Promise.all([
+    supabase.from('track_play_totals').select('*').maybeSingle(),
+    supabase.from('track_play_stats').select('*').order('plays', { ascending: false })
+  ])
+  if (totalsRes.error || statsRes.error) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load plays.</p>'
+    return
+  }
+  const t = totalsRes.data || { plays: 0, listeners: 0, plays_7d: 0, listeners_7d: 0 }
+  const box = (label, value) => `<div style="border: 1px solid #333; padding: 0.5rem 0.7rem; flex: 1; min-width: 6rem;"><div style="font-size: 1.1rem;">${Number(value) || 0}</div><div style="font-size: 0.55rem; color: #888;">${label}</div></div>`
+  totalsEl.innerHTML = `<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0;">${box('Plays, all time', t.plays)}${box('Listeners, all time', t.listeners)}${box('Plays, last 7 days', t.plays_7d)}${box('Listeners, last 7 days', t.listeners_7d)}</div>`
+  const rows = statsRes.data || []
+  if (rows.length === 0) {
+    listEl.innerHTML = '<p style="font-size: 0.65rem; color: #aaa;">No 30-second plays yet.</p>'
+    return
+  }
+  listEl.innerHTML = rows.map(r => {
+    const name = r.track_name || r.album || r.product_slug
+    const extra = [r.shared_plays > 0 ? `${r.shared_plays} from shared links` : '', r.vip_plays > 0 ? `${r.vip_plays} from VIP page` : ''].filter(Boolean).join(' · ')
+    return `
+      <div style="border: 1px solid #333; padding: 0.6rem; margin-top: 0.5rem;">
+        <div style="display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;">
+          <strong style="font-size: 0.75rem;">${escapeHtmlText(name)}</strong>
+          <span style="font-size: 0.7rem;">${r.plays} play${r.plays === 1 ? '' : 's'} · ${r.listeners} listener${r.listeners === 1 ? '' : 's'}</span>
+        </div>
+        <span style="font-size: 0.55rem; color: #888;">${escapeHtmlText(r.track_name ? r.album : '')}${r.track_name && extra ? ' · ' : ''}${escapeHtmlText(extra)}${(r.track_name || extra) ? ' · ' : ''}last 7 days: ${r.plays_7d} plays, ${r.listeners_7d} listeners</span>
+      </div>
+    `
+  }).join('')
 }
 
 async function loadAdminVipLinks() {
@@ -1039,8 +1075,8 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
   // to share for it (a track's own page, or the product page for a single/album).
   const playerCover = product.cover_art_url || ''
   const playerAlbum = product.title || ''
-  const triggerAttrs = (url, name, track, sharePath) =>
-    `data-url="${escapeHtmlText(url)}" data-title="${escapeHtmlText(track ? `${playerAlbum} — ${track}` : playerAlbum)}" data-name="${escapeHtmlText(name)}" data-sub="${escapeHtmlText(PLAYER_ARTIST)}" data-album="${escapeHtmlText(playerAlbum)}" data-cover="${escapeHtmlText(playerCover)}"` +
+  const triggerAttrs = (url, name, track, sharePath, trackSlug = '') =>
+    `data-product-slug="${escapeHtmlText(product.slug || '')}" data-track-slug="${escapeHtmlText(trackSlug)}" data-url="${escapeHtmlText(url)}" data-title="${escapeHtmlText(track ? `${playerAlbum} — ${track}` : playerAlbum)}" data-name="${escapeHtmlText(name)}" data-sub="${escapeHtmlText(PLAYER_ARTIST)}" data-album="${escapeHtmlText(playerAlbum)}" data-cover="${escapeHtmlText(playerCover)}"` +
     (sharePath ? ` data-share-url="${escapeHtmlText(SITE_URL + sharePath)}"` : '')
   // A product with no slug has no page to link to, so it gets no share button.
   const shareBtn = (label, extraAttrs = '') => product.slug
@@ -1055,7 +1091,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
           <span class="album-label">Preview · ${playableTracks.length} tracks</span>
           <span class="album-actions-right">
             ${shareBtn(`Share ${playerAlbum}`, `data-share-url="${escapeHtmlText(SITE_URL + productSharePath)}" data-name="${escapeHtmlText(playerAlbum)}" data-album="" data-cover="${escapeHtmlText(playerCover)}"`)}
-            <button type="button" class="card-play-btn album-big-play" aria-label="Play preview" ${triggerAttrs(playableTracks[0].url, playableTracks[0].name, playableTracks[0].title)}>
+            <button type="button" class="card-play-btn album-big-play" aria-label="Play preview" ${triggerAttrs(playableTracks[0].url, playableTracks[0].name, playableTracks[0].title, '', playableTracks[0].slug)}>
               <span class="play-icon">${PLAY_ICON_SVG}</span>
             </button>
           </span>
@@ -1063,7 +1099,7 @@ function renderProductMarkup(product, flags, { linkTitle = true, truncateDescrip
         <div class="tracklist-slider">
           <ul>
             ${playableTracks.map((track) => `
-              <li class="track-item" data-track-slug="${escapeHtmlText(track.slug)}" ${triggerAttrs(track.url, track.name, track.title, product.slug ? trackPath(product.slug, track.slug) : '')}>
+              <li class="track-item" ${triggerAttrs(track.url, track.name, track.title, product.slug ? trackPath(product.slug, track.slug) : '', track.slug)}>
                 <span class="track-num"><span class="track-n">${track.trackNumber}</span><span class="track-eq"><i></i><i></i><i></i></span></span>
                 <span class="track-meta"><span class="track-name">${escapeHtmlText(track.name)}</span><span class="track-artist">${escapeHtmlText(PLAYER_ARTIST)}</span></span>
                 ${shareBtn(`Share ${track.name}`)}
@@ -2852,6 +2888,7 @@ function initAdminPortal() {
       loadAdminSettings()
       loadAdminLookbook()
       loadAdminVipLinks()
+      loadAdminPlays()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
@@ -3275,7 +3312,9 @@ function metaFromEl(el) {
     sub: el.dataset.sub || '',
     album: el.dataset.album || '',
     cover: el.dataset.cover || '',
-    shareUrl: el.dataset.shareUrl || ''
+    shareUrl: el.dataset.shareUrl || '',
+    productSlug: el.dataset.productSlug || '',
+    trackSlug: el.dataset.trackSlug || ''
   }
 }
 
@@ -3499,6 +3538,16 @@ function initGlobalAudioPlayer() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && sheet.classList.contains('open')) closeSheet()
   })
+
+  // Count a song once it has been listened to for 30 s. A song reached through a
+  // shared song link counts as 'shared' so we can see whether sharing works.
+  const landed = parseProductPath()
+  watchPlays(globalAudio, () => currentTrack && ({
+    productSlug: currentTrack.productSlug,
+    trackSlug: currentTrack.trackSlug,
+    trackName: currentTrack.name,
+    source: (landed && landed.trackSlug && landed.slug === currentTrack.productSlug && landed.trackSlug === currentTrack.trackSlug) ? 'shared' : 'site'
+  }))
 
   globalAudio.addEventListener('play', refreshPlayStateUI)
   globalAudio.addEventListener('pause', refreshPlayStateUI)
