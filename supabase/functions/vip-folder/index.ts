@@ -128,7 +128,7 @@ Deno.serve(async (req) => {
 
     const { data: link } = await supabase
       .from('vip_links')
-      .select('id, label, note, product_slug, expires_at, revoked, open_count')
+      .select('id, label, note, download_url, product_slug, expires_at, revoked, open_count')
       .eq('token', token)
       .maybeSingle()
     if (!link) return fail(404, CLOSED_MESSAGE)
@@ -328,6 +328,10 @@ Deno.serve(async (req) => {
       expiresAt: link.expires_at,
       album,
       note,
+      // Where "Download everything" goes instead of the built-in zip. Only ever a
+      // Google Drive link: this value is typed by whoever is logged in, and our own
+      // page must not be usable to bounce visitors to an arbitrary site.
+      downloadUrl: /^https:\/\/drive\.google\.com\//.test(String(link.download_url || '').trim()) ? String(link.download_url).trim() : '',
       signature: SIGNATURE,
       tracks,
       covers,

@@ -540,7 +540,7 @@ async function loadAdminVipLinks() {
           <strong style="font-size: 0.8rem;">${escapeHtmlText(row.label || 'Untitled event')}</strong>
           <span style="font-size: 0.65rem; color: ${status.color};">${escapeHtmlText(status.text)}</span>
         </div>
-        <span style="font-size: 0.6rem; color: #888;">${escapeHtmlText(opened)}</span>
+        <span style="font-size: 0.6rem; color: #888;">${escapeHtmlText(opened)} · Download: ${row.download_url ? 'Google Drive link' : 'built-in zip'}</span>
         <input type="text" class="admin-input" readonly value="${escapeHtmlText(url)}" onclick="this.select()" aria-label="VIP link">
         <div style="display: flex; gap: 0.5rem;">
           <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
@@ -556,10 +556,17 @@ async function createVipLink() {
   const say = (msg, color = '#e8b923') => { statusEl.textContent = msg; statusEl.style.color = color }
   const labelEl = document.getElementById('vip-label')
   const noteEl = document.getElementById('vip-note')
+  const driveEl = document.getElementById('vip-download-url')
   const label = labelEl.value.trim()
   if (!label) { say('Give the link an event name so you can tell them apart.', '#ff4d4d'); return }
+  // Same rule the page enforces: only a Google Drive link can replace the built-in zip.
+  const downloadUrl = driveEl.value.trim()
+  if (downloadUrl && !downloadUrl.startsWith('https://drive.google.com/')) {
+    say('The download link must be a Google Drive link (it starts with https://drive.google.com/). Or leave it blank.', '#ff4d4d')
+    return
+  }
   say('Making the link...')
-  const { data, error } = await supabase.from('vip_links').insert({ label, note: noteEl.value.trim() }).select().single()
+  const { data, error } = await supabase.from('vip_links').insert({ label, note: noteEl.value.trim(), download_url: downloadUrl }).select().single()
   if (error || !data) {
     console.error('VIP link create failed:', error)
     say((error && error.message) || 'Could not make the link.', '#ff4d4d')
@@ -567,6 +574,7 @@ async function createVipLink() {
   }
   labelEl.value = ''
   noteEl.value = ''
+  driveEl.value = ''
   let copied = false
   try { await navigator.clipboard.writeText(VIP_PAGE_BASE + data.token); copied = true } catch (err) { /* the list below has a Copy button */ }
   say(copied ? 'Link made and copied. Write it onto the keychains with your NFC app.' : 'Link made. Copy it from the list below.', '#00ffcc')

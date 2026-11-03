@@ -61,17 +61,26 @@ function render(data, token) {
   data.note.forEach(line => note.append(el('p', null, line)))
   app.append(note, el('p', 'signature', data.signature))
 
-  const zip = el('a', 'zip-btn', 'Download everything (.zip)')
-  zip.href = `${API}?t=${encodeURIComponent(token)}&zip=1`
-  const zipMeta = el('p', 'zip-meta', `${data.tracks.length} songs, the covers and this note in one file.`)
-  zip.addEventListener('click', () => {
-    // The zip is assembled while the browser waits — nothing visibly happens
-    // for a bit — so say so, like the post-purchase page does.
-    if (document.getElementById('zip-wait')) return
-    const wait = el('p', 'zip-wait', 'Packaging it now. This can take up to a minute to start. Keep this page open and tap once.')
-    wait.id = 'zip-wait'
-    zipMeta.after(wait)
-  })
+  // Either a Google Drive folder/zip the band set up for this link, or our own
+  // zip. Drive does the heavy lifting on a slow signal; the built-in zip is the
+  // fallback and always matches the album's current files.
+  const useDrive = !!data.downloadUrl
+  const zip = el('a', 'zip-btn', useDrive ? 'Download everything' : 'Download everything (.zip)')
+  zip.href = useDrive ? data.downloadUrl : `${API}?t=${encodeURIComponent(token)}&zip=1`
+  if (useDrive) zip.rel = 'noopener'
+  const zipMeta = el('p', 'zip-meta', useDrive
+    ? 'All the songs, the covers and this note. Opens in Google Drive — tap Download all.'
+    : `${data.tracks.length} songs, the covers and this note in one file.`)
+  if (!useDrive) {
+    zip.addEventListener('click', () => {
+      // The zip is assembled while the browser waits — nothing visibly happens
+      // for a bit — so say so, like the post-purchase page does.
+      if (document.getElementById('zip-wait')) return
+      const wait = el('p', 'zip-wait', 'Packaging it now. This can take up to a minute to start. Keep this page open and tap once.')
+      wait.id = 'zip-wait'
+      zipMeta.after(wait)
+    })
+  }
   app.append(zip, zipMeta)
 
   // ---- songs: one shared audio element, one song at a time, auto-advance

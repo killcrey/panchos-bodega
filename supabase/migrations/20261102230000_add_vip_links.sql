@@ -12,6 +12,9 @@ create table if not exists public.vip_links (
     default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
   label text not null default '',
   note text not null default '',
+  -- Optional: a Google Drive link the page's "Download everything" button goes to
+  -- instead of the built-in .zip (blank = use the built-in zip).
+  download_url text not null default '',
   product_slug text not null default 'memories-of-home',
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default (now() + interval '7 days'),
@@ -41,5 +44,5 @@ create policy "Admins can manage vip links"
 -- anon/authenticated in full, so start from nothing.)
 revoke all on public.vip_links from anon, authenticated;
 grant select on public.vip_links to authenticated;
-grant insert (label, note) on public.vip_links to authenticated;
+grant insert (label, note, download_url) on public.vip_links to authenticated;
 grant update (revoked) on public.vip_links to authenticated;

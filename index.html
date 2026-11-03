@@ -3083,6 +3083,9 @@
               <label class="admin-file-label" for="vip-note">Thank-you note (optional)</label>
               <p class="field-hint">Leave blank for the standard note. A blank line starts a new paragraph.</p>
               <textarea id="vip-note" class="admin-input" rows="4" placeholder="Thank you for showing up.&#10;&#10;This is Memories Of Home..."></textarea>
+              <label class="admin-file-label" for="vip-download-url">Download link (Google Drive, optional)</label>
+              <p class="field-hint">Paste a Google Drive folder or file link (set to "Anyone with the link can view") and the page's "Download everything" button opens it. Leave blank to use the built-in .zip. A Drive link does not close by itself after 7 days — turn off its sharing in Drive when the event is over.</p>
+              <input type="url" id="vip-download-url" class="admin-input" placeholder="https://drive.google.com/drive/folders/..." autocomplete="off">
               <button type="button" id="vip-create-btn" class="admin-btn">Make New Link</button>
               <div id="vip-status" class="field-status"></div>
               <div id="vip-links-list"></div>
