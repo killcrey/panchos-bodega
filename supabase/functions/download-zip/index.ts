@@ -54,6 +54,57 @@ function crcUpdate(crc: number, chunk: Uint8Array): number {
   return crc
 }
 
+// Size + CRC-32 of each file, remembered in zip_file_meta so a zip can start
+// right away instead of first re-reading the whole album. A cached row is only
+// trusted while the object's size and ETag (from a 1-byte range request) still
+// match, so a file replaced at the same path is re-read, never zipped with a
+// stale checksum.
+type MetaRow = { size: number; crc: number; etag: string }
+// deno-lint-ignore no-explicit-any
+async function loadMetaCache(supabase: any, keys: string[]): Promise<Map<string, MetaRow>> {
+  const out = new Map<string, MetaRow>()
+  if (!keys.length) return out
+  const { data, error } = await supabase.from('zip_file_meta').select('path, size, crc, etag').in('path', keys)
+  if (error) { console.error('zip meta cache read failed (continuing without it):', error); return out }
+  for (const r of data || []) out.set(r.path, { size: Number(r.size), crc: Number(r.crc), etag: r.etag })
+  return out
+}
+
+async function probeFile(url: string): Promise<{ size: number; etag: string } | null> {
+  const res = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+  await res.body?.cancel()
+  if (!res.ok) return null
+  const range = res.headers.get('content-range')
+  const size = range ? parseInt(range.split('/')[1], 10) : parseInt(res.headers.get('content-length') || '', 10)
+  return Number.isFinite(size) ? { size, etag: res.headers.get('etag') || '' } : null
+}
+
+// deno-lint-ignore no-explicit-any
+async function fileMeta(supabase: any, cache: Map<string, MetaRow>, key: string, url: string): Promise<{ size: number; crc: number } | null> {
+  const probe = await probeFile(url)
+  if (!probe) return null
+  const hit = cache.get(key)
+  if (hit && probe.etag && hit.etag === probe.etag && hit.size === probe.size) return { size: hit.size, crc: hit.crc }
+  const res = await fetch(url)
+  if (!res.ok || !res.body) return null
+  let crc = 0xffffffff, size = 0
+  const reader = res.body.getReader()
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    crc = crcUpdate(crc, value)
+    size += value.length
+  }
+  crc = (crc ^ 0xffffffff) >>> 0
+  if (size !== probe.size) return null
+  if (probe.etag) {
+    const { error } = await supabase.from('zip_file_meta').upsert({ path: key, size, crc, etag: probe.etag, updated_at: new Date().toISOString() })
+    if (error) console.error('zip meta cache write failed (continuing):', error)
+  }
+  return { size, crc }
+}
+
+
 function pathFromUrl(url: string | null | undefined): string | null {
   if (!url) return null
   const marker = '/storage/v1/object/public/audio-vault/'
@@ -118,23 +169,20 @@ Deno.serve(async (req) => {
     const paths = (items.length ? items.map((i: { url: string }) => pathFromUrl(i.url)) : [pathFromUrl(product.audio_preview_url)]).filter(Boolean) as string[]
     if (paths.length === 0) return fail(404, 'There are no files attached to this product.')
 
-    // ---- pass 1: size + CRC of every file (skipping any that are missing)
+    // ---- pass 1: size + CRC of every file (from zip_file_meta when still valid; any file that is missing is skipped)
     const entries: Entry[] = []
     const used = new Set<string>()
-    for (const path of paths) {
+    const metaCache = await loadMetaCache(supabase, paths)
+    const metas = await Promise.all(paths.map(async (path) => {
       const { data: signed, error } = await supabase.storage.from('audio-vault').createSignedUrl(path, 900)
-      if (error || !signed) { console.error('zip: cannot sign', path, error); continue }
-      const res = await fetch(signed.signedUrl)
-      if (!res.ok || !res.body) { console.error('zip: cannot read', path, res.status); continue }
-      let crc = 0xffffffff, size = 0
-      const reader = res.body.getReader()
-      while (true) {
-        const { value, done } = await reader.read()
-        if (done) break
-        crc = crcUpdate(crc, value)
-        size += value.length
-      }
-      let name = path.replace(/^\d+-/, '')
+      if (error || !signed) { console.error('zip: cannot sign', path, error); return null }
+      const m = await fileMeta(supabase, metaCache, path, signed.signedUrl)
+      if (!m) { console.error('zip: cannot read', path); return null }
+      return { path, url: signed.signedUrl, ...m }
+    }))
+    for (const m of metas) {
+      if (!m) continue
+      let name = m.path.replace(/^\d+-/, '')
       if (used.has(name.toLowerCase())) {
         const dot = name.lastIndexOf('.')
         let n = 2
@@ -143,7 +191,7 @@ Deno.serve(async (req) => {
         name = `${stem} (${n})${ext}`
       }
       used.add(name.toLowerCase())
-      entries.push({ name, nameBytes: enc.encode(name), url: signed.signedUrl, size, crc: (crc ^ 0xffffffff) >>> 0, offset: 0 })
+      entries.push({ name, nameBytes: enc.encode(name), url: m.url, size: m.size, crc: m.crc, offset: 0 })
     }
     if (entries.length === 0) return fail(404, 'The files for this download are not available right now.')
 

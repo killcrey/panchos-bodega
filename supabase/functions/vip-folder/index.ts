@@ -98,6 +98,57 @@ function crcUpdate(crc: number, chunk: Uint8Array): number {
   return crc
 }
 
+// Size + CRC-32 of each file, remembered in zip_file_meta so a zip can start
+// right away instead of first re-reading the whole album. A cached row is only
+// trusted while the object's size and ETag (from a 1-byte range request) still
+// match, so a file replaced at the same path is re-read, never zipped with a
+// stale checksum.
+type MetaRow = { size: number; crc: number; etag: string }
+// deno-lint-ignore no-explicit-any
+async function loadMetaCache(supabase: any, keys: string[]): Promise<Map<string, MetaRow>> {
+  const out = new Map<string, MetaRow>()
+  if (!keys.length) return out
+  const { data, error } = await supabase.from('zip_file_meta').select('path, size, crc, etag').in('path', keys)
+  if (error) { console.error('zip meta cache read failed (continuing without it):', error); return out }
+  for (const r of data || []) out.set(r.path, { size: Number(r.size), crc: Number(r.crc), etag: r.etag })
+  return out
+}
+
+async function probeFile(url: string): Promise<{ size: number; etag: string } | null> {
+  const res = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+  await res.body?.cancel()
+  if (!res.ok) return null
+  const range = res.headers.get('content-range')
+  const size = range ? parseInt(range.split('/')[1], 10) : parseInt(res.headers.get('content-length') || '', 10)
+  return Number.isFinite(size) ? { size, etag: res.headers.get('etag') || '' } : null
+}
+
+// deno-lint-ignore no-explicit-any
+async function fileMeta(supabase: any, cache: Map<string, MetaRow>, key: string, url: string): Promise<{ size: number; crc: number } | null> {
+  const probe = await probeFile(url)
+  if (!probe) return null
+  const hit = cache.get(key)
+  if (hit && probe.etag && hit.etag === probe.etag && hit.size === probe.size) return { size: hit.size, crc: hit.crc }
+  const res = await fetch(url)
+  if (!res.ok || !res.body) return null
+  let crc = 0xffffffff, size = 0
+  const reader = res.body.getReader()
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) break
+    crc = crcUpdate(crc, value)
+    size += value.length
+  }
+  crc = (crc ^ 0xffffffff) >>> 0
+  if (size !== probe.size) return null
+  if (probe.etag) {
+    const { error } = await supabase.from('zip_file_meta').upsert({ path: key, size, crc, etag: probe.etag, updated_at: new Date().toISOString() })
+    if (error) console.error('zip meta cache write failed (continuing):', error)
+  }
+  return { size, crc }
+}
+
+
 function u16(n: number) { return new Uint8Array([n & 255, (n >>> 8) & 255]) }
 function u32(n: number) { return new Uint8Array([n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]) }
 function concat(...parts: Uint8Array[]): Uint8Array {
@@ -175,7 +226,7 @@ Deno.serve(async (req) => {
 
     // ---------------------------------------------------------------- zip
     if (q.get('zip') === '1') {
-      type Source = { name: string; fetchUrl: string }
+      type Source = { name: string; fetchUrl: string; key: string }
       const sources: Source[] = []
       const used = new Set<string>()
       const uniqueName = (name: string) => {
@@ -198,39 +249,33 @@ Deno.serve(async (req) => {
         if (!path) continue
         const { data: signed, error } = await supabase.storage.from('audio-vault').createSignedUrl(path, 900)
         if (error || !signed) { console.error('vip zip: cannot sign', path, error); continue }
-        sources.push({ name: fileNameFromPath(path), fetchUrl: signed.signedUrl })
+        sources.push({ name: fileNameFromPath(path), fetchUrl: signed.signedUrl, key: path })
       }
       for (const c of vipCovers) {
         const { data: signed, error } = await supabase.storage.from('audio-vault').createSignedUrl(c.path, 900)
         if (error || !signed) { console.error('vip zip: cannot sign', c.path, error); continue }
-        sources.push({ name: c.file, fetchUrl: signed.signedUrl })
+        sources.push({ name: c.file, fetchUrl: signed.signedUrl, key: c.path })
       }
       if (vipCovers.length === 0 && bundleCovers.length === 0 && product.cover_art_url) {
         const ext = (product.cover_art_url.split('?')[0].match(/\.[A-Za-z0-9]+$/) || ['.jpg'])[0]
-        sources.push({ name: `${album} - Cover${ext}`, fetchUrl: product.cover_art_url })
+        sources.push({ name: `${album} - Cover${ext}`, fetchUrl: product.cover_art_url, key: `url:${product.cover_art_url}` })
       }
 
-      // ---- pass 1: size + CRC of every file (skipping any that are missing)
+      // ---- pass 1: size + CRC of every file (from zip_file_meta when still valid; any file that is missing is skipped)
       const entries: Entry[] = []
       const noteText = [...note, SIGNATURE, ''].join('\r\n\r\n')
       const noteBytes = enc.encode(noteText)
       const noteName = uniqueName('Thank You.txt')
       entries.push({ name: noteName, nameBytes: enc.encode(noteName), data: noteBytes, size: noteBytes.length, crc: (crcUpdate(0xffffffff, noteBytes) ^ 0xffffffff) >>> 0, offset: 0 })
 
-      for (const s of sources) {
-        const res = await fetch(s.fetchUrl)
-        if (!res.ok || !res.body) { console.error('vip zip: cannot read', s.name, res.status); continue }
-        let crc = 0xffffffff, size = 0
-        const reader = res.body.getReader()
-        while (true) {
-          const { value, done } = await reader.read()
-          if (done) break
-          crc = crcUpdate(crc, value)
-          size += value.length
-        }
+      const metaCache = await loadMetaCache(supabase, sources.map(s => s.key))
+      const metas = await Promise.all(sources.map(s => fileMeta(supabase, metaCache, s.key, s.fetchUrl)))
+      sources.forEach((s, i) => {
+        const m = metas[i]
+        if (!m) { console.error('vip zip: cannot read', s.name); return }
         const name = uniqueName(s.name)
-        entries.push({ name, nameBytes: enc.encode(name), url: s.fetchUrl, size, crc: (crc ^ 0xffffffff) >>> 0, offset: 0 })
-      }
+        entries.push({ name, nameBytes: enc.encode(name), url: s.fetchUrl, size: m.size, crc: m.crc, offset: 0 })
+      })
       if (entries.length < 2) return fail(404, 'The files for this folder are not available right now.')
 
       // ---- layout: exact byte offsets, so Content-Length is known up front
