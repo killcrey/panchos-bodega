@@ -68,14 +68,12 @@ export function initInAppBrowserNotice() {
   const box = el('div', 'iab-box')
   box.append(
     el('h2', 'iab-title', 'Open this in your browser'),
-    el('p', 'iab-text', (/Instagram/i.test(UA()) ? 'Instagram' : 'Facebook') + '’s built-in browser can block downloads and some features. It works best in ' + (android ? 'Chrome.' : 'Safari.')),
-    el('p', 'iab-steps', android
-      ? 'Tap the ••• menu at the top right, then “Open in Chrome” (or “Open in browser”).'
-      : 'Tap the ••• menu, then “Open in Safari” (or “Open in browser”).'),
+    el('p', 'iab-text', (/Instagram/i.test(UA()) ? 'Instagram' : 'Facebook') + '’s built-in browser can block downloads and some features. It works best in your regular browser.'),
+    el('p', 'iab-steps', 'Tap the ••• menu, then choose “Open in browser” (or “Open in ' + (android ? 'Chrome' : 'Safari') + '”).'),
   )
 
   if (android) {
-    const open = el('button', 'iab-btn', 'Open in Chrome')
+    const open = el('button', 'iab-btn', 'Open in browser')
     open.type = 'button'
     open.addEventListener('click', () => {
       window.location.href = 'intent://' + location.host + location.pathname + location.search + '#Intent;scheme=https;package=com.android.chrome;end'
