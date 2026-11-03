@@ -73,17 +73,21 @@ function render(data, token) {
   const zipMeta = el('p', 'zip-meta', useDrive
     ? 'All the songs, the covers and this note. Opens in Google Drive — tap Download all.'
     : `${data.tracks.length} songs, the covers and this note in one file.`)
+  // The zip is assembled while the browser waits, so nothing visibly happens for
+  // up to a minute after the tap. Say so up front (and again once tapped) so
+  // nobody gives up and leaves.
+  let zipWait = null
   if (!useDrive) {
+    const wait = el('p', 'zip-wait', 'Heads up: it takes up to a minute to start after you tap. Keep this page open and tap once.')
+    wait.id = 'zip-wait'
+    zipWait = wait
     zip.addEventListener('click', () => {
-      // The zip is assembled while the browser waits — nothing visibly happens
-      // for a bit — so say so, like the post-purchase page does.
-      if (document.getElementById('zip-wait')) return
-      const wait = el('p', 'zip-wait', 'Packaging it now. This can take up to a minute to start. Keep this page open and tap once.')
-      wait.id = 'zip-wait'
-      zipMeta.after(wait)
+      wait.textContent = 'Packaging your download now. This can take up to a minute to start. Keep this page open.'
+      wait.style.fontWeight = 'bold'
     })
   }
   app.append(zip, zipMeta)
+  if (zipWait) app.append(zipWait)
 
   // ---- songs: one shared audio element, one song at a time, auto-advance
   const audio = new Audio()
