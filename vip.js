@@ -67,8 +67,8 @@ function openPackModal() {
     const poster = el('img', 'pack-poster')
     poster.src = GAME_POSTER
     poster.alt = 'The Invisible Panchos video game'
-    const sub = el('p', 'pack-sub', 'Your download starts by itself. It can take up to a minute.')
-    const game = el('a', 'pack-game', 'Play the game while you wait')
+    const sub = el('p', 'pack-sub', 'Your download starts by itself. It can take up to a minute. Keep this page open until it does.')
+    const game = el('a', 'pack-game', 'Don’t forget to check out our game on your way out')
     game.href = GAME_URL
     game.target = '_blank'
     game.rel = 'noopener'
@@ -87,7 +87,7 @@ function openPackModal() {
     document.body.append(backdrop)
     packModal = backdrop
   }
-  packModal._sub.textContent = 'Your download starts by itself. It can take up to a minute.'
+  packModal._sub.textContent = 'Your download starts by itself. It can take up to a minute. Keep this page open until it does.'
   packModal.classList.add('open')
   clearTimeout(packModal._late)
   packModal._late = setTimeout(() => {
