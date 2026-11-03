@@ -29,4 +29,17 @@ create policy "Admins can manage vip links"
   using (true)
   with check (true);
 
-grant select, insert, update, delete on public.vip_links to authenticated;
+-- Least privilege, column by column. Row-level security only says WHO may touch
+-- the table; every admin table here allows any logged-in user, so the grants
+-- are what limit WHAT a logged-in user can do. The admin screen only ever makes
+-- a link (event name + optional note), reads the list, and flips `revoked` —
+-- so that is all that is granted. In particular `token`, `expires_at` and
+-- `product_slug` can only ever come from the table defaults: nobody can make a
+-- link that outlives 7 days, picks its own token, or points at a different
+-- (e.g. paid) product's files. No delete: old links just expire.
+-- (Supabase's default privileges would otherwise hand every new table to
+-- anon/authenticated in full, so start from nothing.)
+revoke all on public.vip_links from anon, authenticated;
+grant select on public.vip_links to authenticated;
+grant insert (label, note) on public.vip_links to authenticated;
+grant update (revoked) on public.vip_links to authenticated;
