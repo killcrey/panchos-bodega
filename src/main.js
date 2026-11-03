@@ -500,6 +500,113 @@ async function addLookbookPhotos(items) {
   }
 }
 
+// VIP FOLDER LINKS (admin "VIP Links" tab) — the secret link written onto the
+// NFC keychains. The table is admin-only (the token is the secret); the public
+// vip-folder edge function is the only reader, and it enforces the 7-day expiry
+// (set by the table default) and the shut-off flag on every request.
+const VIP_PAGE_BASE = 'https://bodega.theinvisiblepanchos.com/vip/'
+
+function vipLinkStatus(row) {
+  if (row.revoked) return { text: 'Shut off', color: '#888', live: false }
+  if (new Date(row.expires_at).getTime() <= Date.now()) return { text: 'Expired', color: '#888', live: false }
+  const when = new Date(row.expires_at).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return { text: `Live — closes ${when}`, color: '#00ffcc', live: true }
+}
+
+async function loadAdminVipLinks() {
+  const el = document.getElementById('vip-links-list')
+  if (!el) return
+  const { data, error } = await supabase.from('vip_links').select('*').order('created_at', { ascending: false })
+  if (error) {
+    el.innerHTML = '<p style="font-size: 0.65rem; color: #ff4d4d;">Failed to load VIP links.</p>'
+    return
+  }
+  if (!data || data.length === 0) {
+    el.innerHTML = '<p style="font-size: 0.65rem; color: #aaa;">No links yet. Make one above.</p>'
+    return
+  }
+  el.innerHTML = data.map(row => {
+    const status = vipLinkStatus(row)
+    const url = VIP_PAGE_BASE + row.token
+    const lastOpened = row.last_opened_at
+      ? `, last ${new Date(row.last_opened_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+      : ''
+    const opened = row.open_count > 0
+      ? `Opened ${row.open_count} time${row.open_count === 1 ? '' : 's'}${lastOpened}`
+      : 'Not opened yet'
+    return `
+      <div style="border: 1px solid #333; padding: 0.7rem; margin-top: 0.7rem; display: flex; flex-direction: column; gap: 0.4rem;">
+        <div style="display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline;">
+          <strong style="font-size: 0.8rem;">${escapeHtmlText(row.label || 'Untitled event')}</strong>
+          <span style="font-size: 0.65rem; color: ${status.color};">${escapeHtmlText(status.text)}</span>
+        </div>
+        <span style="font-size: 0.6rem; color: #888;">${escapeHtmlText(opened)}</span>
+        <input type="text" class="admin-input" readonly value="${escapeHtmlText(url)}" onclick="this.select()" aria-label="VIP link">
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
+          ${status.live ? `<button type="button" class="admin-btn" data-vip-off="${escapeHtmlText(row.id)}">Shut Off Now</button>` : ''}
+        </div>
+      </div>
+    `
+  }).join('')
+}
+
+async function createVipLink() {
+  const statusEl = document.getElementById('vip-status')
+  const say = (msg, color = '#e8b923') => { statusEl.textContent = msg; statusEl.style.color = color }
+  const labelEl = document.getElementById('vip-label')
+  const noteEl = document.getElementById('vip-note')
+  const label = labelEl.value.trim()
+  if (!label) { say('Give the link an event name so you can tell them apart.', '#ff4d4d'); return }
+  say('Making the link...')
+  const { data, error } = await supabase.from('vip_links').insert({ label, note: noteEl.value.trim() }).select().single()
+  if (error || !data) {
+    console.error('VIP link create failed:', error)
+    say((error && error.message) || 'Could not make the link.', '#ff4d4d')
+    return
+  }
+  labelEl.value = ''
+  noteEl.value = ''
+  let copied = false
+  try { await navigator.clipboard.writeText(VIP_PAGE_BASE + data.token); copied = true } catch (err) { /* the list below has a Copy button */ }
+  say(copied ? 'Link made and copied. Write it onto the keychains with your NFC app.' : 'Link made. Copy it from the list below.', '#00ffcc')
+  await loadAdminVipLinks()
+}
+
+function initVipAdmin() {
+  const createBtn = document.getElementById('vip-create-btn')
+  const list = document.getElementById('vip-links-list')
+  if (!createBtn || !list) return
+  createBtn.addEventListener('click', createVipLink)
+  list.addEventListener('click', async (e) => {
+    const statusEl = document.getElementById('vip-status')
+    const say = (msg, color = '#e8b923') => { statusEl.textContent = msg; statusEl.style.color = color }
+    const copyBtn = e.target.closest('[data-vip-copy]')
+    if (copyBtn) {
+      try {
+        await navigator.clipboard.writeText(copyBtn.dataset.vipCopy)
+        say('Link copied.', '#00ffcc')
+      } catch (err) {
+        say('Could not copy — tap the link box and copy it by hand.', '#ff4d4d')
+      }
+      return
+    }
+    const offBtn = e.target.closest('[data-vip-off]')
+    if (offBtn) {
+      if (!confirm('Shut this link off now? Anyone with it will see "This link has closed."')) return
+      // Chained .select() so a blocked/no-match update isn't reported as success.
+      const { data, error } = await supabase.from('vip_links').update({ revoked: true }).eq('id', offBtn.dataset.vipOff).select('id')
+      if (error || !data || data.length === 0) {
+        console.error('VIP link shut-off failed:', error)
+        say((error && error.message) || 'Could not shut that link off.', '#ff4d4d')
+      } else {
+        say('Link shut off.', '#00ffcc')
+      }
+      await loadAdminVipLinks()
+    }
+  })
+}
+
 function initLookbookAdmin() {
   const fileInput = document.getElementById('lookbook-file')
   if (!fileInput) return
@@ -2736,6 +2843,7 @@ function initAdminPortal() {
       loadAdminServiceInquiries()
       loadAdminSettings()
       loadAdminLookbook()
+      loadAdminVipLinks()
     } else {
       loginView.style.display = 'block'
       dashboardView.style.display = 'none'
@@ -2792,6 +2900,7 @@ function initAdminPortal() {
 
   initLookbookAdmin()
   initFeaturedOrderAdmin()
+  initVipAdmin()
 
   const settingsSaveBtn = document.getElementById('settings-save-btn')
   if (settingsSaveBtn) {

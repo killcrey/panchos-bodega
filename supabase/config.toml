@@ -483,3 +483,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/create-product-payment-session/deno.json"
 entrypoint = "./functions/create-product-payment-session/index.ts"
+
+[functions.vip-folder]
+enabled = true
+verify_jwt = false
+import_map = "./functions/vip-folder/deno.json"
+entrypoint = "./functions/vip-folder/index.ts"

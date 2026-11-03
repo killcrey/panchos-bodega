@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Thank You | The Invisible Panchos</title>
+    <!-- Private page: never indexed, and the link's secret must not leak through the Referer header. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="theme-color" content="#121212" />
+    <style>
+      :root {
+        --void: #121212;
+        --terra: #e55b3c;
+        --cyan: #00ffcc;
+        --text: #ededed;
+        --grey: #8a8a8a;
+        --panel: #1e1e1e;
+        --line: #2a2a2a;
+        --head: Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        --mono: 'Space Mono', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--void);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 15px;
+        line-height: 1.6;
+        -webkit-text-size-adjust: 100%;
+      }
+      .wrap { max-width: 560px; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+      .glyph { font-size: 1.1rem; letter-spacing: 0.4rem; }
+      h1 {
+        font-family: var(--head);
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: -0.02em;
+        line-height: 0.95;
+        font-size: clamp(2.6rem, 12vw, 3.8rem);
+        margin: 0.7rem 0 1.4rem 0;
+      }
+      .cover { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--panel); margin: 0 0 1.5rem 0; }
+      .note p { margin: 0 0 0.9rem 0; }
+      .signature { color: var(--grey); font-size: 0.8rem; margin: 1.2rem 0 1.8rem 0; }
+      .zip-btn {
+        display: block;
+        width: 100%;
+        padding: 1.05rem 1rem;
+        background: var(--terra);
+        color: var(--void);
+        font-family: var(--head);
+        font-weight: 800;
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        text-align: center;
+        text-decoration: none;
+      }
+      .zip-meta { color: var(--grey); font-size: 0.75rem; margin: 0.6rem 0 0 0; }
+      .zip-wait { color: var(--cyan); font-size: 0.75rem; margin: 0.6rem 0 0 0; }
+      h2 {
+        font-family: var(--head);
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        font-size: 0.85rem;
+        color: var(--grey);
+        margin: 2.4rem 0 0.4rem 0;
+      }
+      ol { list-style: none; margin: 0; padding: 0; }
+      .track { display: flex; align-items: center; gap: 0.8rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+      .track-play {
+        flex: 0 0 auto;
+        width: 2.5rem;
+        height: 2.5rem;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: none;
+        color: var(--cyan);
+        font-family: var(--mono);
+        font-size: 0.85rem;
+        cursor: pointer;
+        padding: 0;
+      }
+      .track-name { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+      .track.is-active .track-name { color: var(--cyan); }
+      .track-n { color: var(--grey); font-size: 0.75rem; margin-right: 0.5rem; }
+      .save { flex: 0 0 auto; color: var(--cyan); text-decoration: none; font-size: 0.8rem; padding: 0.4rem 0.2rem; }
+      .covers { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.9rem; margin-top: 0.6rem; }
+      .covers figure { margin: 0; }
+      .covers img { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: cover; background: var(--panel); }
+      .covers figcaption { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.75rem; color: var(--grey); margin-top: 0.3rem; }
+      .closes { color: var(--cyan); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; margin: 2.4rem 0 0 0; }
+      .foot { color: var(--grey); font-size: 0.8rem; margin: 1rem 0 0 0; }
+      .foot a { color: var(--grey); }
+      .closed p { color: var(--grey); }
+      .closed a { color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <main class="wrap" id="app" aria-live="polite">
+      <p class="glyph">❌👁️</p>
+    </main>
+    <script type="module" src="/vip.js"></script>
+  </body>
+</html>

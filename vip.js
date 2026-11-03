@@ -1,0 +1,174 @@
+// The VIP folder page (vip.html), opened from an NFC keychain at
+// /vip/<token>. All content comes from the vip-folder edge function, which
+// checks the link is live; this page only draws what it is given. Everything
+// from the response goes in with textContent/attributes, never as HTML.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const API = `${supabaseUrl}/functions/v1/vip-folder`
+const SITE = 'https://bodega.theinvisiblepanchos.com'
+
+const app = document.getElementById('app')
+
+function tokenFromUrl() {
+  const m = window.location.pathname.match(/^\/vip\/([A-Za-z0-9_-]+)\/?$/)
+  return m ? m[1] : (new URLSearchParams(window.location.search).get('t') || '')
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text != null) node.textContent = text
+  return node
+}
+
+function showClosed() {
+  app.replaceChildren()
+  const box = el('div', 'closed')
+  box.append(
+    el('p', 'glyph', '❌👁️'),
+    el('h1', null, 'This link has closed.'),
+    el('p', null, 'These stay open for a week. Catch us at the next one.'),
+  )
+  const p = el('p')
+  const a = el('a', null, 'bodega.theinvisiblepanchos.com')
+  a.href = SITE
+  p.append(a)
+  box.append(p)
+  app.append(box)
+}
+
+function daysLeftText(expiresAt) {
+  const ms = new Date(expiresAt).getTime() - Date.now()
+  const days = Math.ceil(ms / 86400000)
+  const when = new Date(expiresAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+  const left = days <= 1 ? 'less than a day left' : `${days} days left`
+  return `Link closes ${when} · ${left}`
+}
+
+function render(data, token) {
+  app.replaceChildren()
+  document.title = `Thank You | ${data.album} | The Invisible Panchos`
+
+  app.append(el('p', 'glyph', '❌👁️'), el('h1', null, 'Thank you'))
+
+  if (data.covers.length > 0) {
+    const cover = el('img', 'cover')
+    cover.src = data.covers[0].url
+    cover.alt = `${data.album} cover`
+    app.append(cover)
+  }
+
+  const note = el('div', 'note')
+  data.note.forEach(line => note.append(el('p', null, line)))
+  app.append(note, el('p', 'signature', data.signature))
+
+  const zip = el('a', 'zip-btn', 'Download everything (.zip)')
+  zip.href = `${API}?t=${encodeURIComponent(token)}&zip=1`
+  const zipMeta = el('p', 'zip-meta', `${data.tracks.length} songs, the covers and this note in one file.`)
+  zip.addEventListener('click', () => {
+    // The zip is assembled while the browser waits — nothing visibly happens
+    // for a bit — so say so, like the post-purchase page does.
+    if (document.getElementById('zip-wait')) return
+    const wait = el('p', 'zip-wait', 'Packaging it now. This can take up to a minute to start. Keep this page open and tap once.')
+    wait.id = 'zip-wait'
+    zipMeta.after(wait)
+  })
+  app.append(zip, zipMeta)
+
+  // ---- songs: one shared audio element, one song at a time, auto-advance
+  const audio = new Audio()
+  audio.preload = 'none'
+  let activeIndex = -1
+  const rows = []
+
+  const paint = () => {
+    rows.forEach((row, i) => {
+      const active = i === activeIndex
+      row.li.classList.toggle('is-active', active)
+      row.btn.textContent = active && !audio.paused ? '❚❚' : '▶'
+      row.btn.setAttribute('aria-label', `${active && !audio.paused ? 'Pause' : 'Play'} ${data.tracks[i].name}`)
+    })
+  }
+  const playIndex = (i) => {
+    if (i === activeIndex) {
+      if (audio.paused) audio.play().catch(() => {}); else audio.pause()
+      return
+    }
+    activeIndex = i
+    audio.src = data.tracks[i].url
+    audio.play().catch(() => {})
+    paint()
+  }
+  audio.addEventListener('play', paint)
+  audio.addEventListener('pause', paint)
+  audio.addEventListener('ended', () => {
+    if (activeIndex + 1 < data.tracks.length) playIndex(activeIndex + 1)
+    else { activeIndex = -1; paint() }
+  })
+
+  app.append(el('h2', null, 'Songs'))
+  const list = el('ol')
+  data.tracks.forEach((track, i) => {
+    const li = el('li', 'track')
+    const btn = el('button', 'track-play', '▶')
+    btn.type = 'button'
+    btn.addEventListener('click', () => playIndex(i))
+    const name = el('span', 'track-name')
+    name.append(el('span', 'track-n', String(i + 1).padStart(2, '0')), document.createTextNode(track.name))
+    const save = el('a', 'save', 'save')
+    save.href = track.url
+    save.rel = 'noopener'
+    save.setAttribute('aria-label', `Save ${track.name}`)
+    li.append(btn, name, save)
+    list.append(li)
+    rows.push({ li, btn })
+  })
+  app.append(list)
+  paint()
+
+  if (data.covers.length > 0) {
+    app.append(el('h2', null, 'Covers'))
+    const grid = el('div', 'covers')
+    data.covers.forEach((c) => {
+      const fig = el('figure')
+      const img = el('img')
+      img.src = c.url
+      img.alt = c.name
+      img.loading = 'lazy'
+      const cap = el('figcaption')
+      cap.append(el('span', null, c.name))
+      const save = el('a', 'save', 'save')
+      save.href = c.url
+      save.rel = 'noopener'
+      cap.append(save)
+      fig.append(img, cap)
+      grid.append(fig)
+    })
+    app.append(grid)
+  }
+
+  app.append(el('p', 'closes', daysLeftText(data.expiresAt)))
+  const foot = el('p', 'foot')
+  foot.append(document.createTextNode('Stay invisible. '))
+  const home = el('a', null, 'bodega.theinvisiblepanchos.com')
+  home.href = SITE
+  foot.append(home)
+  app.append(foot)
+}
+
+async function main() {
+  const token = tokenFromUrl()
+  if (!token) { showClosed(); return }
+  try {
+    const res = await fetch(`${API}?t=${encodeURIComponent(token)}`)
+    // 404 (not a link we made) and 410 (expired or shut off) read the same
+    // to a visitor — nothing to learn about which links exist.
+    if (res.status === 404 || res.status === 410) { showClosed(); return }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    render(await res.json(), token)
+  } catch (err) {
+    console.error('vip: could not load the folder', err)
+    app.replaceChildren(el('p', 'glyph', '❌👁️'), el('h1', null, 'Try again'), el('p', null, 'The folder did not load. Check your signal and refresh.'))
+  }
+}
+
+main()

@@ -7,6 +7,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         success: resolve(__dirname, 'success.html'),
+        vip: resolve(__dirname, 'vip.html'),
       }
     }
   }

@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /vip/
 
 Sitemap: https://bodega.theinvisiblepanchos.com/sitemap.xml

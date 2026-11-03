@@ -3040,6 +3040,7 @@
               <button type="button" class="admin-tab-btn" data-tab="inquiries">Inquiries</button>
               <button type="button" class="admin-tab-btn" data-tab="lookbook">Look Book</button>
               <button type="button" class="admin-tab-btn" data-tab="featured-order">Featured Order</button>
+              <button type="button" class="admin-tab-btn" data-tab="vip-links">VIP Links</button>
               <button type="button" class="admin-tab-btn" data-tab="messages">Messages</button>
             </div>
             <div class="admin-tab-panel" data-tab-panel="inventory">
@@ -3073,6 +3074,18 @@
               <button type="button" id="lookbook-product-btn" class="admin-btn">Or Use an Existing Product Photo</button>
               <div id="lookbook-product-picker" class="admin-image-preview" style="display: none;"></div>
               <div id="lookbook-status" class="field-status"></div>
+            </div>
+            <div class="admin-tab-panel" data-tab-panel="vip-links" style="display: none;">
+              <label class="admin-file-label">VIP Folder Links (NFC keychains)</label>
+              <p class="field-hint">Each link opens a private page with Memories Of Home — the songs, the covers and a thank-you note — and closes by itself 7 days after you make it. Make a new one for each event, write it onto the keychains, and shut one off early with its button.</p>
+              <label class="admin-file-label" for="vip-label">Event name</label>
+              <input type="text" id="vip-label" class="admin-input" placeholder="e.g. Chula Vista show, Nov 14" autocomplete="off">
+              <label class="admin-file-label" for="vip-note">Thank-you note (optional)</label>
+              <p class="field-hint">Leave blank for the standard note. A blank line starts a new paragraph.</p>
+              <textarea id="vip-note" class="admin-input" rows="4" placeholder="Thank you for showing up.&#10;&#10;This is Memories Of Home..."></textarea>
+              <button type="button" id="vip-create-btn" class="admin-btn">Make New Link</button>
+              <div id="vip-status" class="field-status"></div>
+              <div id="vip-links-list"></div>
             </div>
             <div class="admin-tab-panel" data-tab-panel="messages" style="display: none;">
               <label class="admin-file-label" for="settings-purchase-message">Purchase &amp; Free Download Thank You Message</label>

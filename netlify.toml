@@ -22,6 +22,14 @@
   # are supposed to ship to the browser.
   SECRETS_SCAN_SMART_DETECTION_ENABLED = "false"
 
+# The VIP folder (NFC keychain link): /vip/<token> serves the standalone
+# vip.html, which reads the token from the path. Must come BEFORE the catch-all
+# below — Netlify uses the first rule that matches.
+[[redirects]]
+  from = "/vip/*"
+  to = "/vip.html"
+  status = 200
+
 # scripts/prerender-products.js writes a real static file per product at
 # build time (dist/products/<slug>/index.html) — but that's a snapshot of
 # the products table as of the last deploy. A product added, published, or
