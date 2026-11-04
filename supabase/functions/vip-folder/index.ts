@@ -32,10 +32,11 @@ const enc = new TextEncoder()
 
 const ARTIST = 'The Invisible Panchos'
 const SIGNATURE = `KILLcRey x Gene Flo — ${ARTIST}`
-// Used whenever a link has no note of its own (vip_links.note blank).
-const DEFAULT_NOTE = [
+// Used whenever a link has no note of its own (vip_links.note blank). The album
+// name is the only part that changes between folders.
+const defaultNote = (album: string) => [
   'Thank you for showing up.',
-  'This is Memories Of Home. Every song, the covers. Yours to keep.',
+  `This is ${album}. Every song, the covers. Yours to keep.`,
   'We make this for the people. You are the reason it is worth making.',
   'Play it loud.',
 ]
@@ -78,9 +79,9 @@ function pathFromUrl(url: string | null | undefined): string | null {
 // the person downloading it should see the real file name.
 const fileNameFromPath = (path: string) => path.replace(/^\d+-/, '')
 
-function noteParagraphs(note: string): string[] {
+function noteParagraphs(note: string, album: string): string[] {
   const own = String(note || '').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
-  return own.length ? own : DEFAULT_NOTE
+  return own.length ? own : defaultNote(album)
 }
 
 // CRC-32 (IEEE) — the checksum every zip entry carries.
@@ -207,21 +208,26 @@ Deno.serve(async (req) => {
     // files, fall back to the product's own (public, site-sized) cover art.
     const bundleCovers = bundle.filter(f => hasExt(f.url, IMAGE_EXTENSIONS))
     const album = albumName(product.title)
-    const note = noteParagraphs(link.note)
+    const note = noteParagraphs(link.note, album)
 
-    // Print-size covers kept just for this folder. Front cover first (it is
-    // the hero image on the page), the rest alphabetical.
+    // The front cover goes first (it is the hero image on the page), the rest
+    // alphabetical. "Front Cover" and a plain "<Album> Cover" both count as front.
+    const frontRank = (file: string) => (/front/i.test(file) || (/cover/i.test(file) && !/back/i.test(file))) ? 0 : 1
+
+    // Print-size covers kept just for this folder.
     const extrasDir = `vip/${link.product_slug}`
     const { data: extras } = await supabase.storage.from('audio-vault').list(extrasDir)
     const vipCovers = (extras || [])
       .filter((o: { id?: string | null; name: string }) => o.id && hasExt(o.name, IMAGE_EXTENSIONS))
       .map((o: { name: string }) => ({ path: `${extrasDir}/${o.name}`, file: o.name }))
-      .sort((a: { file: string }, b: { file: string }) => (/front/i.test(a.file) ? 0 : 1) - (/front/i.test(b.file) ? 0 : 1) || a.file.localeCompare(b.file))
-    // Shown name: the file name without the extension or the album prefix.
+      .sort((a: { file: string }, b: { file: string }) => frontRank(a.file) - frontRank(b.file) || a.file.localeCompare(b.file))
+    // Shown name: the file name without the extension or the album prefix, in
+    // Title Case when it was typed in capitals ("LAYERS COVER" -> "Cover").
+    const albumPrefix = new RegExp('^' + album.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[-–—:]?\\s*', 'i')
     const coverLabel = (file: string) => {
       const base = file.replace(/\.[^/.]+$/, '')
-      const prefix = `${album} - `
-      return (base.toLowerCase().startsWith(prefix.toLowerCase()) ? base.slice(prefix.length) : base) || 'Cover'
+      const label = base.replace(albumPrefix, '').trim() || 'Cover'
+      return label === label.toUpperCase() ? label.toLowerCase().replace(/(^|\s)(\S)/g, (_m, a, b) => a + b.toUpperCase()) : label
     }
 
     // ---------------------------------------------------------------- zip
@@ -358,7 +364,9 @@ Deno.serve(async (req) => {
         return { name: coverLabel(c.file), url: error || !data ? null : data.signedUrl }
       }))
       : bundleCovers.length
-        ? await Promise.all(bundleCovers.map(async (c) => ({ name: (c.name || '').replace(/\.[^/.]+$/, '') || 'Cover', url: await sign(c.url) })))
+        ? await Promise.all([...bundleCovers]
+          .sort((a, b) => frontRank(a.name || '') - frontRank(b.name || '') || (a.name || '').localeCompare(b.name || ''))
+          .map(async (c) => ({ name: coverLabel(c.name || 'Cover'), url: await sign(c.url) })))
         : (product.cover_art_url ? [{ name: 'Cover', url: product.cover_art_url as string | null }] : [])
     const covers = coverSources.filter(c => c.url)
 

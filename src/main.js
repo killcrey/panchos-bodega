@@ -507,6 +507,13 @@ async function addLookbookPhotos(items) {
 // vip-folder edge function is the only reader, and it enforces the 7-day expiry
 // (set by the table default) and the shut-off flag on every request.
 const VIP_PAGE_BASE = 'https://bodega.theinvisiblepanchos.com/vip/'
+// The albums a link can open (slug -> name shown in the list). The same slugs are
+// the only ones the database accepts (vip_links_product_slug_allowed) and match the
+// <option>s of #vip-album in index.html — a third album means all three.
+const VIP_ALBUM_NAMES = {
+  'memories-of-home': 'Memories Of Home',
+  'the-invisible-panchos-layers-download': 'Layers',
+}
 
 function vipLinkStatus(row) {
   if (row.revoked) return { text: 'Shut off', color: '#888', live: false }
@@ -577,7 +584,7 @@ async function loadAdminVipLinks() {
           <strong style="font-size: 0.8rem;">${escapeHtmlText(row.label || 'Untitled event')}</strong>
           <span style="font-size: 0.65rem; color: ${status.color};">${escapeHtmlText(status.text)}</span>
         </div>
-        <span style="font-size: 0.6rem; color: #888;">${escapeHtmlText(opened)} · Download: ${row.download_url ? 'Google Drive link' : 'built-in zip'}</span>
+        <span style="font-size: 0.6rem; color: #888;">${escapeHtmlText(VIP_ALBUM_NAMES[row.product_slug] || row.product_slug)} · ${escapeHtmlText(opened)} · Download: ${row.download_url ? 'Google Drive link' : 'built-in zip'}</span>
         <input type="text" class="admin-input" readonly value="${escapeHtmlText(url)}" onclick="this.select()" aria-label="VIP link">
         <div style="display: flex; gap: 0.5rem;">
           <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
@@ -594,6 +601,9 @@ async function createVipLink() {
   const labelEl = document.getElementById('vip-label')
   const noteEl = document.getElementById('vip-note')
   const driveEl = document.getElementById('vip-download-url')
+  const albumEl = document.getElementById('vip-album')
+  const productSlug = albumEl.value
+  if (!VIP_ALBUM_NAMES[productSlug]) { say('Pick an album.', '#ff4d4d'); return }
   const label = labelEl.value.trim()
   if (!label) { say('Give the link an event name so you can tell them apart.', '#ff4d4d'); return }
   // Same rule the page enforces: only a Google Drive link can replace the built-in zip.
@@ -603,7 +613,7 @@ async function createVipLink() {
     return
   }
   say('Making the link...')
-  const { data, error } = await supabase.from('vip_links').insert({ label, note: noteEl.value.trim(), download_url: downloadUrl }).select().single()
+  const { data, error } = await supabase.from('vip_links').insert({ label, note: noteEl.value.trim(), download_url: downloadUrl, product_slug: productSlug }).select().single()
   if (error || !data) {
     console.error('VIP link create failed:', error)
     say((error && error.message) || 'Could not make the link.', '#ff4d4d')

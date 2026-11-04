@@ -3078,12 +3078,17 @@
             </div>
             <div class="admin-tab-panel" data-tab-panel="vip-links" style="display: none;">
               <label class="admin-file-label">VIP Folder Links (NFC keychains)</label>
-              <p class="field-hint">Each link opens a private page with Memories Of Home — the songs, the covers and a thank-you note — and closes by itself 7 days after you make it. Make a new one for each event, write it onto the keychains, and shut one off early with its button.</p>
+              <p class="field-hint">Each link opens a private page with the album you pick — the songs, the covers and a thank-you note — and closes by itself 7 days after you make it. Make a new one for each event, write it onto the keychains, and shut one off early with its button.</p>
+              <label class="admin-file-label" for="vip-album">Album</label>
+              <select id="vip-album" class="admin-input">
+                <option value="memories-of-home">Memories Of Home</option>
+                <option value="the-invisible-panchos-layers-download">Layers</option>
+              </select>
               <label class="admin-file-label" for="vip-label">Event name</label>
               <input type="text" id="vip-label" class="admin-input" placeholder="e.g. Chula Vista show, Nov 14" autocomplete="off">
               <label class="admin-file-label" for="vip-note">Thank-you note (optional)</label>
               <p class="field-hint">Leave blank for the standard note. A blank line starts a new paragraph.</p>
-              <textarea id="vip-note" class="admin-input" rows="4" placeholder="Thank you for showing up.&#10;&#10;This is Memories Of Home..."></textarea>
+              <textarea id="vip-note" class="admin-input" rows="4" placeholder="Thank you for showing up.&#10;&#10;This is the album..."></textarea>
               <label class="admin-file-label" for="vip-download-url">Download link (Google Drive, optional)</label>
               <p class="field-hint">Paste a Google Drive folder or file link (set to "Anyone with the link can view") and the page's "Download everything" button opens it. Leave blank to use the built-in .zip. A Drive link does not close by itself after 7 days — turn off its sharing in Drive when the event is over.</p>
               <input type="url" id="vip-download-url" class="admin-input" placeholder="https://drive.google.com/drive/folders/..." autocomplete="off">
