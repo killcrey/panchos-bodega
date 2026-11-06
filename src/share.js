@@ -85,11 +85,10 @@ export function openShareMenu(meta) {
 }
 
 async function shareLink(meta) {
-  const { name } = displayNames(meta)
-  const shareData = { title: `${name} — ${PLAYER_ARTIST}`, text: `Listen to ${name} by ${PLAYER_ARTIST}`, url: meta.url }
+  // Link only: the card the link unfurls into already shows the title.
   if (prefersNativeShare()) {
     try {
-      await navigator.share(shareData)
+      await navigator.share({ url: meta.url })
       closeMenu()
     } catch (err) {
       // Dismissing the share sheet isn't an error worth reporting.
