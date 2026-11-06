@@ -138,7 +138,8 @@ function render(data, token) {
       openPackModal()
     })
   }
-  app.append(zip, zipMeta)
+  // The closing date sits right above the button it is a deadline for.
+  app.append(el('p', 'closes', daysLeftText(data.expiresAt)), zip, zipMeta)
   if (zipWait) app.append(zipWait)
 
   // ---- songs: one shared audio element, one song at a time, auto-advance
@@ -215,7 +216,6 @@ function render(data, token) {
     app.append(grid)
   }
 
-  app.append(el('p', 'closes', daysLeftText(data.expiresAt)))
   const foot = el('p', 'foot')
   foot.append(document.createTextNode('Stay invisible. '))
   const home = el('a', null, 'bodega.theinvisiblepanchos.com')

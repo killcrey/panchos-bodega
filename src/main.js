@@ -522,6 +522,14 @@ function vipLinkStatus(row) {
   return { text: `Live — closes ${when}`, color: '#00ffcc', live: true }
 }
 
+// <input type="datetime-local"> wants local time as "YYYY-MM-DDTHH:mm".
+function vipDateInputValue(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 async function loadAdminPlays() {
   const totalsEl = document.getElementById('plays-totals')
   const listEl = document.getElementById('plays-list')
@@ -590,6 +598,12 @@ async function loadAdminVipLinks() {
           <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
           ${status.live ? `<button type="button" class="admin-btn" data-vip-off="${escapeHtmlText(row.id)}">Shut Off Now</button>` : ''}
         </div>
+        ${row.revoked ? '' : `
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 0.6rem; color: #888;">Closes:</span>
+          <input type="datetime-local" class="admin-input" style="width: auto; flex: 1; min-width: 11rem;" data-vip-date="${escapeHtmlText(row.id)}" value="${escapeHtmlText(vipDateInputValue(row.expires_at))}" aria-label="Link close date">
+          <button type="button" class="admin-btn" data-vip-save-date="${escapeHtmlText(row.id)}">Change Close Date</button>
+        </div>`}
       </div>
     `
   }).join('')
@@ -644,6 +658,24 @@ function initVipAdmin() {
       } catch (err) {
         say('Could not copy — tap the link box and copy it by hand.', '#ff4d4d')
       }
+      return
+    }
+    const dateBtn = e.target.closest('[data-vip-save-date]')
+    if (dateBtn) {
+      const id = dateBtn.dataset.vipSaveDate
+      const input = list.querySelector(`[data-vip-date="${CSS.escape(id)}"]`)
+      const when = input && input.value ? new Date(input.value) : null
+      if (!when || Number.isNaN(when.getTime())) { say('Pick a close date and time first.', '#ff4d4d'); return }
+      if (when.getTime() <= Date.now()) { say('That is in the past. Pick a future date, or use Shut Off Now to close the link.', '#ff4d4d'); return }
+      // Chained .select() so a blocked/no-match update isn't reported as success.
+      const { data, error } = await supabase.from('vip_links').update({ expires_at: when.toISOString() }).eq('id', id).select('id')
+      if (error || !data || data.length === 0) {
+        console.error('VIP link date change failed:', error)
+        say((error && error.message) || 'Could not change that date.', '#ff4d4d')
+      } else {
+        say('Close date changed.', '#00ffcc')
+      }
+      await loadAdminVipLinks()
       return
     }
     const offBtn = e.target.closest('[data-vip-off]')
