@@ -76,7 +76,7 @@ export function getPlayableTracks(product) {
     : (Array.isArray(product.download_files)
         ? product.download_files
             .filter(f => isAudioUrl(f.url))
-            .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
+            .map((f, idx) => ({ trackNumber: idx + 1, title: (f.name || '').replace(/\.(mp3|wav|flac|m4a|aac|ogg|opus|aiff?)$/i, ''), url: f.url }))
         : [])
 
   const seen = new Map()

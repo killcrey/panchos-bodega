@@ -1386,7 +1386,7 @@ function deriveDigitalFileFields(items) {
   const audioTracks = []
   sorted.forEach(f => {
     if (isAudioUrl(f.url)) {
-      audioTracks.push({ trackNumber: audioTracks.length + 1, title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url })
+      audioTracks.push({ trackNumber: audioTracks.length + 1, title: (f.name || '').replace(/\.(mp3|wav|flac|m4a|aac|ogg|opus|aiff?)$/i, ''), url: f.url })
     }
   })
 
@@ -2007,12 +2007,21 @@ let editKeptDigitalFiles = []
 // (see the Printful category note below): the thumbnail alone makes an
 // image sitting where an audio/PDF file should be immediately obvious.
 function currentDigitalFileList(product) {
+  // download_files is the complete bundle a buyer receives (songs AND cover/
+  // tracklist images); tracklist_snippets is only its songs. It used to read
+  // tracklist_snippets first, so an album's list showed songs only and saving
+  // the edit form silently dropped the cover + tracklist from the bundle.
+  // Anything that exists only in tracklist_snippets (legacy rows) is still added.
+  const bundle = Array.isArray(product.download_files)
+    ? product.download_files.map(f => ({ url: f.url, name: f.name || f.url }))
+    : []
   if (Array.isArray(product.tracklist_snippets) && product.tracklist_snippets.length > 0) {
-    return product.tracklist_snippets.map(t => ({ url: t.url, name: t.title || t.url }))
+    const have = new Set(bundle.map(f => f.url))
+    product.tracklist_snippets.forEach(t => {
+      if (!have.has(t.url)) bundle.push({ url: t.url, name: t.title || t.url })
+    })
   }
-  if (Array.isArray(product.download_files) && product.download_files.length > 0) {
-    return product.download_files.map(f => ({ url: f.url, name: f.name || f.url }))
-  }
+  if (bundle.length > 0) return bundle
   if (product.audio_preview_url) {
     const name = decodeURIComponent((product.audio_preview_url.split('/').pop() || product.audio_preview_url).replace(/^\d+-/, ''))
     return [{ url: product.audio_preview_url, name }]
