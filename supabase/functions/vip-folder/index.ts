@@ -203,10 +203,14 @@ Deno.serve(async (req) => {
     const zipItems = bundle.length ? bundle : tracklist
     const trackItems = tracklist.length
       ? tracklist.map((t: Item) => ({ title: t.title || '', url: t.url }))
-      : bundle.filter(f => hasExt(f.url, AUDIO_EXTENSIONS)).map(f => ({ title: (f.name || '').replace(/\.[^/.]+$/, ''), url: f.url }))
+      : bundle.filter(f => hasExt(f.url, AUDIO_EXTENSIONS)).map(f => ({ title: (f.name || '').replace(/\.(mp3|wav|flac|m4a|aac|ogg|opus|aiff?)$/i, ''), url: f.url }))
     // Covers are the image files in the bundle; if none were ever uploaded as
     // files, fall back to the product's own (public, site-sized) cover art.
     const bundleCovers = bundle.filter(f => hasExt(f.url, IMAGE_EXTENSIONS))
+    // Print-size VIP covers replace the bundle's covers, but the tracklist
+    // image (only ever in the bundle) must still reach the folder.
+    const isTracklistImage = (f: Item) => /tracklist/i.test(f.name || '')
+    const bundleTracklists = bundleCovers.filter(isTracklistImage)
     const album = albumName(product.title)
     const note = noteParagraphs(link.note, album)
 
@@ -250,7 +254,8 @@ Deno.serve(async (req) => {
 
       for (const item of zipItems) {
         // When print-size VIP covers exist they replace any covers in the bundle.
-        if (vipCovers.length && hasExt(item.url, IMAGE_EXTENSIONS)) continue
+        // The tracklist image is the exception: it always goes in the folder.
+        if (vipCovers.length && hasExt(item.url, IMAGE_EXTENSIONS) && !isTracklistImage(item)) continue
         const path = pathFromUrl(item.url)
         if (!path) continue
         const { data: signed, error } = await supabase.storage.from('audio-vault').createSignedUrl(path, 900)
@@ -359,10 +364,13 @@ Deno.serve(async (req) => {
     }))).filter(Boolean)
 
     const coverSources = vipCovers.length
-      ? await Promise.all(vipCovers.map(async (c) => {
-        const { data, error } = await supabase.storage.from('audio-vault').createSignedUrl(c.path, 3600, { download: c.file })
-        return { name: coverLabel(c.file), url: error || !data ? null : data.signedUrl }
-      }))
+      ? [
+        ...await Promise.all(vipCovers.map(async (c) => {
+          const { data, error } = await supabase.storage.from('audio-vault').createSignedUrl(c.path, 3600, { download: c.file })
+          return { name: coverLabel(c.file), url: error || !data ? null : data.signedUrl }
+        })),
+        ...await Promise.all(bundleTracklists.map(async (c) => ({ name: coverLabel(c.name || 'Tracklist'), url: await sign(c.url) }))),
+      ]
       : bundleCovers.length
         ? await Promise.all([...bundleCovers]
           .sort((a, b) => frontRank(a.name || '') - frontRank(b.name || '') || (a.name || '').localeCompare(b.name || ''))
