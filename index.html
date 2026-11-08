@@ -2386,7 +2386,10 @@
          section full screen (page scroll, no nested scroll box) with a Back bar.
          Above 768px none of this applies and the tab strip works as before. */
       #admin-menu, #admin-section-bar { display: none; }
+      .vip-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
       @media (max-width: 768px) {
+        .vip-actions { display: grid; grid-template-columns: 1fr 1fr; }
+        .vip-actions .admin-btn { min-width: 0; margin: 0; }
         #admin-portal { padding: 0.75rem 1rem; }
         #dashboard-view { display: block; flex: 0 0 auto; overflow: visible; }
         .dashboard-panels { display: block; }

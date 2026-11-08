@@ -670,7 +670,7 @@ async function loadAdminVipLinks() {
           <button type="button" class="admin-btn" data-vip-save-title="${escapeHtmlText(row.id)}">Save Title</button>
         </div>
         <input type="text" class="admin-input" readonly value="${escapeHtmlText(url)}" onclick="this.select()" aria-label="VIP link">
-        <div style="display: flex; gap: 0.5rem;">
+        <div class="vip-actions">
           <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
           ${status.live && VIP_WEB_NFC ? `<button type="button" class="admin-btn" data-vip-nfc="${escapeHtmlText(url)}">Write to Keychain</button>` : ''}
           ${VIP_WEB_NFC ? `<button type="button" class="admin-btn" data-vip-nfc-erase>Erase Keychain</button>` : ''}
