@@ -193,6 +193,13 @@ Deno.serve(async (req) => {
       .maybeSingle()
     if (!product) return fail(404, 'The folder is not available right now.')
 
+    // ?meta=1 — just enough to draw the link-preview card (the event name, the
+    // album, its public site-sized cover). Used by the Netlify edge function that
+    // fills in the page's social tags; signs nothing and does not count as an open.
+    if (q.get('meta') === '1') {
+      return json(200, { label: link.label || '', album: albumName(product.title), image: product.cover_art_url || null })
+    }
+
     // What is in the folder: the product's CURRENT files (never a copy that can
     // go stale when songs are swapped out in the admin). Same precedence as
     // download-zip: the full bundle if there is one, else the tracklist.

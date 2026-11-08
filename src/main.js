@@ -549,6 +549,8 @@ function vipLinkStatus(row) {
   return { text: `Live — closes ${when}`, color: '#00ffcc', live: true }
 }
 
+const VIP_TITLE_MAX = 120
+
 // <input type="datetime-local"> wants local time as "YYYY-MM-DDTHH:mm".
 function vipDateInputValue(iso) {
   const d = new Date(iso)
@@ -620,6 +622,11 @@ async function loadAdminVipLinks() {
           <span style="font-size: 0.65rem; color: ${status.color};">${escapeHtmlText(status.text)}</span>
         </div>
         <span style="font-size: 0.6rem; color: #888;">${escapeHtmlText(VIP_ALBUM_NAMES[row.product_slug] || row.product_slug)} · ${escapeHtmlText(opened)} · Download: ${row.download_url ? 'Google Drive link' : 'built-in zip'}</span>
+        <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+          <span style="font-size: 0.6rem; color: #888;">Title:</span>
+          <input type="text" class="admin-input" style="width: auto; flex: 1; min-width: 11rem;" maxlength="${VIP_TITLE_MAX}" data-vip-title="${escapeHtmlText(row.id)}" value="${escapeHtmlText(row.label || '')}" aria-label="Link title (shown on the link preview card)">
+          <button type="button" class="admin-btn" data-vip-save-title="${escapeHtmlText(row.id)}">Save Title</button>
+        </div>
         <input type="text" class="admin-input" readonly value="${escapeHtmlText(url)}" onclick="this.select()" aria-label="VIP link">
         <div style="display: flex; gap: 0.5rem;">
           <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
@@ -693,6 +700,23 @@ function initVipAdmin() {
     const nfcBtn = e.target.closest('[data-vip-nfc]')
     if (nfcBtn) {
       await writeVipKeychain(nfcBtn.dataset.vipNfc, say)
+      return
+    }
+    const titleBtn = e.target.closest('[data-vip-save-title]')
+    if (titleBtn) {
+      const id = titleBtn.dataset.vipSaveTitle
+      const input = list.querySelector(`[data-vip-title="${CSS.escape(id)}"]`)
+      const label = input ? input.value.trim().slice(0, VIP_TITLE_MAX) : ''
+      if (!label) { say('Give the link a title.', '#ff4d4d'); return }
+      // Chained .select() so a blocked/no-match update isn't reported as success.
+      const { data, error } = await supabase.from('vip_links').update({ label }).eq('id', id).select('id')
+      if (error || !data || data.length === 0) {
+        console.error('VIP link title change failed:', error)
+        say((error && error.message) || 'Could not change that title.', '#ff4d4d')
+      } else {
+        say('Title saved. Messaging apps may keep showing the old preview for a while.', '#00ffcc')
+      }
+      await loadAdminVipLinks()
       return
     }
     const dateBtn = e.target.closest('[data-vip-save-date]')

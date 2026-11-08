@@ -48,3 +48,9 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Fills in the link-preview card (title = the link's event name) for /vip/<token>.
+# Runs in front of the /vip/* redirect above; see netlify/edge-functions/vip-card.ts.
+[[edge_functions]]
+  path = "/vip/*"
+  function = "vip-card"
