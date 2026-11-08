@@ -520,15 +520,52 @@ const VIP_ALBUM_NAMES = {
 const VIP_WEB_NFC = typeof window !== 'undefined' && 'NDEFReader' in window
 let vipNfcAbort = null
 
-async function writeVipKeychain(url, say) {
+// The status line (#vip-status) sits above the list, out of sight when you are
+// scrolled down to a link — so a finished write showed nothing. The result is now
+// also shown ON the button that was tapped, in a banner pinned to the top of the
+// screen, and as a buzz on phones that support it.
+function vipNfcBanner(msg, ok) {
+  let el = document.getElementById('vip-nfc-banner')
+  if (!el) {
+    el = document.createElement('div')
+    el.id = 'vip-nfc-banner'
+    el.setAttribute('role', 'status')
+    el.style.cssText = 'position: fixed; top: 0.8rem; left: 50%; transform: translateX(-50%); z-index: 100000; max-width: 92vw; padding: 0.9rem 1.2rem; font-size: 0.95rem; font-weight: bold; text-align: center; border-radius: 6px; box-shadow: 0 4px 18px rgba(0,0,0,0.6);'
+    document.body.appendChild(el)
+  }
+  el.textContent = msg
+  el.style.background = ok ? '#00ffcc' : '#ff4d4d'
+  el.style.color = '#000'
+  el.style.display = 'block'
+  clearTimeout(vipNfcBanner.timer)
+  vipNfcBanner.timer = setTimeout(() => { el.style.display = 'none' }, 6000)
+}
+
+async function writeVipKeychain(url, say, btn) {
   if (vipNfcAbort) vipNfcAbort.abort() // a second tap on the button cancels the waiting write
   const ctrl = new AbortController()
   vipNfcAbort = ctrl
   const timer = setTimeout(() => ctrl.abort(), 30000)
+  const original = btn ? (btn.dataset.label || (btn.dataset.label = btn.textContent)) : ''
+  const tok = String(Date.now() + Math.random())
+  const setBtn = (text, bg) => {
+    if (!btn) return
+    btn.dataset.tok = tok
+    btn.textContent = text
+    btn.style.background = bg || ''
+    btn.style.color = bg ? '#000' : ''
+  }
+  // Only put the label back if a newer write hasn't taken over the button since.
+  const resetBtnLater = (ms) => setTimeout(() => { if (btn && btn.dataset.tok === tok) { setBtn(original); btn.style.background = ''; btn.style.color = '' } }, ms)
   say('Hold the keychain flat against the back of your phone...')
+  setBtn('Waiting for keychain...')
   try {
     await new NDEFReader().write({ records: [{ recordType: 'url', data: url }] }, { signal: ctrl.signal })
     say('Keychain written. Tap it on a phone to test it.', '#00ffcc')
+    setBtn('✓ Written', '#00ffcc')
+    vipNfcBanner('✓ Keychain written. Tap it on a phone to test.', true)
+    try { navigator.vibrate && navigator.vibrate([150, 80, 150]) } catch (e) { /* not supported */ }
+    resetBtnLater(8000)
   } catch (err) {
     const msg = ctrl.signal.aborted ? 'Cancelled or timed out. Press the button and try again.'
       : err && err.name === 'NotAllowedError' ? 'NFC is off or blocked. Turn NFC on in your phone settings and allow it for this site.'
@@ -536,6 +573,9 @@ async function writeVipKeychain(url, say) {
       : (err && err.message) || 'Could not write the keychain.'
     console.error('VIP keychain write failed:', err)
     say(msg, '#ff4d4d')
+    setBtn('Failed - try again', '#ff4d4d')
+    vipNfcBanner(msg, false)
+    resetBtnLater(6000)
   } finally {
     clearTimeout(timer)
     if (vipNfcAbort === ctrl) vipNfcAbort = null
@@ -699,7 +739,7 @@ function initVipAdmin() {
     }
     const nfcBtn = e.target.closest('[data-vip-nfc]')
     if (nfcBtn) {
-      await writeVipKeychain(nfcBtn.dataset.vipNfc, say)
+      await writeVipKeychain(nfcBtn.dataset.vipNfc, say, nfcBtn)
       return
     }
     const titleBtn = e.target.closest('[data-vip-save-title]')
