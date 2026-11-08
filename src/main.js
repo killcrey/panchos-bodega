@@ -557,20 +557,22 @@ async function writeVipKeychain(url, say, btn) {
   }
   // Only put the label back if a newer write hasn't taken over the button since.
   const resetBtnLater = (ms) => setTimeout(() => { if (btn && btn.dataset.tok === tok) { setBtn(original); btn.style.background = ''; btn.style.color = '' } }, ms)
+  // url === null means ERASE: the tag gets one empty NDEF record (it stays writable, just blank).
+  const erasing = !url
   say('Hold the keychain flat against the back of your phone...')
   setBtn('Waiting for keychain...')
   try {
-    await new NDEFReader().write({ records: [{ recordType: 'url', data: url }] }, { signal: ctrl.signal })
-    say('Keychain written. Tap it on a phone to test it.', '#00ffcc')
-    setBtn('✓ Written', '#00ffcc')
-    vipNfcBanner('✓ Keychain written. Tap it on a phone to test.', true)
+    await new NDEFReader().write({ records: [erasing ? { recordType: 'empty' } : { recordType: 'url', data: url }] }, { signal: ctrl.signal })
+    say(erasing ? 'Keychain erased. It is blank and can be written again.' : 'Keychain written. Tap it on a phone to test it.', '#00ffcc')
+    setBtn(erasing ? '✓ Erased' : '✓ Written', '#00ffcc')
+    vipNfcBanner(erasing ? '✓ Keychain erased. It is blank now.' : '✓ Keychain written. Tap it on a phone to test.', true)
     try { navigator.vibrate && navigator.vibrate([150, 80, 150]) } catch (e) { /* not supported */ }
     resetBtnLater(8000)
   } catch (err) {
     const msg = ctrl.signal.aborted ? 'Cancelled or timed out. Press the button and try again.'
       : err && err.name === 'NotAllowedError' ? 'NFC is off or blocked. Turn NFC on in your phone settings and allow it for this site.'
       : err && err.name === 'NotSupportedError' ? 'This tag cannot be written (or is locked).'
-      : (err && err.message) || 'Could not write the keychain.'
+      : (err && err.message) || (erasing ? 'Could not erase the keychain.' : 'Could not write the keychain.')
     console.error('VIP keychain write failed:', err)
     say(msg, '#ff4d4d')
     setBtn('Failed - try again', '#ff4d4d')
@@ -671,6 +673,7 @@ async function loadAdminVipLinks() {
         <div style="display: flex; gap: 0.5rem;">
           <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
           ${status.live && VIP_WEB_NFC ? `<button type="button" class="admin-btn" data-vip-nfc="${escapeHtmlText(url)}">Write to Keychain</button>` : ''}
+          ${VIP_WEB_NFC ? `<button type="button" class="admin-btn" data-vip-nfc-erase>Erase Keychain</button>` : ''}
           ${status.live ? `<button type="button" class="admin-btn" data-vip-off="${escapeHtmlText(row.id)}">Shut Off Now</button>` : ''}
         </div>
         ${row.revoked ? '' : `
@@ -740,6 +743,11 @@ function initVipAdmin() {
     const nfcBtn = e.target.closest('[data-vip-nfc]')
     if (nfcBtn) {
       await writeVipKeychain(nfcBtn.dataset.vipNfc, say, nfcBtn)
+      return
+    }
+    const eraseBtn = e.target.closest('[data-vip-nfc-erase]')
+    if (eraseBtn) {
+      await writeVipKeychain(null, say, eraseBtn)
       return
     }
     const titleBtn = e.target.closest('[data-vip-save-title]')
