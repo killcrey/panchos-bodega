@@ -515,6 +515,33 @@ const VIP_ALBUM_NAMES = {
   'the-invisible-panchos-layers-download': 'Layers',
 }
 
+// Web NFC exists only in Chrome on Android (HTTPS page, tapped from a user gesture).
+// Elsewhere the "Write to Keychain" button is simply not shown; Copy Link + an NFC app still work.
+const VIP_WEB_NFC = typeof window !== 'undefined' && 'NDEFReader' in window
+let vipNfcAbort = null
+
+async function writeVipKeychain(url, say) {
+  if (vipNfcAbort) vipNfcAbort.abort() // a second tap on the button cancels the waiting write
+  const ctrl = new AbortController()
+  vipNfcAbort = ctrl
+  const timer = setTimeout(() => ctrl.abort(), 30000)
+  say('Hold the keychain flat against the back of your phone...')
+  try {
+    await new NDEFReader().write({ records: [{ recordType: 'url', data: url }] }, { signal: ctrl.signal })
+    say('Keychain written. Tap it on a phone to test it.', '#00ffcc')
+  } catch (err) {
+    const msg = ctrl.signal.aborted ? 'Cancelled or timed out. Press the button and try again.'
+      : err && err.name === 'NotAllowedError' ? 'NFC is off or blocked. Turn NFC on in your phone settings and allow it for this site.'
+      : err && err.name === 'NotSupportedError' ? 'This tag cannot be written (or is locked).'
+      : (err && err.message) || 'Could not write the keychain.'
+    console.error('VIP keychain write failed:', err)
+    say(msg, '#ff4d4d')
+  } finally {
+    clearTimeout(timer)
+    if (vipNfcAbort === ctrl) vipNfcAbort = null
+  }
+}
+
 function vipLinkStatus(row) {
   if (row.revoked) return { text: 'Shut off', color: '#888', live: false }
   if (new Date(row.expires_at).getTime() <= Date.now()) return { text: 'Expired', color: '#888', live: false }
@@ -596,6 +623,7 @@ async function loadAdminVipLinks() {
         <input type="text" class="admin-input" readonly value="${escapeHtmlText(url)}" onclick="this.select()" aria-label="VIP link">
         <div style="display: flex; gap: 0.5rem;">
           <button type="button" class="admin-btn" data-vip-copy="${escapeHtmlText(url)}">Copy Link</button>
+          ${status.live && VIP_WEB_NFC ? `<button type="button" class="admin-btn" data-vip-nfc="${escapeHtmlText(url)}">Write to Keychain</button>` : ''}
           ${status.live ? `<button type="button" class="admin-btn" data-vip-off="${escapeHtmlText(row.id)}">Shut Off Now</button>` : ''}
         </div>
         ${row.revoked ? '' : `
@@ -638,7 +666,9 @@ async function createVipLink() {
   driveEl.value = ''
   let copied = false
   try { await navigator.clipboard.writeText(VIP_PAGE_BASE + data.token); copied = true } catch (err) { /* the list below has a Copy button */ }
-  say(copied ? 'Link made and copied. Write it onto the keychains with your NFC app.' : 'Link made. Copy it from the list below.', '#00ffcc')
+  say(copied
+    ? (VIP_WEB_NFC ? 'Link made and copied. Press "Write to Keychain" below, then tap the keychain to your phone.' : 'Link made and copied. Write it onto the keychains with your NFC app.')
+    : 'Link made. Copy it from the list below.', '#00ffcc')
   await loadAdminVipLinks()
 }
 
@@ -658,6 +688,11 @@ function initVipAdmin() {
       } catch (err) {
         say('Could not copy — tap the link box and copy it by hand.', '#ff4d4d')
       }
+      return
+    }
+    const nfcBtn = e.target.closest('[data-vip-nfc]')
+    if (nfcBtn) {
+      await writeVipKeychain(nfcBtn.dataset.vipNfc, say)
       return
     }
     const dateBtn = e.target.closest('[data-vip-save-date]')
