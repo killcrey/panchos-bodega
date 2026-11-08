@@ -3113,11 +3113,22 @@ function initAdminPortal() {
     document.getElementById('admin-portal').scrollTo(0, 0)
   }
   setAdminMobileView(null)
+  // The phone's Back button / swipe goes section -> menu (and only from the menu
+  // leaves the admin): opening a section pushes a history entry (same URL), and
+  // the "← Admin" bar just goes back through history, so both paths agree.
   document.getElementById('admin-menu').addEventListener('click', (e) => {
     const tile = e.target.closest('[data-admin-open]')
-    if (tile) setAdminMobileView(tile.dataset.adminOpen)
+    if (!tile) return
+    history.pushState({ adminSection: tile.dataset.adminOpen }, '')
+    setAdminMobileView(tile.dataset.adminOpen)
   })
-  document.getElementById('admin-section-back').addEventListener('click', () => setAdminMobileView(null))
+  document.getElementById('admin-section-back').addEventListener('click', () => {
+    if (history.state && history.state.adminSection) history.back() // popstate below shows the menu
+    else setAdminMobileView(null)
+  })
+  window.addEventListener('popstate', (e) => {
+    setAdminMobileView(e.state && e.state.adminSection ? e.state.adminSection : null)
+  })
   // Small badges on the tiles that have an easy count.
   const refreshAdminMenuCounts = () => {
     const set = (key, n) => { const el = document.querySelector(`[data-count-for="${key}"]`); if (el) el.textContent = n > 0 ? String(n) : '' }
@@ -4087,6 +4098,8 @@ function focusSharedTrack(product, content) {
 // URL, or the landing page otherwise. Full browsing-history fidelity (e.g.
 // returning to the exact category filter you were on) isn't attempted here.
 window.addEventListener('popstate', () => {
+  // The admin has its own popstate handling (section -> menu); don't redraw the hidden storefront.
+  if (new URLSearchParams(window.location.search).get('mode') === 'admin') return
   const match = matchProductFromPath(allProducts)
   if (match) {
     showProductPage(match)
