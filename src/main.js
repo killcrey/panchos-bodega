@@ -3504,6 +3504,86 @@ let currentTrack = null
 let playQueue = []
 const coverColorCache = new Map()
 
+// NOW PLAYING VISUALIZER
+// A spectrum drawn in the full-screen sheet while a track plays. Reading the audio
+// needs Web Audio, which silences a cross-origin stream unless the file is served
+// with CORS headers - so the first track probes for that, and only if it passes is
+// the element switched to crossOrigin="anonymous" and (lazily, when the sheet is first
+// opened) routed through an analyser. Anything that fails leaves playback exactly as
+// it was. Skipped on iPhone/iPad (routing through Web Audio can stop lock-screen
+// playback there) and for visitors who asked for reduced motion.
+const vizState = { cors: null, ctx: null, an: null, raf: 0 }
+const VIZ_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+const VIZ_REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+
+async function probeAudioCors(url) {
+  if (vizState.cors !== null) return vizState.cors
+  vizState.cors = false
+  if (VIZ_IOS || VIZ_REDUCED || !(window.AudioContext || window.webkitAudioContext)) return false
+  try {
+    await fetch(url, { method: 'HEAD', mode: 'cors' }) // throws only if CORS is refused
+    vizState.cors = true
+  } catch (err) { /* no CORS on the audio host: no visualizer, playback unchanged */ }
+  return vizState.cors
+}
+
+function connectViz() {
+  if (vizState.an || !vizState.cors) return
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext
+    const ctx = new AC()
+    const source = ctx.createMediaElementSource(globalAudio)
+    const an = ctx.createAnalyser()
+    an.fftSize = 256
+    an.smoothingTimeConstant = 0.8
+    source.connect(an)
+    an.connect(ctx.destination)
+    // Never let a suspended context mute the music.
+    ctx.onstatechange = () => { if (ctx.state === 'suspended' && !globalAudio.paused) ctx.resume().catch(() => {}) }
+    vizState.ctx = ctx
+    vizState.an = an
+  } catch (err) {
+    console.error('Visualizer unavailable:', err)
+    vizState.cors = false
+  }
+}
+
+function startNowPlayingViz() {
+  const sheet = document.getElementById('now-playing')
+  const cv = document.getElementById('np-viz')
+  if (!cv || !vizState.cors || !sheet.classList.contains('open') || globalAudio.paused) return
+  connectViz()
+  const an = vizState.an
+  if (!an) return
+  if (vizState.ctx.state === 'suspended') vizState.ctx.resume().catch(() => {})
+  if (vizState.raf) return
+  cv.hidden = false
+  const dpr = window.devicePixelRatio || 1
+  cv.width = Math.max(1, Math.round(cv.clientWidth * dpr))
+  cv.height = Math.max(1, Math.round(cv.clientHeight * dpr))
+  const g = cv.getContext('2d')
+  const bins = new Uint8Array(an.frequencyBinCount)
+  const BARS = 32
+  const draw = () => {
+    if (!sheet.classList.contains('open') || globalAudio.paused) {
+      vizState.raf = 0
+      g.clearRect(0, 0, cv.width, cv.height)
+      return
+    }
+    vizState.raf = requestAnimationFrame(draw)
+    an.getByteFrequencyData(bins)
+    g.clearRect(0, 0, cv.width, cv.height)
+    g.fillStyle = '#00ffcc'
+    const slot = cv.width / BARS
+    for (let i = 0; i < BARS; i++) {
+      const v = bins[1 + Math.floor(i * 1.5)] / 255 // the low-to-mid bins hold the music
+      const h = Math.max(2 * dpr, v * cv.height)
+      g.fillRect(i * slot + slot * 0.15, cv.height - h, slot * 0.7, h)
+    }
+  }
+  draw()
+}
+
 function formatTime(sec) {
   if (!isFinite(sec) || sec < 0) sec = 0
   return `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`
@@ -3538,6 +3618,7 @@ async function startTrack(meta, queue) {
   playQueue = queue && queue.length ? queue : [meta]
   currentTrack = meta
   loadTrackUI(meta)
+  if (await probeAudioCors(data.url)) globalAudio.crossOrigin = 'anonymous'
   globalAudio.src = data.url
   globalAudio.currentTime = 0
   globalAudio.play().catch(() => {})
@@ -3700,6 +3781,7 @@ function initGlobalAudioPlayer() {
     sheet.classList.add('open')
     sheet.setAttribute('aria-hidden', 'false')
     document.body.classList.add('np-open')
+    startNowPlayingViz()
   }
   const closeSheet = () => {
     sheet.classList.remove('open')
@@ -3755,6 +3837,7 @@ function initGlobalAudioPlayer() {
   }))
 
   globalAudio.addEventListener('play', refreshPlayStateUI)
+  globalAudio.addEventListener('play', startNowPlayingViz)
   globalAudio.addEventListener('pause', refreshPlayStateUI)
   globalAudio.addEventListener('timeupdate', showProgress)
   globalAudio.addEventListener('loadedmetadata', showProgress)
