@@ -3094,6 +3094,41 @@ function initAdminPortal() {
     })
   })
 
+  // Phone layout: a menu of sections (index.html, #admin-menu). Picking one shows it
+  // full screen with a Back bar; the existing tab buttons are still what switch the
+  // panels underneath, so desktop and phone share one code path. Classes only have
+  // an effect inside the <= 768px media query.
+  const adminDash = document.getElementById('dashboard-view')
+  const ADMIN_SECTION_TITLES = {
+    'add-product': 'Add Product', inventory: 'Inventory', orders: 'Orders', tips: 'Tips', 'email-captures': 'Email Captures',
+    inquiries: 'Inquiries', 'vip-links': 'VIP Links', plays: 'Plays', messages: 'Messages', lookbook: 'Look Book', 'featured-order': 'Featured Order'
+  }
+  const setAdminMobileView = (key) => {
+    adminDash.classList.remove('m-menu', 'm-section', 'm-add', 'm-tabs')
+    if (!key) { adminDash.classList.add('m-menu') } else {
+      adminDash.classList.add('m-section', key === 'add-product' ? 'm-add' : 'm-tabs')
+      document.getElementById('admin-section-title').textContent = ADMIN_SECTION_TITLES[key] || ''
+      if (key !== 'add-product') { const tab = document.querySelector(`.admin-tab-btn[data-tab="${key}"]`); if (tab) tab.click() }
+    }
+    document.getElementById('admin-portal').scrollTo(0, 0)
+  }
+  setAdminMobileView(null)
+  document.getElementById('admin-menu').addEventListener('click', (e) => {
+    const tile = e.target.closest('[data-admin-open]')
+    if (tile) setAdminMobileView(tile.dataset.adminOpen)
+  })
+  document.getElementById('admin-section-back').addEventListener('click', () => setAdminMobileView(null))
+  // Small badges on the tiles that have an easy count.
+  const refreshAdminMenuCounts = () => {
+    const set = (key, n) => { const el = document.querySelector(`[data-count-for="${key}"]`); if (el) el.textContent = n > 0 ? String(n) : '' }
+    set('inventory', adminProductsCache.length)
+    set('orders', document.querySelectorAll('#admin-orders-list .order-item').length)
+  }
+  ;['admin-inventory-list', 'admin-orders-list'].forEach((id) => {
+    const el = document.getElementById(id)
+    if (el) new MutationObserver(refreshAdminMenuCounts).observe(el, { childList: true, subtree: true })
+  })
+
   initLookbookAdmin()
   initFeaturedOrderAdmin()
   initVipAdmin()

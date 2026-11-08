@@ -2379,6 +2379,50 @@
         }
       }
 
+      /* ADMIN ON A PHONE (<= 768px): a menu of big tiles; tapping one shows that
+         section full screen (page scroll, no nested scroll box) with a Back bar.
+         Above 768px none of this applies and the tab strip works as before. */
+      #admin-menu, #admin-section-bar { display: none; }
+      @media (max-width: 768px) {
+        #admin-portal { padding: 0.75rem 1rem; }
+        #dashboard-view { display: block; flex: 0 0 auto; overflow: visible; }
+        .dashboard-panels { display: block; }
+        .admin-tab-buttons { display: none; }
+        .admin-tab-panel, #admin-orders-list, #admin-tips-list, #admin-email-captures-list { overflow: visible; }
+        .dashboard-panel + .dashboard-panel { border-top: none; padding-top: 0; }
+        #dashboard-view.m-menu .dashboard-panels { display: none; }
+        #dashboard-view.m-menu #admin-menu { align-self: stretch; display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; padding: 0.5rem 0 2rem; }
+        #dashboard-view.m-section #admin-section-bar {
+          /* the login script sets #dashboard-view to display:flex (centered column), so stretch to full width */
+          align-self: stretch; display: flex; align-items: center; gap: 0.9rem;
+          position: sticky; top: -0.75rem; z-index: 20;
+          margin: 0 -1rem 0.9rem; padding: 0.7rem 1rem;
+          background: #000; border-bottom: 1px solid rgba(232, 185, 35, 0.5);
+        }
+        #dashboard-view.m-add .dashboard-panel-tabs { display: none; }
+        #dashboard-view.m-tabs .dashboard-panel-primary { display: none; }
+        #dashboard-view.m-section .panel-title { display: none; }
+      }
+      .admin-menu-tile {
+        position: relative; display: flex; flex-direction: column; justify-content: center; gap: 0.25rem;
+        min-height: 5.2rem; padding: 0.9rem 0.8rem; text-align: left;
+        background: #0b0b0b; border: 1px solid #333; border-radius: 6px;
+        color: #fff; font-family: inherit; cursor: pointer;
+      }
+      .admin-menu-tile:active { border-color: #e8b923; background: #15130a; }
+      .admin-menu-tile-wide { grid-column: 1 / -1; min-height: 4rem; border-color: #e8b923; }
+      .admin-menu-tile-name { font-size: 0.8rem; letter-spacing: 1.5px; text-transform: uppercase; color: #e8b923; }
+      .admin-menu-tile-sub { font-size: 0.6rem; color: #888; letter-spacing: 0.5px; }
+      .admin-menu-tile-count:not(:empty) {
+        position: absolute; top: 0.6rem; right: 0.6rem; min-width: 1.4rem; padding: 0.1rem 0.4rem;
+        border-radius: 999px; background: #00ffcc; color: #000; font-size: 0.65rem; font-weight: bold; text-align: center;
+      }
+      #admin-section-back {
+        background: transparent; border: 1px solid #00ffcc; color: #00ffcc; border-radius: 4px;
+        padding: 0.5rem 0.8rem; font-family: inherit; font-size: 0.7rem; letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+      }
+      #admin-section-title { font-size: 0.8rem; letter-spacing: 2px; text-transform: uppercase; color: #e8b923; }
+
       .order-item {
         padding: 0.75rem 0;
         border-bottom: 1px solid rgba(255, 255, 255, 0.15);
@@ -2945,6 +2989,25 @@
         <button type="button" id="admin-login-btn" class="admin-btn">Login</button>
       </div>
       <div id="dashboard-view" style="display: none;">
+        <!-- Phone layout only (hidden above 768px): a menu of sections; tapping one shows
+             it full screen with a Back bar. The desktop tab strip below is unchanged. -->
+        <div id="admin-menu">
+          <button type="button" class="admin-menu-tile admin-menu-tile-wide" data-admin-open="add-product"><span class="admin-menu-tile-name">Add Product</span><span class="admin-menu-tile-sub">Stock the shelf</span><span class="admin-menu-tile-count" data-count-for="add-product"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="inventory"><span class="admin-menu-tile-name">Inventory</span><span class="admin-menu-tile-sub">Edit products</span><span class="admin-menu-tile-count" data-count-for="inventory"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="orders"><span class="admin-menu-tile-name">Orders</span><span class="admin-menu-tile-sub">Ship + fulfill</span><span class="admin-menu-tile-count" data-count-for="orders"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="tips"><span class="admin-menu-tile-name">Tips</span><span class="admin-menu-tile-count" data-count-for="tips"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="email-captures"><span class="admin-menu-tile-name">Email Captures</span><span class="admin-menu-tile-count" data-count-for="email-captures"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="inquiries"><span class="admin-menu-tile-name">Inquiries</span><span class="admin-menu-tile-sub">Service quotes</span><span class="admin-menu-tile-count" data-count-for="inquiries"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="vip-links"><span class="admin-menu-tile-name">VIP Links</span><span class="admin-menu-tile-sub">Keychains</span><span class="admin-menu-tile-count" data-count-for="vip-links"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="plays"><span class="admin-menu-tile-name">Plays</span><span class="admin-menu-tile-sub">Listens</span><span class="admin-menu-tile-count" data-count-for="plays"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="messages"><span class="admin-menu-tile-name">Messages</span><span class="admin-menu-tile-sub">Email notes</span><span class="admin-menu-tile-count" data-count-for="messages"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="lookbook"><span class="admin-menu-tile-name">Look Book</span><span class="admin-menu-tile-sub">Photo strip</span><span class="admin-menu-tile-count" data-count-for="lookbook"></span></button>
+          <button type="button" class="admin-menu-tile" data-admin-open="featured-order"><span class="admin-menu-tile-name">Featured Order</span><span class="admin-menu-tile-sub">Carousel</span><span class="admin-menu-tile-count" data-count-for="featured-order"></span></button>
+        </div>
+        <div id="admin-section-bar">
+          <button type="button" id="admin-section-back">&larr; Admin</button>
+          <span id="admin-section-title"></span>
+        </div>
         <div class="dashboard-panels">
           <div class="dashboard-panel dashboard-panel-primary">
             <p class="panel-title">Stock the Shelf</p>
