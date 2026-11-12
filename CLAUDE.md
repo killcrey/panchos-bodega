@@ -136,6 +136,7 @@ Full write-ups live in `docs/NOTES-ARCHIVE.md` (not auto-loaded). Before changin
 - Admin on a phone: a menu of sections instead of the cramped tab strip (2026-11-07, on request)
 - VIP link action buttons: 2x2 grid on phones (2026-11-07, on request)
 - Memories Of Home track 11 credit is now "(feat 2Mex & 60 East)" (2026-11-11, on request; its link slug changed)
+- Memories tracklist artwork says "(FEAT 60 EAST & 2MEX)" while track 11 is "(feat 2Mex & 60 East)" — LEAVE ALONE, do not flag (2026-11-11, user decision)
 - Memories Of Home track 11 file had no embedded cover art; added (2026-11-11, on request)
 
 ## Issues log

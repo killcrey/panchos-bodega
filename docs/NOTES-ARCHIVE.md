@@ -118,3 +118,6 @@ The Copy Link / Write to Keychain / Erase Keychain / Shut Off Now row was a non-
 
 ## Memories Of Home track 11 had no embedded cover art (2026-11-11, on request)
 After the 2Mex & 60 East retitle, `11 - ... Simple (Remix) (feat 2Mex & 60 East).mp3` was the only track of the 12 without an ID3 APIC picture (the other 11 carry the same 357,019-byte album JPEG), so it showed no icon in music players / file explorers. Embedded the same picture (mutagen, ID3v2.3; audio frames untouched) in the P: masters folder and `vip-retagged-memories/`, then replaced the live `audio-vault` object `1794443808470-11 - ...mp3` (storage `cp` has no overwrite: backed up, `rm`, re-`cp`; verified live md5 == local). Same object name, so product row / VIP links needed no change. Local P: folders mirror the store: `...\MEMORIES OF HOME\memories masters\mp3` (see memory layers-local-masters-path for the Layers equivalent).
+
+## Memories tracklist artwork vs track 11 title: leave alone (2026-11-11, user decision)
+`Memories Of Home - Tracklist.png` reads "(FEAT 60 EAST & 2MEX)" while track 11 is titled "(feat 2Mex & 60 East)". Known and intentional; do not flag it or change either side in comparisons/audits.
