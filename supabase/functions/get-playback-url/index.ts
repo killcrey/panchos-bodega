@@ -46,6 +46,25 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    // Only sign what is meant to be streamed: a product's preview track(s)
+    // (tracklist_snippets / audio_preview_url) or an image. Paid downloads
+    // (zips, bundles) are never signed here — secure-download owns those.
+    if (!/\.(png|jpe?g|webp|gif|avif)$/i.test(path)) {
+      const { data: rows, error: qErr } = await supabase
+        .from('products')
+        .select('tracklist_snippets, audio_preview_url')
+      if (qErr) throw qErr
+      const allowed = new Set<string>()
+      for (const r of rows ?? []) {
+        const urls = [r.audio_preview_url, ...(Array.isArray(r.tracklist_snippets) ? r.tracklist_snippets.map((t: { url?: string }) => t?.url) : [])]
+        for (const u of urls) {
+          const pth = typeof u === 'string' ? extractStoragePath(u, 'audio-vault') : null
+          if (pth) allowed.add(pth)
+        }
+      }
+      if (!allowed.has(path)) throw new Error('Not a preview track.')
+    }
+
     const { data, error } = await supabase
       .storage
       .from('audio-vault')
